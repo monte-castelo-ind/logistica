@@ -204,7 +204,8 @@ tbody tr:hover{background:var(--card-2)}
       <div class="brand-logo-box"></div>
       <div class="brand-cap">Frota</div>
     </div>
-    <button class="navbtn on" data-p="veiculos" onclick="nav('veiculos')"><span class="side-ico">⛟</span><span class="lbl">Veículos</span></button>
+    <button class="navbtn on" data-p="painel" onclick="nav('painel')"><span class="side-ico">◷</span><span class="lbl">Painel</span></button>
+    <button class="navbtn" data-p="veiculos" onclick="nav('veiculos')"><span class="side-ico">⛟</span><span class="lbl">Veículos</span></button>
     <button class="navbtn" data-p="mov" onclick="nav('mov')"><span class="side-ico">⇅</span><span class="lbl">Lançamentos</span></button>
     <button class="navbtn" data-p="docs" onclick="nav('docs')"><span class="side-ico">▣</span><span class="lbl">Documentos</span></button>
     <button class="navbtn" data-p="custos" onclick="nav('custos')"><span class="side-ico">◷</span><span class="lbl">Custos e consumo</span></button>
@@ -234,8 +235,43 @@ tbody tr:hover{background:var(--card-2)}
       </div>
     </div>
 
+    <!-- PAINEL -->
+    <div class="page on" id="page-painel">
+      <div class="tools">
+        <select id="pn-per" onchange="render()">
+          <option value="0" selected>Todo o histórico</option>
+          <option value="30">Últimos 30 dias</option>
+          <option value="90">Últimos 90 dias</option>
+          <option value="180">Últimos 6 meses</option>
+          <option value="365">Último ano</option>
+        </select>
+        <select id="pn-tipo" onchange="render()"><option value="">Todos os tipos de veículo</option></select>
+        <button class="btn btn-sm btn-ghost" onclick="exportarPainel()" style="margin-left:auto">⤓ CSV</button>
+      </div>
+      <div id="pn-alertas"></div>
+      <div class="grid kpis" id="pn-kpis"></div>
+
+      <div class="sect">Gasto por mês</div>
+      <div class="card" id="pn-mes"></div>
+
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));margin-top:16px">
+        <div class="card"><div class="klabel">Por tipo de serviço</div><div id="pn-cat" style="margin-top:11px"></div></div>
+        <div class="card"><div class="klabel">Por tipo de veículo</div><div id="pn-tv" style="margin-top:11px"></div></div>
+      </div>
+
+      <div class="sect">Veículos que mais custam</div>
+      <div class="tw"><div class="tscroll" style="max-height:400px"><table id="pn-veic"></table></div></div>
+
+      <div class="sect">Onde a frota gasta</div>
+      <div class="tw"><div class="tscroll" style="max-height:340px"><table id="pn-forn"></table></div></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:9px;line-height:1.6">
+        <strong>FROTA GERAL</strong> reúne o que não é de um veículo só — pneu para estoque, aluguel, manutenção da fábrica.
+        Sem odômetro lançado, não há R$/km: para isso, registre a leitura de km dos veículos.
+      </div>
+    </div>
+
     <!-- VEÍCULOS -->
-    <div class="page on" id="page-veiculos">
+    <div class="page" id="page-veiculos">
       <div class="grid kpis" id="vk"></div>
       <div class="tools" style="margin-top:16px">
         <input type="text" id="vf-busca" placeholder="Buscar placa, modelo, motorista..." oninput="render()" />
@@ -386,12 +422,13 @@ const dbC = getFirestore(appFB);
 const auth = getAuth(appFB);
 
 /* ============ ESTADO ============ */
-var pagina='veiculos', sessaoEmail='', sessaoUid='', sessaoNome='', ehAdmin=false, podeLancar=false;
+var pagina='painel', sessaoEmail='', sessaoUid='', sessaoNome='', ehAdmin=false, podeLancar=false;
 var veiculos=[], movs=[], docs=[], cfg={ oleoKm:10000, oleoMeses:6, revisaoKm:20000, revisaoMeses:12,
   diasAviso:30, kmParadoDias:15, desvioPct:15, tipos:[] };
 var subs={}, ultimaCarga=null;
 var ord={ mov:{col:'em',dir:-1}, docs:{col:'vencimento',dir:1}, custos:{col:'total',dir:-1} };
 const TITLES={
+  painel:['Painel','Onde o dinheiro da frota está indo'],
   veiculos:['Veículos','Frota, odômetro e próximas manutenções'],
   mov:['Lançamentos','Odômetro, abastecimento, óleo, manutenção e pneu'],
   docs:['Documentos','IPVA, licenciamento, seguro, CNH'],
@@ -796,7 +833,8 @@ function render(){
   document.querySelectorAll('.frota-mov').forEach(function(el){ el.style.display=podeLancar?'':'none'; });
   document.querySelectorAll('.admin-only').forEach(function(el){ el.style.display=ehAdmin?'':'none'; });
   renderAvisos();
-  if(pagina==='veiculos') renderVeiculos();
+  if(pagina==='painel') renderPainel();
+  else if(pagina==='veiculos') renderVeiculos();
   else if(pagina==='mov') renderMov();
   else if(pagina==='docs') renderDocs();
   else if(pagina==='custos') renderCustos();
@@ -819,6 +857,159 @@ function pintarSel(id, itens, rot){
 function selVeiculos(id){
   return pintarSel(id, ativos().map(function(v){ return [v.firestoreId, (v.placa||'')+(v.apelido?' · '+v.apelido:'')]; }), 'Todos os veículos');
 }
+
+/* ============ PAINEL ============ */
+function _pnDados(){
+  var per=num((document.getElementById('pn-per')||{}).value||0);
+  var ft=(document.getElementById('pn-tipo')||{}).value||'';
+  var desde=per?new Date(Date.now()-per*86400000).toISOString().slice(0,10):'';
+  var lista=[];
+  movs.forEach(function(m){
+    var d=String(m.data||m.em).slice(0,10);
+    if(desde && d<desde) return;
+    var v=veic(m.veiculoId);
+    if(ft && (!v || v.tipo!==ft)) return;
+    lista.push({ m:m, v:v, data:d, valor:num(m.valor),
+                 cat:(m.categoria||'').trim()||'(sem categoria)',
+                 forn:(m.oficina||m.posto||'').trim()||'(sem fornecedor)' });
+  });
+  return { lista:lista, desde:desde, tipo:ft };
+}
+function _agrup(lista, chave){
+  var a={};
+  lista.forEach(function(x){
+    var k=(typeof chave==='function')?chave(x):x[chave];
+    var b=a[k]||(a[k]={ k:k, valor:0, n:0 });
+    b.valor+=x.valor; b.n++;
+  });
+  return Object.keys(a).map(function(k){ return a[k]; }).sort(function(p,q){ return q.valor-p.valor; });
+}
+// barras horizontais simples: comparação visual sem biblioteca de gráfico
+function _barras(itens, total, cor){
+  if(!itens.length) return '<div class="fhint">Sem dados no período.</div>';
+  var max=itens[0].valor||1;
+  return itens.map(function(x){
+    var pct=total>0?(x.valor/total*100):0;
+    return '<div style="margin-bottom:9px">'+
+      '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12.5px">'+
+        '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(x.k)+
+          ' <span style="color:var(--muted);font-size:11px">'+x.n+'×</span></span>'+
+        '<span class="num" style="white-space:nowrap">'+fmtR$k(x.valor)+' <span style="color:var(--muted);font-size:11px">'+fmtN(pct,0)+'%</span></span>'+
+      '</div>'+
+      '<div style="height:5px;border-radius:3px;background:var(--card-2);margin-top:3px;overflow:hidden">'+
+        '<i style="display:block;height:100%;width:'+(x.valor/max*100).toFixed(1)+'%;background:'+cor+'"></i></div>'+
+    '</div>';
+  }).join('');
+}
+function renderPainel(){
+  // tipos de veículo no filtro
+  var tipos={}; veiculos.forEach(function(v){ if(v.tipo) tipos[v.tipo]=1; });
+  pintarSel('pn-tipo', Object.keys(tipos).sort().map(function(t){ return [t,t]; }), 'Todos os tipos de veículo');
+
+  var D=_pnDados(), lista=D.lista;
+  var total=0; lista.forEach(function(x){ total+=x.valor; });
+  var comVeic=_agrup(lista, function(x){ return x.v?(x.v.placa||'—'):'(veículo removido)'; });
+  var porCat=_agrup(lista,'cat');
+  var porForn=_agrup(lista,'forn');
+  var porMes=_agrup(lista, function(x){ return x.data.slice(0,7); }).sort(function(a,b){ return a.k<b.k?-1:1; });
+  var porTv=_agrup(lista, function(x){ return (x.v&&x.v.tipo)?x.v.tipo:'(sem tipo)'; });
+
+  var meses=porMes.length;
+  var ticket=lista.length?total/lista.length:0;
+  var mediaMes=meses?total/meses:0;
+  var atendidos=comVeic.length;
+
+  document.getElementById('pn-kpis').innerHTML=[
+    '<div class="card"><div class="klabel">Gasto total</div><div class="kval">'+fmtR$k(total)+'</div><div class="khint">'+lista.length+' lançamento(s)</div></div>',
+    '<div class="card"><div class="klabel">Média por mês</div><div class="kval">'+fmtR$k(mediaMes)+'</div><div class="khint">'+meses+' mês(es) com gasto</div></div>',
+    '<div class="card"><div class="klabel">Ticket médio</div><div class="kval">'+fmtR$k(ticket)+'</div><div class="khint">por intervenção</div></div>',
+    '<div class="card"><div class="klabel">Veículos atendidos</div><div class="kval">'+atendidos+'</div><div class="khint">de '+ativos().length+' na frota</div></div>',
+    '<div class="card"><div class="klabel">Fornecedores</div><div class="kval">'+porForn.length+'</div><div class="khint">'+(porForn.length?'maior: '+esc(porForn[0].k):'—')+'</div></div>'
+  ].join('');
+
+  // alertas de leitura, não de operação
+  var al='';
+  if(comVeic.length){
+    var top=comVeic[0];
+    var pctTop=total>0?top.valor/total*100:0;
+    if(pctTop>=15) al+='<div class="alert a-warn">⚠ <strong>'+esc(top.k)+'</strong> concentra '+fmtN(pctTop,0)+'% do gasto ('+fmtR$k(top.valor)+' em '+top.n+' intervenções). Vale olhar se é reincidência ou fim de vida útil.</div>';
+  }
+  var semCat=porCat.filter(function(c){ return c.k==='(sem categoria)'; })[0];
+  if(semCat) al+='<div class="alert a-info">◇ '+semCat.n+' lançamento(s) sem tipo de serviço, somando '+fmtR$k(semCat.valor)+'. Sem isso, esse valor não aparece na análise por serviço.</div>';
+  var semKm=ativos().filter(function(v){ return !(kmAtual(v.firestoreId).km>0); }).length;
+  if(semKm) al+='<div class="alert a-info">◇ '+semKm+' veículo(s) sem odômetro. Com a leitura de km, o painel passa a mostrar R$/km e custo por quilômetro rodado.</div>';
+  document.getElementById('pn-alertas').innerHTML=al;
+
+  // gasto por mês
+  var maxMes=0; porMes.forEach(function(x){ if(x.valor>maxMes) maxMes=x.valor; });
+  document.getElementById('pn-mes').innerHTML = porMes.length
+    ? '<div style="display:flex;align-items:flex-end;gap:6px;height:150px;padding-top:6px">'+
+      porMes.map(function(x){
+        var alt=maxMes>0?(x.valor/maxMes*100):0;
+        return '<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%" title="'+esc(rotuloMes(x.k))+': '+fmtR$(x.valor,2)+' em '+x.n+' lançamentos">'+
+          '<div class="num" style="font-size:10.5px;color:var(--muted);margin-bottom:3px">'+fmtN(x.valor/1000,0)+'k</div>'+
+          '<div style="width:100%;background:var(--primary);border-radius:4px 4px 0 0;height:'+alt.toFixed(1)+'%;min-height:2px"></div>'+
+          '<div style="font-size:10.5px;color:var(--muted);margin-top:5px">'+esc(rotuloMes(x.k))+'</div></div>';
+      }).join('')+'</div>'
+    : '<div class="fhint">Sem lançamentos no período.</div>';
+
+  document.getElementById('pn-cat').innerHTML=_barras(porCat.slice(0,10), total, 'var(--amber)');
+  document.getElementById('pn-tv').innerHTML=_barras(porTv.slice(0,10), total, 'var(--blue)');
+
+  // ranking de veículos
+  var hv='<thead><tr><th>Veículo</th><th>Tipo</th><th class="r">Interv.</th><th class="r">Gasto</th><th class="r">Média</th><th class="r">% do total</th><th class="r">Maior serviço</th></tr></thead><tbody>';
+  if(!comVeic.length) hv+='<tr><td colspan="7" class="empty">Sem lançamentos no período.</td></tr>';
+  comVeic.slice(0,40).forEach(function(x){
+    var doVeic=lista.filter(function(y){ return (y.v?y.v.placa:'—')===x.k; });
+    var cats=_agrup(doVeic,'cat');
+    var v0=doVeic[0]&&doVeic[0].v;
+    hv+='<tr class="clickrow"'+(v0?' onclick="verVeiculo(\''+esc(v0.firestoreId)+'\')"':'')+'>'+
+      '<td class="mono">'+esc(x.k)+'</td>'+
+      '<td style="color:var(--muted);font-size:11.5px">'+esc((v0&&v0.tipo)||'—')+'</td>'+
+      '<td class="r num">'+x.n+'</td>'+
+      '<td class="r num" style="font-weight:600">'+fmtR$(x.valor,2)+'</td>'+
+      '<td class="r num">'+fmtR$(x.valor/x.n,2)+'</td>'+
+      '<td class="r num">'+(total>0?fmtN(x.valor/total*100,1)+'%':'—')+'</td>'+
+      '<td class="r" style="font-size:11.5px;color:var(--muted)">'+(cats.length?esc(cats[0].k)+' · '+fmtR$k(cats[0].valor):'—')+'</td></tr>';
+  });
+  document.getElementById('pn-veic').innerHTML=hv+'</tbody>';
+
+  // fornecedores
+  var hf='<thead><tr><th>Fornecedor</th><th class="r">Serviços</th><th class="r">Gasto</th><th class="r">Ticket médio</th><th class="r">% do total</th><th class="r">Veículos</th></tr></thead><tbody>';
+  if(!porForn.length) hf+='<tr><td colspan="6" class="empty">Sem lançamentos no período.</td></tr>';
+  porForn.slice(0,30).forEach(function(x){
+    var doF=lista.filter(function(y){ return y.forn===x.k; });
+    var vs={}; doF.forEach(function(y){ if(y.v) vs[y.v.placa]=1; });
+    hf+='<tr><td>'+esc(x.k)+'</td>'+
+      '<td class="r num">'+x.n+'</td>'+
+      '<td class="r num" style="font-weight:600">'+fmtR$(x.valor,2)+'</td>'+
+      '<td class="r num">'+fmtR$(x.valor/x.n,2)+'</td>'+
+      '<td class="r num">'+(total>0?fmtN(x.valor/total*100,1)+'%':'—')+'</td>'+
+      '<td class="r num">'+Object.keys(vs).length+'</td></tr>';
+  });
+  document.getElementById('pn-forn').innerHTML=hf+'</tbody>';
+
+  document.getElementById('psub').textContent=fmtR$k(total)+' em '+lista.length+' lançamentos'+(D.tipo?' · '+D.tipo:'');
+}
+window.exportarPainel=function(){
+  var D=_pnDados(), lista=D.lista;
+  var total=0; lista.forEach(function(x){ total+=x.valor; });
+  var L=[['PAINEL DA FROTA','gerado em',hoje()].join(';'),''];
+  function bloco(titulo, arr){
+    L.push(titulo);
+    L.push(['Item','Lançamentos','Gasto','% do total'].join(';'));
+    arr.forEach(function(x){
+      L.push([x.k, x.n, br(x.valor), (total>0?br(x.valor/total*100):'')].join(';'));
+    });
+    L.push('');
+  }
+  bloco('POR MES', _agrup(lista, function(x){ return x.data.slice(0,7); }).sort(function(a,b){ return a.k<b.k?-1:1; }));
+  bloco('POR TIPO DE SERVICO', _agrup(lista,'cat'));
+  bloco('POR VEICULO', _agrup(lista, function(x){ return x.v?(x.v.placa||'-'):'(removido)'; }));
+  bloco('POR TIPO DE VEICULO', _agrup(lista, function(x){ return (x.v&&x.v.tipo)?x.v.tipo:'(sem tipo)'; }));
+  bloco('POR FORNECEDOR', _agrup(lista,'forn'));
+  baixar('frota-painel-'+hoje()+'.csv', L);
+};
 
 function renderVeiculos(){
   var tipos={}; veiculos.forEach(function(v){ if(v.tipo) tipos[v.tipo]=1; });
@@ -1663,7 +1854,8 @@ var TIPO_ALIAS=[
   ['oleo',         ['oleo','troca_de_oleo','troca_oleo','lubrificacao']],
   ['abastecimento',['abastecimento','combustivel','diesel','gasolina','arla','etanol','posto']],
   ['pneu',         ['pneu','pneus','borracharia','recapagem','rodizio']],
-  ['manutencao',   ['manutencao','revisao','conserto','oficina','reparo','preventiva','corretiva','servico']],
+  ['manutencao',   ['manutencao','revisao','conserto','oficina','reparo','preventiva','corretiva',
+                    'servico','mecanica','eletrica','refrigeracao','conservacao','pecas','funilaria']],
   ['km',           ['km','odometro','leitura','quilometragem']]
 ];
 function _tipoDe(txt){
@@ -1681,16 +1873,20 @@ window.importarHistorico=function(input){
   if(!podeLancar){ alert('Sem permissão.'); input.value=''; return; }
   if(!veiculos.length){ alert('Cadastre ou importe os veículos primeiro — o histórico é ligado pela placa.'); input.value=''; return; }
   _st('Lendo a planilha…');
-  _lerPlanilha(file).then(function(rows){
+  _lerPlanilha(file).then(async function(rows){
     var C=_cabecalho(rows, [['placa'],['data']]);
     if(!C){ alert('Não achei as colunas Placa e Data.'); return; }
     var iP=C.acha('placa','veiculo');
     var iD=C.acha('data','data_servico','emissao');
-    var iT=C.acha('tipo','servico','ocorrencia');
+    // "Tipo de serviço" é CATEGORIA (Mecânica, Elétrica, Pneus), não o tipo do
+    // lançamento. Ela reivindica a coluna antes, senão o iT a tomava por
+    // conter "tipo" e a categoria ficava sem coluna.
+    var iCat=C.acha('tipo_de_servico','categoria','servico_tipo');
+    var iT=C.acha('tipo_de_lancamento','ocorrencia','tipo');
     var iK=C.acha('odometro','km','quilometragem');
     var iV=C.acha('valor','custo','total','preco');
     var iDe=C.acha('descricao','observacao','servico_realizado','obs','historico');
-    var iOf=C.acha('oficina','fornecedor','local','posto');
+    var iOf=C.acha('estabelecimento','oficina','fornecedor','local','posto');
     var iL=C.acha('litros','qtd_litros');
     var iNa=C.acha('natureza');
     var iAc=C.acha('acao');
@@ -1701,21 +1897,39 @@ window.importarHistorico=function(input){
 
     var porPlaca={};
     veiculos.forEach(function(v){ porPlaca[_placa(v.placa)]=v; });
+    /* A coluna Placa às vezes traz o destino do gasto, não um veículo:
+       "PEÇAS PRA FROTA", "Aluguel", "MANUTENÇÃO DA FÁBRICA". Isso é custo
+       real da frota — R$ 76 mil na planilha — e não pode ser descartado.
+       Vai para um veículo coletivo, criado na hora se não existir.        */
+    var ehPlaca=function(s){ return /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(_placa(s)); };
+    var CHAVE_GERAL='FROTAGERAL';
+    var geral=porPlaca[CHAVE_GERAL]||null;
     // assinatura para não duplicar ao reimportar a mesma planilha
     var existentes={};
     movs.forEach(function(m){
       existentes[[m.veiculoId,String(m.data||'').slice(0,10),m.tipo,Math.round(num(m.km)),Math.round(num(m.valor)*100)].join('|')]=1;
     });
-    var novos=[], repetidos=0, semVeic={}, semData=0, semTipo=0;
+    var novos=[], repetidos=0, semVeic={}, semData=0, semTipo=0, naoVeiculo={}, dataRuim=[];
     for(var i=C.linha+1;i<rows.length;i++){
       var r=rows[i]; if(!r) continue;
-      var pl=_placa(r[iP]);
+      var brutoPl=String(r[iP]==null?'':r[iP]).trim();
+      var pl=_placa(brutoPl);
       if(!pl) continue;
       var v=porPlaca[pl];
+      if(!v && !ehPlaca(brutoPl)){
+        // não é placa: custo da frota sem veículo específico
+        v=geral||{ firestoreId:'__GERAL__', placa:'FROTA GERAL' };
+        naoVeiculo[brutoPl]=(naoVeiculo[brutoPl]||0)+1;
+      }
       if(!v){ semVeic[pl]=(semVeic[pl]||0)+1; continue; }
       var data=_dataPl(iD>=0?r[iD]:'');
-      if(!data){ semData++; continue; }
-      var tipo=_tipoDe(iT>=0?r[iT]:'');
+      if(!data){
+        semData++;
+        if(iD>=0 && String(r[iD]||'').trim()) dataRuim.push(String(r[iD]).trim()+' ('+brutoPl+')');
+        continue;
+      }
+      var cat=(iCat>=0?String(r[iCat]||'').trim():'');
+      var tipo=_tipoDe(cat||(iT>=0?r[iT]:''));
       if(!tipo){
         // sem coluna de tipo reconhecível: decide pelo que a linha tem
         var temL=(iL>=0 && _numPl(r[iL])>0);
@@ -1728,6 +1942,10 @@ window.importarHistorico=function(input){
         obs:'', quem:sessaoEmail, quemNome:sessaoNome, em:agora(), importado:true };
       if(iDe>=0) d.descricao=String(r[iDe]||'').trim();
       if(iOf>=0) d.oficina=String(r[iOf]||'').trim();
+      // categoria original da planilha (Mecânica, Elétrica, Pneus...): é a
+      // dimensão que o painel usa para mostrar onde o dinheiro vai
+      if(cat) d.categoria=cat;
+      else if(iT>=0) d.categoria=String(r[iT]||'').trim();
       if(tipo==='abastecimento'){
         d.litros=(iL>=0?(_numPl(r[iL])||0):0);
         d.posto=d.oficina||'';
@@ -1752,6 +1970,7 @@ window.importarHistorico=function(input){
       novos.push(d);
     }
     var naoAchados=Object.keys(semVeic);
+    var precisaGeral=Object.keys(naoVeiculo).length>0 && !geral;
     if(!novos.length){
       alert('Nada a importar.\n\nLinhas lidas: '+(rows.length-C.linha-1)+
         '\nJá existiam: '+repetidos+
@@ -1766,12 +1985,27 @@ window.importarHistorico=function(input){
       '\nLançamentos novos: '+novos.length+' · '+fmtR$(soma,2)+'\n'+
       Object.keys(porTipo).map(function(t){ return '   '+(TIPOS_MOV[t]?TIPOS_MOV[t][0]:t)+': '+porTipo[t]; }).join('\n')+
       '\n\nJá existiam (ignorados): '+repetidos;
+    if(Object.keys(naoVeiculo).length){
+      var somaG=0;
+      novos.forEach(function(d){ if(d.veiculoId==='__GERAL__') somaG+=d.valor; });
+      msg+='\n\nSEM VEÍCULO ESPECÍFICO → vão para "FROTA GERAL" ('+fmtR$(somaG,2)+'):\n'+
+        Object.keys(naoVeiculo).map(function(k){ return '   '+k+': '+naoVeiculo[k]; }).join('\n');
+    }
     if(naoAchados.length) msg+='\n\nPLACAS NÃO CADASTRADAS (ignoradas):\n'+naoAchados.slice(0,10).join(', ')+(naoAchados.length>10?'…':'');
     if(semData) msg+='\nSem data (ignoradas): '+semData;
+    if(dataRuim.length) msg+='\n   data inválida: '+dataRuim.slice(0,4).join(' · ');
     if(semTipo) msg+='\nTipo não reconhecido (deduzido pela linha): '+semTipo;
     if(!confirm(msg)) return;
 
     _st('Gravando '+novos.length+' lançamentos…');
+    if(precisaGeral){
+      var refG=await addDoc(collection(dbC,'frotaVeiculos'), {
+        placa:'FROTA GERAL', apelido:'Custos sem veículo específico', tipo:'GERAL',
+        ativo:true, kmInicial:0, criadoEm:agora(), atualizadoEm:agora(), atualizadoPor:sessaoEmail });
+      novos.forEach(function(d){ if(d.veiculoId==='__GERAL__') d.veiculoId=refG.id; });
+    } else if(geral){
+      novos.forEach(function(d){ if(d.veiculoId==='__GERAL__') d.veiculoId=geral.firestoreId; });
+    }
     var fila=[], ok=0, erros=0;
     function lote(ini){
       var parte=novos.slice(ini,ini+40);
