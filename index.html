@@ -75,6 +75,19 @@ textarea{resize:vertical;min-height:60px}
 .navbtn{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;background:none;border:none;color:var(--muted);font-size:13.5px;font-weight:500;text-align:left;width:100%}
 .navbtn:hover{background:var(--card-2);color:var(--text)}
 .navbtn.on{background:var(--side-active);color:var(--side-active-text);font-weight:600}
+.navbtn .cnt{margin-left:auto;background:var(--amber);color:#1a1400;font-size:10.5px;font-weight:700;
+  min-width:18px;height:18px;line-height:18px;border-radius:9px;padding:0 5px;text-align:center;
+  font-family:'JetBrains Mono',monospace}
+.chk-item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)}
+.chk-item:last-child{border-bottom:none}
+.chk-op{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.chk-op button{background:none;border:none;color:var(--muted);font-family:inherit;font-size:12px;padding:6px 11px;white-space:nowrap}
+.chk-op button+button{border-left:1px solid var(--border)}
+.chk-op button.ok{background:rgba(28,196,126,.16);color:var(--green);font-weight:600}
+.chk-op button.no{background:rgba(242,106,106,.16);color:var(--red);font-weight:600}
+.chk-op button.na{background:var(--card-2);color:var(--muted);font-weight:600}
+.pend{border-left:3px solid var(--red);background:var(--card);border:1px solid var(--border);
+  border-radius:11px;padding:12px 14px;margin-bottom:10px}
 .side-foot{margin-top:auto;padding-top:14px;border-top:1px solid var(--border)}
 .uline{display:flex;align-items:center;gap:9px;padding:6px}
 .uav{width:29px;height:29px;flex:0 0 29px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
@@ -219,6 +232,7 @@ tbody tr:hover{background:var(--card-2)}
     <button class="navbtn on" data-p="painel" onclick="nav('painel')"><span class="side-ico">◷</span><span class="lbl">Painel</span></button>
     <button class="navbtn" data-p="veiculos" onclick="nav('veiculos')"><span class="side-ico">⛟</span><span class="lbl">Veículos</span></button>
     <button class="navbtn" data-p="mov" onclick="nav('mov')"><span class="side-ico">⇅</span><span class="lbl">Lançamentos</span></button>
+    <button class="navbtn" data-p="chk" onclick="nav('chk')"><span class="side-ico">☑</span><span class="lbl">Checklist</span><span class="cnt" id="cntChk" style="display:none">0</span></button>
     <button class="navbtn" data-p="docs" onclick="nav('docs')"><span class="side-ico">▣</span><span class="lbl">Documentos</span></button>
     <button class="navbtn" data-p="custos" onclick="nav('custos')"><span class="side-ico">◷</span><span class="lbl">Custos e consumo</span></button>
     <button class="navbtn admin-only" data-p="config" onclick="nav('config')"><span class="side-ico">⚙</span><span class="lbl">Configurações</span></button>
@@ -335,6 +349,32 @@ tbody tr:hover{background:var(--card-2)}
       <div class="tw" style="margin-top:13px"><div class="tscroll"><table id="tbl-mov"></table></div></div>
     </div>
 
+    <!-- CHECKLIST -->
+    <div class="page" id="page-chk">
+      <div class="alert a-info">☑ Inspeção <strong>semanal</strong>. Cada tipo de veículo tem seu modelo, editável em Configurações. Item reprovado vira pendência e fica aberta até alguém resolver ou lançar a manutenção.</div>
+      <div class="grid kpis" id="ck-kpis"></div>
+      <div class="tools" style="margin-top:16px">
+        <button class="btn btn-sm frota-mov" onclick="abrirChecklist()">+ Preencher checklist</button>
+        <select id="ck-per" onchange="render()">
+          <option value="4" selected>Últimas 4 semanas</option>
+          <option value="12">Últimas 12 semanas</option>
+          <option value="0">Tudo</option>
+        </select>
+        <select id="ck-veic" onchange="render()"><option value="">Todos os veículos</option></select>
+        <button class="btn btn-sm btn-ghost" onclick="exportarChk()" style="margin-left:auto">⤓ CSV</button>
+      </div>
+      <div id="ck-alertas"></div>
+
+      <div class="sect">Pendências abertas</div>
+      <div id="ck-pend"></div>
+
+      <div class="sect">Semana atual · quem já fez</div>
+      <div class="tw"><div class="tscroll" style="max-height:300px"><table id="ck-semana"></table></div></div>
+
+      <div class="sect">Histórico</div>
+      <div class="tw"><div class="tscroll" style="max-height:340px"><table id="ck-hist"></table></div></div>
+    </div>
+
     <!-- DOCUMENTOS -->
     <div class="page" id="page-docs">
       <div class="alert a-info">▣ IPVA, licenciamento, seguro, tacógrafo, CNH. O app avisa antes de vencer — o prazo de aviso fica em Configurações.</div>
@@ -415,6 +455,22 @@ tbody tr:hover{background:var(--card-2)}
         </div>
         <div class="fld" style="margin-top:13px"><label>Tipos de veículo (um por linha)</label>
           <textarea id="cg-tipos" rows="6" placeholder="CAMINHÃO&#10;VAN&#10;UTILITÁRIO&#10;MOTO&#10;CARRO"></textarea></div>
+      </div>
+
+      <div class="card" style="max-width:620px;margin-top:14px">
+        <div class="klabel">Modelo de checklist por tipo</div>
+        <div class="fhint" style="margin:6px 0 11px">Um item por linha. Cada tipo de veículo tem sua lista — o que se checa num caminhão não é o que se checa numa moto. Sem modelo, os veículos daquele tipo não podem ser inspecionados.</div>
+        <div class="fgrid">
+          <div><label>Tipo</label><select id="cg-chk-tipo" onchange="chkModeloTrocar()"></select></div>
+        </div>
+        <div class="fld" style="margin-top:12px"><label>Itens do checklist</label>
+          <textarea id="cg-chk-itens" rows="12" placeholder="Nível de óleo do motor&#10;Água do radiador&#10;Pressão dos pneus&#10;Estado dos pneus e estepe&#10;Faróis, lanternas e setas&#10;Freios e freio de estacionamento&#10;Buzina&#10;Limpador e água do para-brisa&#10;Cinto de segurança&#10;Extintor e triângulo&#10;Documento do veículo&#10;Limpeza da cabine e do baú"></textarea>
+          <div class="fhint" id="cg-chk-info"></div></div>
+        <div style="margin-top:12px;display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-sm" onclick="salvarModeloChk()">Salvar modelo</button>
+          <button class="btn btn-sm btn-ghost" onclick="copiarModeloChk()">Copiar de outro tipo</button>
+          <span id="cg-chk-status" style="font-size:12px;color:var(--muted)"></span>
+        </div>
         <div style="margin-top:13px;display:flex;gap:9px;align-items:center">
           <button class="btn btn-sm" onclick="salvarConfig()">Salvar</button>
           <span id="cg-status" style="font-size:12px;color:var(--muted)"></span>
@@ -441,6 +497,7 @@ const auth = getAuth(appFB);
 var pagina='painel', sessaoEmail='', sessaoUid='', sessaoNome='', ehAdmin=false, podeLancar=false;
 var veiculos=[], movs=[], docs=[], cfg={ oleoKm:10000, oleoMeses:6, revisaoKm:20000, revisaoMeses:12,
   diasAviso:30, kmParadoDias:15, desvioPct:15, tipos:[] };
+var modelosChk={}, checklists=[];
 var subs={}, ultimaCarga=null;
 var ord={ mov:{col:'em',dir:-1}, docs:{col:'vencimento',dir:1}, custos:{col:'total',dir:-1},
           veic:{col:'placa',dir:1} };
@@ -450,6 +507,7 @@ const TITLES={
   painel:['Painel','Onde o dinheiro da frota está indo'],
   veiculos:['Veículos','Frota, odômetro e próximas manutenções'],
   mov:['Lançamentos','Odômetro, abastecimento, óleo, manutenção e pneu'],
+  chk:['Checklist','Inspeção semanal por tipo de veículo'],
   docs:['Documentos','IPVA, licenciamento, seguro, CNH'],
   custos:['Custos e consumo','R$/km, R$/litro e km/L por veículo'],
   config:['Configurações','Intervalos e tipos']
@@ -814,6 +872,27 @@ function diagnosticos(){
         sub:'Último trecho '+fmtN(dv.ultimo,2)+' km/L contra média de '+fmtN(dv.media,2)+'. Queda de consumo costuma ser o primeiro sinal de problema mecânico.',
         pagina:'custos' });
   });
+  // checklist da semana e pendências abertas
+  var semAtual=semanaAtual();
+  var faltando=ativos().filter(function(v){ return modeloDe(v.tipo) && !chkDe(v.firestoreId, semAtual); });
+  if(faltando.length) out.push({ sev:'warn', titulo:faltando.length+' veículo(s) sem checklist nesta semana',
+    sub:'Faltam: '+faltando.slice(0,4).map(function(v){ return v.placa; }).join(', ')+(faltando.length>4?'…':''),
+    pagina:'chk' });
+  var semMod={};
+  ativos().forEach(function(v){ if(!modeloDe(v.tipo)) semMod[norm(v.tipo)||'(sem tipo)']=1; });
+  if(Object.keys(semMod).length) out.push({ sev:'info', titulo:'Tipo sem modelo de checklist',
+    sub:Object.keys(semMod).join(', ')+' — esses veículos não podem ser inspecionados até o modelo existir.',
+    pagina:'config' });
+  var pend=pendencias();
+  if(pend.length){
+    var porV={};
+    pend.forEach(function(p){ var k=p.veiculo?p.veiculo.placa:'(removido)'; porV[k]=(porV[k]||0)+1; });
+    out.push({ sev:'bad', titulo:pend.length+' item(ns) reprovados em aberto',
+      sub:Object.keys(porV).slice(0,4).map(function(k){ return k+': '+porV[k]; }).join(' · ')+
+        '. Mais antigo: '+dataBR(pend[0].data)+'.',
+      pagina:'chk' });
+  }
+
   docs.forEach(function(d){
     var s=situacaoDoc(d);
     var nome=nomeVeic(d.veiculoId);
@@ -866,10 +945,14 @@ function render(){
   if(ultimaCarga) document.getElementById('freshness').textContent='Dados de '+ultimaCarga;
   document.querySelectorAll('.frota-mov').forEach(function(el){ el.style.display=podeLancar?'':'none'; });
   document.querySelectorAll('.admin-only').forEach(function(el){ el.style.display=ehAdmin?'':'none'; });
+  var np=pendencias().length;
+  var cb=document.getElementById('cntChk');
+  if(cb){ cb.textContent=np; cb.style.display=np>0?'':'none'; }
   renderAvisos();
   if(pagina==='painel') renderPainel();
   else if(pagina==='veiculos') renderVeiculos();
   else if(pagina==='mov') renderMov();
+  else if(pagina==='chk') renderChk();
   else if(pagina==='docs') renderDocs();
   else if(pagina==='custos') renderCustos();
   else if(pagina==='config') renderConfig();
@@ -896,6 +979,364 @@ function pintarSel(id, itens, rot){
 function selVeiculos(id){
   return pintarSel(id, ativos().map(function(v){ return [v.firestoreId, (v.placa||'')+(v.apelido?' · '+v.apelido:'')]; }), 'Todos os veículos');
 }
+
+/* ============ CHECKLIST SEMANAL ============ */
+/* A semana é a ISO: começa na segunda. Sem isso, checklist feito no domingo
+   e na segunda cairiam em semanas diferentes ou iguais dependendo do país. */
+function semanaDe(iso){
+  var d=new Date(String(iso).slice(0,10)+'T12:00:00');
+  if(isNaN(d.getTime())) return '';
+  var dia=(d.getDay()+6)%7;                 // 0 = segunda
+  d.setDate(d.getDate()-dia+3);             // quinta da mesma semana
+  var ano=d.getFullYear();
+  var jan4=new Date(ano,0,4,12);
+  var djan=(jan4.getDay()+6)%7;
+  jan4.setDate(jan4.getDate()-djan+3);
+  var semana=1+Math.round((d-jan4)/(7*86400000));
+  return ano+'-W'+String(semana).padStart(2,'0');
+}
+function semanaAtual(){ return semanaDe(hoje()); }
+function rotuloSemana(s){
+  if(!s) return '—';
+  var p=String(s).split('-W');
+  return 'sem '+p[1]+'/'+String(p[0]).slice(2);
+}
+function modeloDe(tipo){
+  var k=norm(tipo)||'(SEM TIPO)';
+  var m=modelosChk[k];
+  return (m && Array.isArray(m.itens) && m.itens.length) ? m.itens : null;
+}
+function chkDe(veiculoId, semana){
+  for(var i=0;i<checklists.length;i++){
+    var c=checklists[i];
+    if(c.veiculoId===veiculoId && c.semana===semana) return c;
+  }
+  return null;
+}
+// pendências: item reprovado que ainda não foi resolvido
+function pendencias(){
+  var out=[];
+  checklists.forEach(function(c){
+    (c.itens||[]).forEach(function(it){
+      if(it.ok!==false) return;
+      var res=(c.resolvidos||{})[it.id];
+      if(res) return;
+      out.push({ chk:c, item:it, veiculo:veic(c.veiculoId), semana:c.semana, data:c.data });
+    });
+  });
+  return out.sort(function(a,b){ return String(a.data||'').localeCompare(String(b.data||'')); });
+}
+
+function renderChk(){
+  selVeiculos('ck-veic');
+  var sem=semanaAtual();
+  var at=ativos();
+  var feitos=at.filter(function(v){ return !!chkDe(v.firestoreId, sem); });
+  var pend=pendencias();
+  var semModelo=at.filter(function(v){ return !modeloDe(v.tipo); });
+
+  document.getElementById('ck-kpis').innerHTML=[
+    '<div class="card"><div class="klabel">Semana</div><div class="kval">'+rotuloSemana(sem)+'</div><div class="khint">'+dataBR(hoje())+'</div></div>',
+    '<div class="card"><div class="klabel">Feitos nesta semana</div><div class="kval" style="color:'+(feitos.length===at.length?'var(--green)':'var(--amber)')+'">'+feitos.length+'</div><div class="khint">de '+at.length+' veículos</div></div>',
+    '<div class="card"><div class="klabel">Pendências abertas</div><div class="kval" style="color:'+(pend.length?'var(--red)':'var(--green)')+'">'+pend.length+'</div><div class="khint">itens reprovados</div></div>',
+    '<div class="card"><div class="klabel">Sem modelo</div><div class="kval" style="color:'+(semModelo.length?'var(--amber)':'var(--green)')+'">'+semModelo.length+'</div><div class="khint">tipos a configurar</div></div>',
+    '<div class="card"><div class="klabel">Checklists</div><div class="kval">'+checklists.length+'</div><div class="khint">no histórico</div></div>'
+  ].join('');
+
+  var al='';
+  if(semModelo.length){
+    var tipos={}; semModelo.forEach(function(v){ tipos[norm(v.tipo)||'(sem tipo)']=1; });
+    al+='<div class="alert a-warn">⚠ Sem modelo de checklist para: <strong>'+esc(Object.keys(tipos).join(', '))+
+      '</strong>. Esses veículos não podem ser inspecionados até você criar o modelo em Configurações.</div>';
+  }
+  var faltam=at.length-feitos.length;
+  if(faltam>0 && !semModelo.length) al+='<div class="alert a-info">◇ '+faltam+' veículo(s) ainda sem checklist nesta semana.</div>';
+  document.getElementById('ck-alertas').innerHTML=al;
+
+  // pendências
+  document.getElementById('ck-pend').innerHTML = pend.length
+    ? pend.map(function(p,i){
+        var v=p.veiculo;
+        return '<div class="pend"><div style="display:flex;justify-content:space-between;gap:11px;flex-wrap:wrap">'+
+          '<div style="min-width:0"><div style="font-size:14px;font-weight:600">'+esc(p.item.texto||'—')+'</div>'+
+          '<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+
+            '<span class="mono">'+esc(v?v.placa:'(removido)')+'</span> · '+rotuloSemana(p.semana)+' · '+dataBR(p.data)+
+            ' · '+esc(String(p.chk.quem||'').split('@')[0])+'</div>'+
+          (p.item.obs?'<div style="font-size:12px;margin-top:5px">“'+esc(p.item.obs)+'”</div>':'')+'</div>'+
+          (podeLancar?'<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:flex-start">'+
+            '<button class="btn btn-sm" onclick="pendManutencao(\''+esc(p.chk.firestoreId)+'\',\''+esc(p.item.id)+'\')">Lançar manutenção</button>'+
+            '<button class="btn btn-sm btn-ghost" onclick="pendResolver(\''+esc(p.chk.firestoreId)+'\',\''+esc(p.item.id)+'\')">Resolvido</button>'+
+          '</div>':'')+
+        '</div></div>';
+      }).join('')
+    : '<div class="card empty">Nenhuma pendência aberta. ✓</div>';
+
+  // semana atual
+  var hs='<thead><tr><th>Veículo</th><th>Tipo</th><th>Situação</th><th class="r">Reprovados</th><th>Quando</th><th>Quem</th><th></th></tr></thead><tbody>';
+  if(!at.length) hs+='<tr><td colspan="7" class="empty">Nenhum veículo ativo.</td></tr>';
+  at.slice().sort(function(a,b){ return String(a.placa||'').localeCompare(String(b.placa||''),'pt-BR'); })
+    .forEach(function(v){
+      var c=chkDe(v.firestoreId, sem);
+      var nrep=c?(c.itens||[]).filter(function(x){ return x.ok===false; }).length:0;
+      var temModelo=!!modeloDe(v.tipo);
+      hs+='<tr>'+
+        '<td class="mono">'+esc(v.placa||'—')+'</td>'+
+        '<td style="color:var(--muted);font-size:11.5px">'+esc(v.tipo||'—')+'</td>'+
+        '<td>'+(c
+          ? (nrep?'<span class="pill p-warn">com '+nrep+' reprovado(s)</span>':'<span class="pill p-ok">ok</span>')
+          : (temModelo?'<span class="pill p-mut">não feito</span>':'<span class="pill p-bad">sem modelo</span>'))+'</td>'+
+        '<td class="r num">'+(c?(nrep||'—'):'—')+'</td>'+
+        '<td class="num" style="font-size:11.5px">'+(c?dataBR(c.data):'—')+'</td>'+
+        '<td style="color:var(--muted);font-size:11.5px">'+(c?esc(String(c.quem||'').split('@')[0]):'—')+'</td>'+
+        '<td class="r">'+(podeLancar&&temModelo
+          ? '<button class="btn btn-sm '+(c?'btn-ghost':'')+'" onclick="abrirChecklist(\''+esc(v.firestoreId)+'\')">'+(c?'Refazer':'Preencher')+'</button>'
+          : '')+'</td></tr>';
+    });
+  document.getElementById('ck-semana').innerHTML=hs+'</tbody>';
+
+  // histórico
+  var per=num(document.getElementById('ck-per').value);
+  var fv=document.getElementById('ck-veic').value;
+  var lim='';
+  if(per){
+    var d=new Date(); d.setDate(d.getDate()-per*7);
+    lim=d.toISOString().slice(0,10);
+  }
+  var hist=checklists.filter(function(c){
+    if(lim && String(c.data||'')<lim) return false;
+    if(fv && c.veiculoId!==fv) return false;
+    return true;
+  });
+  var hh='<thead><tr><th>Semana</th><th>Data</th><th>Veículo</th><th class="r">Km</th><th class="r">Itens</th><th class="r">Reprovados</th><th class="r">Abertos</th><th>Quem</th></tr></thead><tbody>';
+  if(!hist.length) hh+='<tr><td colspan="8" class="empty">Nenhum checklist no período.</td></tr>';
+  hist.slice(0,200).forEach(function(c){
+    var itens=(c.itens||[]);
+    var nrep=itens.filter(function(x){ return x.ok===false; }).length;
+    var abertos=itens.filter(function(x){ return x.ok===false && !(c.resolvidos||{})[x.id]; }).length;
+    hh+='<tr class="clickrow" onclick="verChecklist(\''+esc(c.firestoreId)+'\')">'+
+      '<td>'+rotuloSemana(c.semana)+'</td>'+
+      '<td class="num">'+dataBR(c.data)+'</td>'+
+      '<td class="mono">'+esc(nomeVeic(c.veiculoId))+'</td>'+
+      '<td class="r num">'+(num(c.km)>0?fmtN(num(c.km),0):'—')+'</td>'+
+      '<td class="r num">'+itens.length+'</td>'+
+      '<td class="r num" style="'+(nrep?'color:var(--amber);font-weight:600':'')+'">'+(nrep||'—')+'</td>'+
+      '<td class="r num" style="'+(abertos?'color:var(--red);font-weight:600':'')+'">'+(abertos||'—')+'</td>'+
+      '<td style="color:var(--muted);font-size:11.5px">'+esc(String(c.quem||'').split('@')[0])+'</td></tr>';
+  });
+  document.getElementById('ck-hist').innerHTML=hh+'</tbody>';
+  document.getElementById('psub').textContent=feitos.length+' de '+at.length+' feitos · '+pend.length+' pendência(s)';
+}
+
+var _chkEstado={ veiculoId:'', itens:[] };
+window.abrirChecklist=function(veiculoId){
+  if(!podeLancar){ alert('Você não tem permissão para preencher.'); return; }
+  var comModelo=ativos().filter(function(v){ return !!modeloDe(v.tipo); });
+  if(!comModelo.length){
+    alert('Nenhum tipo de veículo tem modelo de checklist.\n\nCrie o modelo em Configurações primeiro.');
+    return;
+  }
+  var vid=veiculoId||comModelo[0].firestoreId;
+  _chkEstado.veiculoId=vid;
+  _chkEstado.itens=[];
+  modal({
+    titulo:'Checklist semanal',
+    sub:rotuloSemana(semanaAtual())+' · o modelo vem do tipo do veículo',
+    body:
+      '<div class="fgrid">'+
+        '<div><label>Veículo</label><select id="ck-vsel" onchange="chkTrocarVeiculo(this.value)">'+
+          comModelo.sort(function(a,b){ return String(a.placa||'').localeCompare(String(b.placa||''),'pt-BR'); })
+            .map(function(v){ return '<option value="'+esc(v.firestoreId)+'"'+(v.firestoreId===vid?' selected':'')+'>'+
+              esc((v.placa||'')+' · '+(v.tipo||''))+'</option>'; }).join('')+
+        '</select></div>'+
+        '<div><label>Data</label><input type="date" id="ck-data" value="'+hoje()+'" /></div>'+
+        '<div><label>Odômetro · km</label><input type="number" id="ck-km" step="1" min="0" /></div>'+
+      '</div>'+
+      '<div id="ck-aviso" style="margin-top:10px"></div>'+
+      '<div id="ck-itens" style="margin-top:12px"></div>'+
+      '<div class="fld" style="margin-top:12px"><label>Observação geral</label><input type="text" id="ck-obs" placeholder="opcional" /></div>',
+    ok:'Salvar checklist',
+    onOk:function(){ return chkSalvar(); }
+  });
+  setTimeout(function(){ chkTrocarVeiculo(vid); },60);
+};
+window.chkTrocarVeiculo=function(vid){
+  _chkEstado.veiculoId=vid;
+  var v=veic(vid);
+  var mod=modeloDe(v&&v.tipo)||[];
+  _chkEstado.itens=mod.map(function(it,i){
+    return { id:(it.id||('i'+i)), texto:(it.texto||String(it)), ok:null, obs:'' };
+  });
+  var av=document.getElementById('ck-aviso');
+  if(av){
+    var jaTem=chkDe(vid, semanaAtual());
+    av.innerHTML=jaTem
+      ? '<div class="alert a-warn" style="margin:0">⚠ Já existe checklist deste veículo em '+rotuloSemana(semanaAtual())+'. Salvar cria outro registro; o anterior continua no histórico.</div>'
+      : '';
+  }
+  var km=document.getElementById('ck-km');
+  if(km && !km.value){ var a=kmAtual(vid); if(a.km>0) km.placeholder='último: '+fmtN(a.km,0); }
+  chkPintarItens();
+};
+function chkPintarItens(){
+  var host=document.getElementById('ck-itens');
+  if(!host) return;
+  var n=_chkEstado.itens.length;
+  var resp=_chkEstado.itens.filter(function(x){ return x.ok!==null; }).length;
+  var rep=_chkEstado.itens.filter(function(x){ return x.ok===false; }).length;
+  host.innerHTML='<div class="klabel">Itens ('+resp+' de '+n+' respondidos'+(rep?' · '+rep+' reprovado(s)':'')+')</div>'+
+    '<div style="margin-top:6px">'+
+    _chkEstado.itens.map(function(it,i){
+      return '<div class="chk-item"><div style="min-width:0">'+
+          '<div style="font-size:13px">'+esc(it.texto)+'</div>'+
+          (it.ok===false
+            ? '<input type="text" value="'+esc(it.obs||'')+'" oninput="chkObs('+i+',this.value)" placeholder="o que está errado?" style="margin-top:5px;font-size:12px" />'
+            : '')+
+        '</div>'+
+        '<div class="chk-op">'+
+          '<button onclick="chkMarcar('+i+',true)" class="'+(it.ok===true?'ok':'')+'">OK</button>'+
+          '<button onclick="chkMarcar('+i+',false)" class="'+(it.ok===false?'no':'')+'">Não</button>'+
+          '<button onclick="chkMarcar('+i+',null,1)" class="'+(it.ok==='na'?'na':'')+'">N/A</button>'+
+        '</div></div>';
+    }).join('')+'</div>';
+}
+window.chkMarcar=function(i, valor, na){
+  var it=_chkEstado.itens[i]; if(!it) return;
+  it.ok = na ? 'na' : valor;
+  if(it.ok!==false) it.obs='';
+  chkPintarItens();
+};
+window.chkObs=function(i, v){ if(_chkEstado.itens[i]) _chkEstado.itens[i].obs=v; };
+function chkSalvar(){
+  var vid=_chkEstado.veiculoId;
+  var v=veic(vid);
+  if(!v){ alert('Escolha o veículo.'); return false; }
+  var faltam=_chkEstado.itens.filter(function(x){ return x.ok===null; });
+  if(faltam.length){
+    alert(faltam.length+' item(ns) sem resposta.\n\nMarque OK, Não ou N/A em todos — checklist pela metade não serve de registro.');
+    return false;
+  }
+  var semObs=_chkEstado.itens.filter(function(x){ return x.ok===false && !String(x.obs||'').trim(); });
+  if(semObs.length && !confirm(semObs.length+' item(ns) reprovados sem observação.\n\nSem descrever o problema, quem for resolver não sabe o que fazer. Salvar assim?')) return false;
+
+  var data=document.getElementById('ck-data').value||hoje();
+  var km=num(document.getElementById('ck-km').value);
+  var atual=kmAtual(vid).km;
+  if(km>0 && atual>0 && km<atual && !confirm('Odômetro informado ('+fmtN(km,0)+') é menor que o último ('+fmtN(atual,0)+').\n\nRegistrar assim?')) return false;
+
+  var rep=_chkEstado.itens.filter(function(x){ return x.ok===false; });
+  var doc_={ veiculoId:vid, tipo:norm(v.tipo), semana:semanaDe(data), data:data, km:km,
+    itens:_chkEstado.itens.map(function(x){ return { id:x.id, texto:x.texto, ok:x.ok, obs:String(x.obs||'').trim() }; }),
+    reprovados:rep.length, resolvidos:{},
+    obs:(document.getElementById('ck-obs').value||'').trim(),
+    quem:sessaoEmail, quemNome:sessaoNome, em:agora() };
+
+  addDoc(collection(dbC,'frotaChecklist'), doc_)
+    .then(function(){
+      fecharModal();
+      // o km do checklist também alimenta o odômetro
+      if(km>0){
+        addDoc(collection(dbC,'frotaMov'), { veiculoId:vid, tipo:'km', data:data, km:km, valor:0,
+          obs:'Checklist '+rotuloSemana(doc_.semana), quem:sessaoEmail, quemNome:sessaoNome, em:agora() })
+          .catch(function(e){ console.warn('km do checklist:',e.code||e.message); });
+      }
+      if(rep.length){
+        // sugere lançar a manutenção com a descrição já pronta
+        if(confirm('✓ Checklist salvo com '+rep.length+' item(ns) reprovado(s).\n\n'+
+            rep.map(function(x){ return '· '+x.texto+(x.obs?': '+x.obs:''); }).join('\n')+
+            '\n\nLançar a manutenção agora?')){
+          abrirLanc('manutencao', vid);
+          setTimeout(function(){
+            var d=document.getElementById('lc-desc');
+            if(d) d.value=rep.map(function(x){ return x.texto+(x.obs?' ('+x.obs+')':''); }).join('; ');
+            var k=document.getElementById('lc-km');
+            if(k && km>0) k.value=km;
+          },140);
+        }
+      }
+    })
+    .catch(function(e){ console.error('chkSalvar:',e); alert('Erro ao salvar: '+(e.code||e.message)); });
+  return false;
+}
+window.pendResolver=function(chkId, itemId){
+  var c=null; checklists.forEach(function(x){ if(x.firestoreId===chkId) c=x; });
+  if(!c) return;
+  var it=(c.itens||[]).filter(function(x){ return x.id===itemId; })[0];
+  var motivo=prompt('Como foi resolvido?\n\n'+((it&&it.texto)||''), '');
+  if(motivo===null) return;
+  var upd={};
+  upd['resolvidos.'+itemId]={ em:agora(), por:sessaoEmail, como:String(motivo||'').trim() };
+  updateDoc(doc(dbC,'frotaChecklist',chkId), upd)
+    .catch(function(e){ console.error('pendResolver:',e); alert('Erro: '+(e.code||e.message)); });
+};
+window.pendManutencao=function(chkId, itemId){
+  var c=null; checklists.forEach(function(x){ if(x.firestoreId===chkId) c=x; });
+  if(!c) return;
+  var it=(c.itens||[]).filter(function(x){ return x.id===itemId; })[0];
+  if(!it) return;
+  abrirLanc('manutencao', c.veiculoId);
+  setTimeout(function(){
+    var d=document.getElementById('lc-desc');
+    if(d) d.value=it.texto+(it.obs?' ('+it.obs+')':'');
+    var k=document.getElementById('lc-km');
+    if(k && num(c.km)>0) k.value=num(c.km);
+    // marca resolvido junto, apontando para a manutenção
+    var ok=document.getElementById('modal-ok');
+    if(ok){
+      var antigo=ok.onclick;
+      ok.onclick=function(){
+        var r=antigo?antigo():undefined;
+        var upd={};
+        upd['resolvidos.'+itemId]={ em:agora(), por:sessaoEmail, como:'Manutenção lançada' };
+        updateDoc(doc(dbC,'frotaChecklist',chkId), upd)
+          .catch(function(e){ console.warn('resolver via manutencao:',e.code||e.message); });
+        return r;
+      };
+    }
+  },140);
+};
+window.verChecklist=function(id){
+  var c=null; checklists.forEach(function(x){ if(x.firestoreId===id) c=x; });
+  if(!c) return;
+  var itens=(c.itens||[]);
+  modal({
+    titulo:'Checklist · '+esc(nomeVeic(c.veiculoId)),
+    sub:rotuloSemana(c.semana)+' · '+dataBR(c.data)+(num(c.km)>0?' · '+fmtN(num(c.km),0)+' km':'')+' · '+esc(String(c.quem||'').split('@')[0]),
+    body:
+      '<div class="fgrid">'+
+        '<div class="card" style="box-shadow:none"><div class="klabel">Itens</div><div class="kval" style="font-size:19px">'+itens.length+'</div></div>'+
+        '<div class="card" style="box-shadow:none"><div class="klabel">Reprovados</div><div class="kval" style="font-size:19px;color:'+(c.reprovados?'var(--amber)':'var(--green)')+'">'+num(c.reprovados)+'</div></div>'+
+        '<div class="card" style="box-shadow:none"><div class="klabel">Ainda abertos</div><div class="kval" style="font-size:19px;color:'+(itens.filter(function(x){return x.ok===false&&!(c.resolvidos||{})[x.id];}).length?'var(--red)':'var(--green)')+'">'+itens.filter(function(x){return x.ok===false&&!(c.resolvidos||{})[x.id];}).length+'</div></div>'+
+      '</div>'+
+      '<div style="margin-top:14px">'+itens.map(function(it){
+        var res=(c.resolvidos||{})[it.id];
+        var pill = it.ok===true?'<span class="pill p-ok">ok</span>'
+                 : it.ok===false?(res?'<span class="pill p-mut">resolvido</span>':'<span class="pill p-bad">reprovado</span>')
+                 : '<span class="pill p-mut">n/a</span>';
+        return '<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">'+
+          '<div style="min-width:0"><div style="font-size:13px">'+esc(it.texto)+'</div>'+
+          (it.obs?'<div style="font-size:11.5px;color:var(--muted)">“'+esc(it.obs)+'”</div>':'')+
+          (res?'<div style="font-size:11px;color:var(--green)">resolvido em '+dataBR(res.em)+(res.como?': '+esc(res.como):'')+'</div>':'')+
+          '</div><div>'+pill+'</div></div>';
+      }).join('')+'</div>'+
+      (c.obs?'<div style="font-size:12.5px;margin-top:12px"><strong>Observação:</strong> '+esc(c.obs)+'</div>':'')
+  });
+};
+window.exportarChk=function(){
+  var L=[['Semana','Data','Veiculo','Tipo','Km','Item','Situacao','Observacao','Resolvido','Como','Quem'].join(';')];
+  checklists.slice().sort(function(a,b){ return String(b.data||'').localeCompare(String(a.data||'')); })
+    .forEach(function(c){
+      (c.itens||[]).forEach(function(it){
+        var res=(c.resolvidos||{})[it.id];
+        L.push([c.semana||'', dataBR(c.data), nomeVeic(c.veiculoId), c.tipo||'', br(c.km),
+          String(it.texto||'').replace(/;/g,','),
+          (it.ok===true?'ok':(it.ok===false?'reprovado':'n/a')),
+          String(it.obs||'').replace(/[;\n]/g,' '),
+          res?dataBR(res.em):'', res?String(res.como||'').replace(/[;\n]/g,' '):'',
+          c.quem||''].join(';'));
+      });
+    });
+  baixar('frota-checklist-'+hoje()+'.csv', L);
+};
 
 /* ============ PAINEL ============ */
 function _pnDados(){
@@ -1435,7 +1876,77 @@ function renderPneus(){
   document.getElementById('tbl-custos').innerHTML=html+'</tbody>';
 }
 
+function tiposConhecidos(){
+  var t={};
+  (cfg.tipos||[]).forEach(function(x){ var k=norm(x); if(k) t[k]=1; });
+  veiculos.forEach(function(v){ var k=norm(v.tipo); if(k) t[k]=1; });
+  Object.keys(modelosChk).forEach(function(k){ t[k]=1; });
+  return Object.keys(t).sort();
+}
+function renderConfigChk(){
+  var sel=document.getElementById('cg-chk-tipo'); if(!sel) return;
+  var lista=tiposConhecidos();
+  var mk=lista.join('|');
+  if(sel.dataset.mk!==mk){
+    var at=sel.value;
+    sel.innerHTML=lista.length
+      ? lista.map(function(t){ return '<option value="'+esc(t)+'">'+esc(t)+'</option>'; }).join('')
+      : '<option value="">cadastre um veículo primeiro</option>';
+    sel.dataset.mk=mk;
+    if(at && lista.indexOf(at)>=0) sel.value=at;
+  }
+  chkModeloTrocar();
+}
+window.chkModeloTrocar=function(){
+  var sel=document.getElementById('cg-chk-tipo');
+  var ta=document.getElementById('cg-chk-itens');
+  var info=document.getElementById('cg-chk-info');
+  if(!sel||!ta) return;
+  var t=sel.value;
+  var m=modelosChk[t];
+  var itens=(m&&Array.isArray(m.itens))?m.itens:[];
+  ta.value=itens.map(function(x){ return x.texto||String(x); }).join('\n');
+  var n=veiculos.filter(function(v){ return norm(v.tipo)===t; }).length;
+  if(info) info.textContent=(itens.length?itens.length+' item(ns) salvos':'nenhum item salvo ainda')+
+    ' · '+n+' veículo(s) deste tipo'+(m&&m.atualizadoEm?' · atualizado em '+dataBR(m.atualizadoEm):'');
+};
+window.salvarModeloChk=function(){
+  if(!ehAdmin){ alert('Só o administrador altera os modelos.'); return; }
+  var t=document.getElementById('cg-chk-tipo').value;
+  if(!t){ alert('Escolha o tipo.'); return; }
+  var linhas=String(document.getElementById('cg-chk-itens').value||'').split('\n')
+    .map(function(s){ return s.trim(); }).filter(Boolean);
+  var st=document.getElementById('cg-chk-status');
+  if(!linhas.length && !confirm('Nenhum item. Salvar assim apaga o modelo de '+t+' e impede a inspeção desses veículos. Continuar?')) return;
+  /* Os ids são estáveis por posição+texto: assim um checklist antigo continua
+     casando com o item certo se a lista for reordenada depois.            */
+  var itens=linhas.map(function(txt,i){
+    var slug=_slug(txt).slice(0,24)||('i'+i);
+    return { id:slug, texto:txt };
+  });
+  var vistos={};
+  itens.forEach(function(it,i){ if(vistos[it.id]) it.id=it.id+'_'+i; vistos[it.id]=1; });
+  if(st) st.textContent='Salvando…';
+  setDoc(doc(dbC,'frotaChecklistModelo',t), { tipo:t, itens:itens, atualizadoEm:agora(), atualizadoPor:sessaoEmail }, { merge:true })
+    .then(function(){ if(st){ st.textContent='✓ Salvo'; setTimeout(function(){ if(st.textContent==='✓ Salvo') st.textContent=''; },2400); } })
+    .catch(function(e){ console.error('salvarModeloChk:',e); if(st) st.textContent=''; alert('Erro: '+(e.code||e.message)); });
+};
+window.copiarModeloChk=function(){
+  var comModelo=Object.keys(modelosChk).filter(function(k){
+    return Array.isArray(modelosChk[k].itens) && modelosChk[k].itens.length;
+  });
+  if(!comModelo.length){ alert('Nenhum outro tipo tem modelo salvo ainda.'); return; }
+  var de=prompt('Copiar os itens de qual tipo?\n\n'+comModelo.join('\n'), comModelo[0]);
+  if(!de) return;
+  var k=norm(de);
+  if(!modelosChk[k]){ alert('Tipo "'+de+'" não tem modelo.'); return; }
+  document.getElementById('cg-chk-itens').value=modelosChk[k].itens.map(function(x){ return x.texto; }).join('\n');
+  var info=document.getElementById('cg-chk-info');
+  if(info) info.textContent='Copiado de '+k+' — ajuste e clique em Salvar modelo.';
+};
+
 function renderConfig(){
+  renderConfigChk();
   document.getElementById('cg-oleo').value=num(cfg.oleoKm)||10000;
   document.getElementById('cg-oleom').value=num(cfg.oleoMeses)||6;
   document.getElementById('cg-rev').value=num(cfg.revisaoKm)||20000;
@@ -2263,6 +2774,15 @@ function liberar(d){
   });
   ouvir('frotaMov', query(collection(dbC,'frotaMov'), orderBy('em','desc'), limit(3000)), function(s){
     movs=s.docs.map(function(x){ return Object.assign({ firestoreId:x.id }, x.data()); });
+    render();
+  });
+  ouvir('frotaChecklistModelo', collection(dbC,'frotaChecklistModelo'), function(s){
+    modelosChk={};
+    s.docs.forEach(function(x){ modelosChk[x.id]=Object.assign({ id:x.id }, x.data()); });
+    render();
+  });
+  ouvir('frotaChecklist', query(collection(dbC,'frotaChecklist'), orderBy('em','desc'), limit(1500)), function(s){
+    checklists=s.docs.map(function(x){ return Object.assign({ firestoreId:x.id }, x.data()); });
     render();
   });
   ouvir('frotaDocs', collection(dbC,'frotaDocs'), function(s){
