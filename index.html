@@ -64,9 +64,14 @@ textarea{resize:vertical;min-height:60px}
 .side:hover .side-logo .brand-logo-box,.side.pin .side-logo .brand-logo-box{display:block}
 .side:hover .side-logo .brand-cap,.side.pin .side-logo .brand-cap{display:block;text-align:left;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:10px;padding-left:2px}
 .side:hover .side-logo .logo-mini,.side.pin .side-logo .logo-mini{display:none}
-.pinbtn{position:absolute;top:14px;right:9px;background:none;border:none;color:var(--muted);font-size:14px;padding:2px 5px;border-radius:6px;opacity:0;transition:opacity .12s}
-.side:hover .pinbtn,.side.pin .pinbtn{opacity:1}
+/* Com opacity:0 o botão continuava clicável, invisível sobre o logo: clicar
+   ali fixava ou soltava a barra sem intenção. */
+.pinbtn{position:absolute;top:14px;right:9px;background:none;border:none;color:var(--muted);
+  font-size:14px;padding:4px 7px;border-radius:6px;opacity:0;pointer-events:none;transition:opacity .12s,background .12s}
+.side:hover .pinbtn,.side.pin .pinbtn{opacity:1;pointer-events:auto}
+.pinbtn:hover{background:var(--card-2);color:var(--text)}
 .side.pin .pinbtn{color:var(--primary)}
+.side.pin .pinbtn:hover{color:var(--primary)}
 .navbtn{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;background:none;border:none;color:var(--muted);font-size:13.5px;font-weight:500;text-align:left;width:100%}
 .navbtn:hover{background:var(--card-2);color:var(--text)}
 .navbtn.on{background:var(--side-active);color:var(--side-active-text);font-weight:600}
@@ -144,6 +149,13 @@ tbody tr:hover{background:var(--card-2)}
 .warndot{width:6px;height:6px;border-radius:50%;flex:0 0 6px;margin-top:6px}
 .warntit{font-size:12.5px;font-weight:600;line-height:1.35}
 .warnsub{font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.4}
+
+/* seletor de visualização */
+.vseg{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.vbtn{background:none;border:none;color:var(--muted);font-family:inherit;font-size:14px;line-height:1;padding:7px 11px}
+.vbtn+.vbtn{border-left:1px solid var(--border)}
+.vbtn:hover{color:var(--text);background:var(--card-2)}
+.vbtn.on{background:var(--side-active);color:var(--side-active-text)}
 
 /* cartão de veículo */
 .vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
@@ -281,9 +293,13 @@ tbody tr:hover{background:var(--card-2)}
           <option value="inativos">Só inativos</option>
           <option value="">Ativos e inativos</option>
         </select>
+        <div class="vseg" title="Como mostrar os veículos">
+          <button class="vbtn" data-v="cards" onclick="setVisaoVeic('cards')" title="Cartões">▦</button>
+          <button class="vbtn" data-v="lista" onclick="setVisaoVeic('lista')" title="Lista">☰</button>
+        </div>
         <button class="btn btn-sm frota-mov" onclick="abrirVeiculo(null)" style="margin-left:auto">+ Novo veículo</button>
       </div>
-      <div class="vgrid" id="vlista"></div>
+      <div id="vlista"></div>
     </div>
 
     <!-- LANÇAMENTOS -->
@@ -426,7 +442,10 @@ var pagina='painel', sessaoEmail='', sessaoUid='', sessaoNome='', ehAdmin=false,
 var veiculos=[], movs=[], docs=[], cfg={ oleoKm:10000, oleoMeses:6, revisaoKm:20000, revisaoMeses:12,
   diasAviso:30, kmParadoDias:15, desvioPct:15, tipos:[] };
 var subs={}, ultimaCarga=null;
-var ord={ mov:{col:'em',dir:-1}, docs:{col:'vencimento',dir:1}, custos:{col:'total',dir:-1} };
+var ord={ mov:{col:'em',dir:-1}, docs:{col:'vencimento',dir:1}, custos:{col:'total',dir:-1},
+          veic:{col:'placa',dir:1} };
+var visaoVeic='cards';
+try{ var _vv=localStorage.getItem('mc_frota_visao'); if(_vv==='lista'||_vv==='cards') visaoVeic=_vv; }catch(e){}
 const TITLES={
   painel:['Painel','Onde o dinheiro da frota está indo'],
   veiculos:['Veículos','Frota, odômetro e próximas manutenções'],
@@ -461,13 +480,28 @@ function diasAte(dt){ if(!dt) return null; return diasEntre(hoje(), dt); }
 function applyTheme(t){ document.documentElement.setAttribute('data-theme',t); try{ localStorage.setItem('mc_frota_theme',t); }catch(e){} }
 window.toggleTema=function(){ var c=document.documentElement.getAttribute('data-theme')||'dark'; applyTheme(c==='dark'?'light':'dark'); };
 (function(){ try{ var t=localStorage.getItem('mc_frota_theme'); applyTheme(t==='light'?'light':'dark'); }catch(e){ applyTheme('dark'); } })();
+function pintarPin(on){
+  var b=document.querySelector('.pinbtn');
+  if(!b) return;
+  // sem isto, soltar a barra com o mouse em cima não muda nada na tela
+  // (o hover mantém aberto) e parecia que o botão não funcionava
+  b.textContent = on ? '\u25e8' : '\u25e9';
+  b.title = on ? 'Soltar o menu (volta a recolher)' : 'Fixar o menu aberto';
+}
 window.togglePin=function(e){
-  if(e) e.stopPropagation();
+  if(e){ e.stopPropagation(); e.preventDefault(); }
   var s=document.getElementById('sidebar');
   var on=s.classList.toggle('pin');
   try{ localStorage.setItem('mc_frota_pin',on?'1':'0'); }catch(err){}
+  pintarPin(on);
 };
-(function(){ try{ if(localStorage.getItem('mc_frota_pin')==='1'){ var s=document.getElementById('sidebar'); if(s) s.classList.add('pin'); } }catch(e){} })();
+(function(){
+  var on=false;
+  try{ on=(localStorage.getItem('mc_frota_pin')==='1'); }catch(e){}
+  var s=document.getElementById('sidebar');
+  if(s && on) s.classList.add('pin');
+  pintarPin(on);
+})();
 
 window.nav=function(p){
   if(!TITLES[p]) return;
@@ -841,6 +875,11 @@ function render(){
   else if(pagina==='config') renderConfig();
 }
 window.render=render;
+window.setVisaoVeic=function(v){
+  visaoVeic=v;
+  try{ localStorage.setItem('mc_frota_visao',v); }catch(e){}
+  render();
+};
 
 function pintarSel(id, itens, rot){
   var s=document.getElementById(id); if(!s) return '';
@@ -1045,10 +1084,61 @@ function renderVeiculos(){
     return true;
   }).sort(function(a,b){ return String(a.placa||'').localeCompare(String(b.placa||''),'pt-BR'); });
 
+  document.querySelectorAll('.vbtn').forEach(function(el){
+    el.classList.toggle('on', el.getAttribute('data-v')===visaoVeic);
+  });
   document.getElementById('vlista').innerHTML = lista.length
-    ? lista.map(cartaoVeic).join('')
+    ? (visaoVeic==='lista' ? listaVeic(lista) : '<div class="vgrid">'+lista.map(cartaoVeic).join('')+'</div>')
     : '<div class="card empty">'+(veiculos.length?'Nenhum veículo com esses filtros.':'Nenhum veículo cadastrado. Use <strong>+ Novo veículo</strong>.')+'</div>';
   document.getElementById('psub').textContent=at.length+' ativo(s) de '+veiculos.length;
+}
+/* Lista corrida: mais veículos por tela e valores alinhados para comparar.
+   Os mesmos dados do cartão, sem a barra de progresso do óleo.          */
+var COLS_VEIC=[
+  { k:'placa',  l:'Placa',                v:function(x){ return norm(x.v.placa); } },
+  { k:'apelido',l:'Apelido',              v:function(x){ return norm(x.v.apelido); } },
+  { k:'tipo',   l:'Tipo',                 v:function(x){ return norm(x.v.tipo); } },
+  { k:'modelo', l:'Marca e modelo',       v:function(x){ return norm((x.v.marca||'')+' '+(x.v.modelo||'')); } },
+  { k:'ano',    l:'Ano',            r:1,  v:function(x){ return num(x.v.ano)>0?num(x.v.ano):null; } },
+  { k:'motorista',l:'Motorista',          v:function(x){ return norm(x.v.motorista); } },
+  { k:'km',     l:'Odômetro',       r:1,  v:function(x){ return x.km>0?x.km:null; } },
+  { k:'oleo',   l:'Óleo em',        r:1,  v:function(x){ return x.po?x.po.faltam:null; } },
+  { k:'consumo',l:'km/L',           r:1,  v:function(x){ return x.c.kmL; } },
+  { k:'gasto',  l:'Gasto 90d',      r:1,  v:function(x){ return x.g.total||null; } },
+  { k:'rkm',    l:'R$/km 90d',      r:1,  v:function(x){ return x.km90>0?x.g.total/x.km90:null; } },
+  { k:'docs',   l:'Doc. vencidos',  r:1,  v:function(x){ return x.dv||null; } }
+];
+function listaVeic(lista){
+  var desde=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
+  var arr=lista.map(function(v){
+    var id=v.firestoreId;
+    return { v:v, km:kmAtual(id).km, po:proximaOleo(id), c:consumo(id),
+             g:gastoDe(id,desde), km90:kmRodado(id,desde),
+             dv:docs.filter(function(d){ return d.veiculoId===id && situacaoDoc(d).st==='vencido'; }).length };
+  });
+  ordenarPor(arr,'veic',COLS_VEIC);
+  var html='<div class="tw"><div class="tscroll"><table>'+thead('veic',COLS_VEIC)+'<tbody>';
+  arr.forEach(function(x){
+    var oleo='—', cor='';
+    if(x.po){
+      if(x.po.faltam<=0){ oleo='vencida '+fmtN(-x.po.faltam,0)+' km'; cor='color:var(--red);font-weight:600'; }
+      else { oleo=fmtN(x.po.faltam,0)+' km'; if(x.po.faltam<=1000) cor='color:var(--amber);font-weight:600'; }
+    }
+    html+='<tr class="clickrow"'+(x.v.ativo===false?' style="opacity:.55"':'')+' onclick="verVeiculo(\''+esc(x.v.firestoreId)+'\')">'+
+      '<td class="mono" style="font-weight:600">'+esc(x.v.placa||'—')+'</td>'+
+      '<td>'+esc(x.v.apelido||'—')+'</td>'+
+      '<td style="color:var(--muted);font-size:11.5px">'+esc(x.v.tipo||'—')+'</td>'+
+      '<td>'+esc([x.v.marca,x.v.modelo].filter(Boolean).join(' ')||'—')+'</td>'+
+      '<td class="r num">'+(num(x.v.ano)>0?num(x.v.ano):'—')+'</td>'+
+      '<td>'+esc(x.v.motorista||'—')+'</td>'+
+      '<td class="r num">'+(x.km>0?fmtN(x.km,0):'—')+'</td>'+
+      '<td class="r num" style="'+cor+'">'+oleo+'</td>'+
+      '<td class="r num">'+(x.c.kmL?fmtN(x.c.kmL,2):'—')+'</td>'+
+      '<td class="r num">'+(x.g.total>0?fmtR$(x.g.total,2):'—')+'</td>'+
+      '<td class="r num">'+(x.km90>0?fmtR$(x.g.total/x.km90,2):'—')+'</td>'+
+      '<td class="r">'+(x.dv?'<span class="pill p-bad">'+x.dv+'</span>':'<span style="color:var(--muted)">—</span>')+'</td></tr>';
+  });
+  return html+'</tbody></table></div></div>';
 }
 function cartaoVeic(v){
   var id=v.firestoreId;
