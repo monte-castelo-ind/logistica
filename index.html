@@ -1754,10 +1754,23 @@ function _cabecalho(rows, obrigatorias){
   }
   return null;
 }
-function _lerPlanilha(file){
+/* Lê a aba mais provável, não a primeira: um arquivo com "manutenções" e
+   "cadastro de veiculos" fazia o importador de veículos pegar a aba errada,
+   e cada linha de manutenção virava um veículo.                            */
+function _lerPlanilha(file, preferir){
   return carregarXLSX().then(function(){ return file.arrayBuffer(); }).then(function(buf){
     var wb=XLSX.read(buf,{type:'array'});
-    return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''});
+    var nome=wb.SheetNames[0];
+    if(preferir && preferir.length && wb.SheetNames.length>1){
+      for(var i=0;i<preferir.length && nome===wb.SheetNames[0];i++){
+        for(var j=0;j<wb.SheetNames.length;j++){
+          if(_slug(wb.SheetNames[j]).indexOf(preferir[i])>=0){ nome=wb.SheetNames[j]; break; }
+        }
+        if(nome!==wb.SheetNames[0]) break;
+      }
+    }
+    return { aba:nome, abas:wb.SheetNames.slice(),
+             rows:XLSX.utils.sheet_to_json(wb.Sheets[nome],{header:1,defval:''}) };
   });
 }
 function _st(txt){ var el=document.getElementById('imp-status'); if(el) el.textContent=txt||''; }
@@ -1766,9 +1779,21 @@ window.importarVeiculos=function(input){
   var file=input.files&&input.files[0]; if(!file) return;
   if(!podeLancar){ alert('Sem permissão.'); input.value=''; return; }
   _st('Lendo a planilha…');
-  _lerPlanilha(file).then(function(rows){
+  _lerPlanilha(file, ['cadastro','veiculo','frota']).then(function(P){
+    var rows=P.rows;
     var C=_cabecalho(rows, [['placa']]);
     if(!C){ alert('Não achei a coluna Placa.\n\nA planilha precisa de uma coluna chamada Placa.'); return; }
+    /* Recusa a aba de manutenções: ela também tem Placa, e sem esta checagem
+       cada lançamento virava um veículo (164 em vez de 30).                */
+    var temData=C.head.some(function(x){ return x==='data'; });
+    var temCusto=C.head.some(function(x){ return x.indexOf('custo')>=0||x.indexOf('valor')>=0; });
+    var temServico=C.head.some(function(x){ return x.indexOf('servico')>=0||x.indexOf('estabelecimento')>=0; });
+    if(temData && (temCusto||temServico)){
+      alert('Esta aba parece ser o HISTÓRICO DE MANUTENÇÃO, não o cadastro de veículos.\n\n'+
+        'Aba lida: "'+P.aba+'"\nColunas: '+C.head.filter(Boolean).slice(0,8).join(', ')+
+        '\n\nUse o botão "Histórico de manutenção" para este arquivo, ou deixe no arquivo apenas a aba de cadastro.');
+      return;
+    }
     var iP=C.acha('placa');
     var iAp=C.acha('apelido','nome');
     var iTi=C.acha('tipo','categoria');
@@ -1824,7 +1849,8 @@ window.importarVeiculos=function(input){
         '\nJá estavam iguais: '+iguais+(semPlaca?'\nSem placa: '+semPlaca:''));
       return;
     }
-    var msg='Confirmar?\n\nCabeçalho na linha '+(C.linha+1)+'\n\n';
+    var msg='Confirmar?\n\nAba: "'+P.aba+'"'+(P.abas.length>1?' (de '+P.abas.length+' abas)':'')+
+      '\nCabeçalho na linha '+(C.linha+1)+'\n\n';
     if(criar.length) msg+='CRIAR '+criar.length+' veículo(s):\n'+
       criar.slice(0,10).map(function(c){ return '· '+c.campos.placa+(c.campos.modelo?' — '+c.campos.modelo:'')+(c.kmInicial?'  ('+fmtN(c.kmInicial,0)+' km)':''); }).join('\n')+
       (criar.length>10?'\n... e mais '+(criar.length-10):'')+'\n\n';
@@ -1873,9 +1899,16 @@ window.importarHistorico=function(input){
   if(!podeLancar){ alert('Sem permissão.'); input.value=''; return; }
   if(!veiculos.length){ alert('Cadastre ou importe os veículos primeiro — o histórico é ligado pela placa.'); input.value=''; return; }
   _st('Lendo a planilha…');
-  _lerPlanilha(file).then(async function(rows){
+  _lerPlanilha(file, ['manutencao','manutencoes','historico','servico']).then(async function(P){
+    var rows=P.rows;
     var C=_cabecalho(rows, [['placa'],['data']]);
     if(!C){ alert('Não achei as colunas Placa e Data.'); return; }
+    // o inverso: recusa a aba de cadastro, que não tem data nem valor
+    if(!C.head.some(function(x){ return x==='data'; })){
+      alert('Esta aba não tem coluna Data — parece ser o cadastro de veículos.\n\n'+
+        'Aba lida: "'+P.aba+'"\n\nUse o botão "Veículos" para este arquivo.');
+      return;
+    }
     var iP=C.acha('placa','veiculo');
     var iD=C.acha('data','data_servico','emissao');
     // "Tipo de serviço" é CATEGORIA (Mecânica, Elétrica, Pneus), não o tipo do
@@ -1981,7 +2014,8 @@ window.importarHistorico=function(input){
     var porTipo={};
     novos.forEach(function(d){ porTipo[d.tipo]=(porTipo[d.tipo]||0)+1; });
     var soma=0; novos.forEach(function(d){ soma+=d.valor; });
-    var msg='Confirmar a importação?\n\nCabeçalho na linha '+(C.linha+1)+
+    var msg='Confirmar a importação?\n\nAba: "'+P.aba+'"'+(P.abas.length>1?' (de '+P.abas.length+' abas)':'')+
+      '\nCabeçalho na linha '+(C.linha+1)+
       '\nLançamentos novos: '+novos.length+' · '+fmtR$(soma,2)+'\n'+
       Object.keys(porTipo).map(function(t){ return '   '+(TIPOS_MOV[t]?TIPOS_MOV[t][0]:t)+': '+porTipo[t]; }).join('\n')+
       '\n\nJá existiam (ignorados): '+repetidos;
