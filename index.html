@@ -311,7 +311,7 @@ tbody tr:hover{background:var(--card-2)}
           <button class="vbtn" data-v="cards" onclick="setVisaoVeic('cards')" title="Cartões">▦</button>
           <button class="vbtn" data-v="lista" onclick="setVisaoVeic('lista')" title="Lista">☰</button>
         </div>
-        <button class="btn btn-sm frota-mov" onclick="abrirVeiculo(null)" style="margin-left:auto">+ Novo veículo</button>
+        <button class="btn btn-sm frota-cad" onclick="abrirVeiculo(null)" style="margin-left:auto">+ Novo veículo</button>
       </div>
       <div id="vlista"></div>
     </div>
@@ -387,7 +387,7 @@ tbody tr:hover{background:var(--card-2)}
           <option value="vencendo">Vencendo</option>
           <option value="ok">Em dia</option>
         </select>
-        <button class="btn btn-sm frota-mov" onclick="abrirDoc(null)" style="margin-left:auto">+ Novo documento</button>
+        <button class="btn btn-sm frota-cad" onclick="abrirDoc(null)" style="margin-left:auto">+ Novo documento</button>
       </div>
       <div class="tw"><div class="tscroll"><table id="tbl-docs"></table></div></div>
     </div>
@@ -495,6 +495,11 @@ const auth = getAuth(appFB);
 
 /* ============ ESTADO ============ */
 var pagina='painel', sessaoEmail='', sessaoUid='', sessaoNome='', ehAdmin=false, podeLancar=false;
+/* Três níveis, não dois:
+   frotaLanc — lança manutenção, óleo, km, abastecimento, pneu e checklist
+   frotaMov  — o de cima, mais cadastrar veículo e documento
+   role admin — o de cima, mais Configurações e importadores            */
+var podeCadastrar=false;
 var veiculos=[], movs=[], docs=[], cfg={ oleoKm:10000, oleoMeses:6, revisaoKm:20000, revisaoMeses:12,
   diasAviso:30, kmParadoDias:15, desvioPct:15, tipos:[] };
 var modelosChk={}, checklists=[];
@@ -944,6 +949,7 @@ function render(){
   if(!veiculos && !movs) return;
   if(ultimaCarga) document.getElementById('freshness').textContent='Dados de '+ultimaCarga;
   document.querySelectorAll('.frota-mov').forEach(function(el){ el.style.display=podeLancar?'':'none'; });
+  document.querySelectorAll('.frota-cad').forEach(function(el){ el.style.display=podeCadastrar?'':'none'; });
   document.querySelectorAll('.admin-only').forEach(function(el){ el.style.display=ehAdmin?'':'none'; });
   var np=pendencias().length;
   var cb=document.getElementById('cntChk');
@@ -1735,7 +1741,7 @@ function renderDocs(){
       '<td>'+pill+'</td>'+
       '<td class="r num">'+(num(d.valor)>0?fmtR$(num(d.valor),2):'—')+'</td>'+
       '<td style="white-space:normal;color:var(--muted)">'+esc(d.obs||'')+'</td>'+
-      '<td class="r">'+(podeLancar?'<button class="btn btn-sm btn-ghost" onclick="abrirDoc(\''+esc(d.firestoreId)+'\')">Editar</button>':'')+'</td></tr>';
+      '<td class="r">'+(podeCadastrar?'<button class="btn btn-sm btn-ghost" onclick="abrirDoc(\''+esc(d.firestoreId)+'\')">Editar</button>':'')+'</td></tr>';
   });
   document.getElementById('tbl-docs').innerHTML=html+'</tbody>';
 }
@@ -2114,7 +2120,7 @@ window.dicaKm=function(){
 };
 
 window.abrirVeiculo=function(id){
-  if(!podeLancar){ alert('Sem permissão para cadastrar.'); return; }
+  if(!podeCadastrar){ alert('Você pode lançar manutenção, mas não cadastrar ou alterar veículo.\n\nPeça a um administrador.'); return; }
   var v=id?veic(id):null;
   var novo=!v;
   var tipos=(cfg.tipos&&cfg.tipos.length)?cfg.tipos:['CAMINHÃO','VAN','UTILITÁRIO','CARRO','MOTO','REBOQUE'];
@@ -2237,13 +2243,13 @@ window.verVeiculo=function(id){
       ? '<button class="btn btn-sm btn-ghost" onclick="fecharModal();abrirLanc(\'km\',\''+esc(id)+'\')">Lançar km</button>'+
         '<button class="btn btn-sm btn-ghost" onclick="fecharModal();abrirLanc(\'abastecimento\',\''+esc(id)+'\')">⛽</button>'+
         '<button class="btn btn-sm btn-ghost" onclick="fecharModal();abrirLanc(\'oleo\',\''+esc(id)+'\')">◍</button>'+
-        '<button class="btn btn-sm btn-ghost" onclick="fecharModal();abrirVeiculo(\''+esc(id)+'\')">Editar</button>'
+        (podeCadastrar?'<button class="btn btn-sm btn-ghost" onclick="fecharModal();abrirVeiculo(\''+esc(id)+'\')">Editar</button>':'')
       : ''
   });
 };
 
 window.abrirDoc=function(id){
-  if(!podeLancar){ alert('Sem permissão.'); return; }
+  if(!podeCadastrar){ alert('Você pode lançar manutenção, mas não mexer nos documentos do veículo.'); return; }
   if(!ativos().length){ alert('Cadastre um veículo primeiro.'); return; }
   var d=id?docs.filter(function(x){ return x.firestoreId===id; })[0]:null;
   var TIPOS=['IPVA','Licenciamento','Seguro','Tacógrafo','CNH do motorista','ANTT','Vistoria','Outro'];
@@ -2378,7 +2384,7 @@ function _st(txt){ var el=document.getElementById('imp-status'); if(el) el.textC
 
 window.importarVeiculos=function(input){
   var file=input.files&&input.files[0]; if(!file) return;
-  if(!podeLancar){ alert('Sem permissão.'); input.value=''; return; }
+  if(!ehAdmin){ alert('A importação por planilha é só do administrador.'); input.value=''; return; }
   _st('Lendo a planilha…');
   _lerPlanilha(file, ['cadastro','veiculo','frota']).then(function(P){
     var rows=P.rows;
@@ -2497,7 +2503,7 @@ function _tipoDe(txt){
 }
 window.importarHistorico=function(input){
   var file=input.files&&input.files[0]; if(!file) return;
-  if(!podeLancar){ alert('Sem permissão.'); input.value=''; return; }
+  if(!ehAdmin){ alert('A importação por planilha é só do administrador.'); input.value=''; return; }
   if(!veiculos.length){ alert('Cadastre ou importe os veículos primeiro — o histórico é ligado pela placa.'); input.value=''; return; }
   _st('Lendo a planilha…');
   _lerPlanilha(file, ['manutencao','manutencoes','historico','servico']).then(async function(P){
@@ -2756,7 +2762,8 @@ function iniciarSessao(user){
     sessaoNome=d.nome||sessaoEmail;
     if(d.ativo!==true){ negar('Sua conta ainda não foi liberada por um administrador.'); return; }
     if(!ehAdmin && d.frota!==true){ negar('O app de Frota é restrito a quem tem a permissão (flag frota).'); return; }
-    podeLancar=(ehAdmin || d.frotaMov===true);
+    podeCadastrar=(ehAdmin || d.frotaMov===true);
+    podeLancar=(podeCadastrar || d.frotaLanc===true);
     liberar(d);
   }, function(err){ console.error('usuarios:',err); negar('Não foi possível carregar suas permissões: '+(err.code||err.message)); });
 }
@@ -2764,7 +2771,10 @@ function liberar(d){
   document.getElementById('s-negado').style.display='none';
   document.getElementById('app').style.display='block';
   document.getElementById('uname').textContent=sessaoNome;
-  document.getElementById('urole').textContent=ehAdmin?'Administrador':(podeLancar?'Pode lançar':'Só consulta');
+  document.getElementById('urole').textContent=
+    ehAdmin ? 'Administrador'
+    : (podeCadastrar ? 'Lança e cadastra'
+    : (podeLancar ? 'Lança manutenção' : 'Só consulta'));
   document.getElementById('uavatar').textContent=(sessaoNome||'?').trim().charAt(0).toUpperCase();
 
   ouvir('frotaVeiculos', collection(dbC,'frotaVeiculos'), function(s){
