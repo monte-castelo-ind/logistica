@@ -229,12 +229,12 @@ tbody tr:hover{background:var(--card-2)}
       <div class="brand-logo-box"></div>
       <div class="brand-cap">Frota</div>
     </div>
-    <button class="navbtn on" data-p="painel" onclick="nav('painel')"><span class="side-ico">◷</span><span class="lbl">Painel</span></button>
+    <button class="navbtn on gestao-only" data-p="painel" onclick="nav('painel')"><span class="side-ico">◷</span><span class="lbl">Painel</span></button>
     <button class="navbtn" data-p="veiculos" onclick="nav('veiculos')"><span class="side-ico">⛟</span><span class="lbl">Veículos</span></button>
     <button class="navbtn" data-p="mov" onclick="nav('mov')"><span class="side-ico">⇅</span><span class="lbl">Lançamentos</span></button>
     <button class="navbtn" data-p="chk" onclick="nav('chk')"><span class="side-ico">☑</span><span class="lbl">Checklist</span><span class="cnt" id="cntChk" style="display:none">0</span></button>
     <button class="navbtn" data-p="docs" onclick="nav('docs')"><span class="side-ico">▣</span><span class="lbl">Documentos</span></button>
-    <button class="navbtn" data-p="custos" onclick="nav('custos')"><span class="side-ico">◷</span><span class="lbl">Custos e consumo</span></button>
+    <button class="navbtn gestao-only" data-p="custos" onclick="nav('custos')"><span class="side-ico">◷</span><span class="lbl">Custos e consumo</span></button>
     <button class="navbtn admin-only" data-p="config" onclick="nav('config')"><span class="side-ico">⚙</span><span class="lbl">Configurações</span></button>
     <div class="side-foot">
       <div class="uline">
@@ -500,6 +500,16 @@ var pagina='painel', sessaoEmail='', sessaoUid='', sessaoNome='', ehAdmin=false,
    frotaMov  — o de cima, mais cadastrar veículo e documento
    role admin — o de cima, mais Configurações e importadores            */
 var podeCadastrar=false;
+/* Painel e Custos são telas de gestão: quem só lança manutenção não precisa
+   ver o gasto da frota inteira. */
+var PAGINAS_GESTAO=['painel','custos'];
+/* Janela dos números da aba Veículos e do detalhe do veículo. Estava 90 em
+   seis lugares diferentes; agora sai de um só. */
+var JANELA_DIAS=30;
+function desdeJanela(){
+  return new Date(Date.now()-JANELA_DIAS*86400000).toISOString().slice(0,10);
+}
+function podeGestaoFrota(){ return ehAdmin || podeCadastrar; }
 var veiculos=[], movs=[], docs=[], cfg={ oleoKm:10000, oleoMeses:6, revisaoKm:20000, revisaoMeses:12,
   diasAviso:30, kmParadoDias:15, desvioPct:15, tipos:[] };
 var modelosChk={}, checklists=[];
@@ -569,6 +579,7 @@ window.togglePin=function(e){
 window.nav=function(p){
   if(!TITLES[p]) return;
   if(p==='config' && !ehAdmin) p='veiculos';
+  if(PAGINAS_GESTAO.indexOf(p)>=0 && !podeGestaoFrota()) p='veiculos';
   pagina=p;
   document.querySelectorAll('.page').forEach(function(el){ el.classList.remove('on'); });
   var pg=document.getElementById('page-'+p); if(pg) pg.classList.add('on');
@@ -951,6 +962,9 @@ function render(){
   document.querySelectorAll('.frota-mov').forEach(function(el){ el.style.display=podeLancar?'':'none'; });
   document.querySelectorAll('.frota-cad').forEach(function(el){ el.style.display=podeCadastrar?'':'none'; });
   document.querySelectorAll('.admin-only').forEach(function(el){ el.style.display=ehAdmin?'':'none'; });
+  document.querySelectorAll('.gestao-only').forEach(function(el){ el.style.display=podeGestaoFrota()?'':'none'; });
+  // a tela salva do último acesso não pode furar a restrição
+  if(PAGINAS_GESTAO.indexOf(pagina)>=0 && !podeGestaoFrota()){ nav('veiculos'); return; }
   var np=pendencias().length;
   var cb=document.getElementById('cntChk');
   if(cb){ cb.textContent=np; cb.style.display=np>0?'':'none'; }
@@ -1502,7 +1516,7 @@ function renderVeiculos(){
   pintarSel('vf-tipo', Object.keys(tipos).sort().map(function(t){ return [t,t]; }), 'Todos os tipos');
   var at=ativos();
   var kmTot=0, gastoTot=0, litros=0;
-  var desde=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
+  var desde=desdeJanela();
   at.forEach(function(v){
     kmTot+=kmRodado(v.firestoreId, desde);
     var g=gastoDe(v.firestoreId, desde);
@@ -1515,8 +1529,8 @@ function renderVeiculos(){
     '<div class="card"><div class="klabel">Veículos ativos</div><div class="kval">'+at.length+'</div><div class="khint">'+(veiculos.length-at.length)+' inativo(s)</div></div>',
     '<div class="card"><div class="klabel">Óleo vencido</div><div class="kval" style="color:'+(oleoVenc?'var(--red)':'var(--green)')+'">'+oleoVenc+'</div><div class="khint">passou do intervalo</div></div>',
     '<div class="card"><div class="klabel">Documentos vencidos</div><div class="kval" style="color:'+(vencidos?'var(--red)':'var(--green)')+'">'+vencidos+'</div><div class="khint">IPVA, seguro, CNH…</div></div>',
-    '<div class="card"><div class="klabel">Gasto · 90 dias</div><div class="kval">'+fmtR$k(gastoTot)+'</div><div class="khint">'+(kmTot>0?fmtR$(gastoTot/kmTot,2)+'/km':'sem km no período')+'</div></div>',
-    '<div class="card"><div class="klabel">Km rodado · 90 dias</div><div class="kval">'+fmtN(kmTot,0)+'</div><div class="khint">'+(litros>0?fmtN(litros,0)+' L abastecidos':'sem abastecimento')+'</div></div>'
+    '<div class="card"><div class="klabel">Gasto · '+JANELA_DIAS+' dias</div><div class="kval">'+fmtR$k(gastoTot)+'</div><div class="khint">'+(kmTot>0?fmtR$(gastoTot/kmTot,2)+'/km':'sem km no período')+'</div></div>',
+    '<div class="card"><div class="klabel">Km rodado · '+JANELA_DIAS+' dias</div><div class="kval">'+fmtN(kmTot,0)+'</div><div class="khint">'+(litros>0?fmtN(litros,0)+' L abastecidos':'sem abastecimento')+'</div></div>'
   ].join('');
 
   var q=norm(document.getElementById('vf-busca').value);
@@ -1551,12 +1565,12 @@ var COLS_VEIC=[
   { k:'km',     l:'Odômetro',       r:1,  v:function(x){ return x.km>0?x.km:null; } },
   { k:'oleo',   l:'Óleo em',        r:1,  v:function(x){ return x.po?x.po.faltam:null; } },
   { k:'consumo',l:'km/L',           r:1,  v:function(x){ return x.c.kmL; } },
-  { k:'gasto',  l:'Gasto 90d',      r:1,  v:function(x){ return x.g.total||null; } },
-  { k:'rkm',    l:'R$/km 90d',      r:1,  v:function(x){ return x.km90>0?x.g.total/x.km90:null; } },
+  { k:'gasto',  l:'Gasto 30d',      r:1,  v:function(x){ return x.g.total||null; } },
+  { k:'rkm',    l:'R$/km 30d',      r:1,  v:function(x){ return x.km90>0?x.g.total/x.km90:null; } },
   { k:'docs',   l:'Doc. vencidos',  r:1,  v:function(x){ return x.dv||null; } }
 ];
 function listaVeic(lista){
-  var desde=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
+  var desde=desdeJanela();
   var arr=lista.map(function(v){
     var id=v.firestoreId;
     return { v:v, km:kmAtual(id).km, po:proximaOleo(id), c:consumo(id),
@@ -1592,7 +1606,7 @@ function cartaoVeic(v){
   var ka=kmAtual(id);
   var po=proximaOleo(id);
   var c=consumo(id);
-  var g=gastoDe(id, new Date(Date.now()-90*86400000).toISOString().slice(0,10));
+  var g=gastoDe(id, desdeJanela());
   var pct=0, cor='var(--green)', rot='—';
   if(po && po.inter>0){
     var usado=po.inter-po.faltam;
@@ -1615,8 +1629,8 @@ function cartaoVeic(v){
       '<div class="vlin" style="margin-top:9px"><span>Sem base para calcular o óleo</span></div>')+
     '<div class="mini">'+
       '<div>Consumo<b>'+(c.kmL?fmtN(c.kmL,2)+' km/L':'—')+'</b></div>'+
-      '<div>Gasto 90d<b>'+(g.total>0?fmtR$k(g.total):'—')+'</b></div>'+
-      '<div>R$/km 90d<b>'+(function(){ var k=kmRodado(id,new Date(Date.now()-90*86400000).toISOString().slice(0,10)); return k>0?fmtR$(g.total/k,2):'—'; })()+'</b></div>'+
+      '<div>Gasto '+JANELA_DIAS+'d<b>'+(g.total>0?fmtR$k(g.total):'—')+'</b></div>'+
+      '<div>R$/km '+JANELA_DIAS+'d<b>'+(function(){ var k=kmRodado(id,desdeJanela()); return k>0?fmtR$(g.total/k,2):'—'; })()+'</b></div>'+
     '</div></div>';
 }
 
@@ -2200,7 +2214,7 @@ window.abrirVeiculo=function(id){
 window.verVeiculo=function(id){
   var v=veic(id); if(!v) return;
   var ka=kmAtual(id), po=proximaOleo(id), c=consumo(id);
-  var desde=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
+  var desde=desdeJanela();
   var g=gastoDe(id,desde), km90=kmRodado(id,desde);
   var hist=movsDe(id).sort(function(a,b){ return String(b.data||b.em).localeCompare(String(a.data||a.em)); }).slice(0,20);
   var dv=docs.filter(function(d){ return d.veiculoId===id; })
@@ -2213,7 +2227,7 @@ window.verVeiculo=function(id){
         '<div class="card" style="box-shadow:none"><div class="klabel">Odômetro</div><div class="kval" style="font-size:20px">'+fmtN(ka.km,0)+'</div><div class="khint">'+(ka.em?dataBR(ka.em):'sem registro')+'</div></div>'+
         '<div class="card" style="box-shadow:none"><div class="klabel">Próxima troca de óleo</div><div class="kval" style="font-size:20px;color:'+(po&&po.faltam<=0?'var(--red)':(po&&po.faltam<=1000?'var(--amber)':''))+'">'+(po?fmtN(po.alvo,0):'—')+'</div><div class="khint">'+(po?(po.faltam<=0?'vencida há '+fmtN(-po.faltam,0)+' km':'faltam '+fmtN(po.faltam,0)+' km'):'sem base')+'</div></div>'+
         '<div class="card" style="box-shadow:none"><div class="klabel">Consumo</div><div class="kval" style="font-size:20px">'+(c.kmL?fmtN(c.kmL,2):'—')+'</div><div class="khint">'+(c.kmL?'km/L · '+c.pares+' trecho(s)':'faltam abastecimentos com tanque cheio')+'</div></div>'+
-        '<div class="card" style="box-shadow:none"><div class="klabel">R$/km · 90 dias</div><div class="kval" style="font-size:20px">'+(km90>0?fmtR$(g.total/km90,2):'—')+'</div><div class="khint">'+fmtR$k(g.total)+' em '+fmtN(km90,0)+' km</div></div>'+
+        '<div class="card" style="box-shadow:none"><div class="klabel">R$/km · '+JANELA_DIAS+' dias</div><div class="kval" style="font-size:20px">'+(km90>0?fmtR$(g.total/km90,2):'—')+'</div><div class="khint">'+fmtR$k(g.total)+' em '+fmtN(km90,0)+' km</div></div>'+
       '</div>'+
       (dv.length?'<div class="klabel" style="margin-top:16px">Documentos</div><div style="margin-top:6px">'+
         dv.map(function(d){
@@ -2768,6 +2782,7 @@ function iniciarSessao(user){
   }, function(err){ console.error('usuarios:',err); negar('Não foi possível carregar suas permissões: '+(err.code||err.message)); });
 }
 function liberar(d){
+  if(PAGINAS_GESTAO.indexOf(pagina)>=0 && !podeGestaoFrota()) pagina='veiculos';
   document.getElementById('s-negado').style.display='none';
   document.getElementById('app').style.display='block';
   document.getElementById('uname').textContent=sessaoNome;
@@ -2840,6 +2855,7 @@ document.addEventListener('keydown', function(e){
   if(e.key==='Escape' && document.querySelector('#modal-host .mask')){ e.preventDefault(); fecharModal(); }
 });
 try{ var lp=localStorage.getItem('mc_frota_page'); if(lp&&TITLES[lp]) setTimeout(function(){ nav(lp); },0); }catch(e){}
+// nav() já barra as telas de gestão, então a página salva não abre indevidamente
 </script>
 </body>
 </html>
