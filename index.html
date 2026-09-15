@@ -448,7 +448,7 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
       <div id="cx-chips"></div>
       <div class="cxdrop" id="cx-drop" tabindex="0" role="button" aria-label="Enviar PDF do carregamento">
         <b>Solte aqui o PDF do carregamento</b>
-        <span>pode soltar mais de um — as quantidades somam</span>
+        <span>carregamento ou pedido avulso · pode soltar vários, as quantidades somam</span>
       </div>
       <input type="file" id="cx-arq" accept="application/pdf" multiple style="display:none">
       <div id="cx-saida" style="margin-top:14px"></div>
@@ -2949,28 +2949,71 @@ function cxLinhas(tc){
   return out;
 }
 
+/* carregamento: "119 PÃO FRANCES PREMIUM 75GR 126.000 PCT" */
 var CX_RE=/^(\d{1,4})\s+(.+?)\s+(\d+[.,]?\d*)\s+(PCT|UN)$/i;
+/* pedido avulso: "188 PÃO DE QUEIJO ... 5,0000 PCT R$ 43,00 R$ 215,00"
+   quando a descrição quebra de linha, o código vem colado na quantidade:
+   "360 10,0000 PCT R$ 40,00 R$ 400,00" */
+var PD_RE=/^(\d{1,4})\s+(.*?)\s*(\d+(?:[.,]\d+)?)\s+(PCT|UN)\s+R\$/i;
+
+/* aceita 126.000 (carregamento), 5,0000 e 1.250,00 (pedido) */
+function cxNumero(t){
+  var s=String(t).trim();
+  if(s.indexOf('.')>=0 && s.indexOf(',')>=0) s=s.replace(/\./g,'').replace(',','.');
+  else if(s.indexOf(',')>=0) s=s.replace(',','.');
+  return parseFloat(s);
+}
+
+var CX_LIXO=/Emitido pelo|C[óo]d\s+Produto|C[óo]digo\s+Descri|Classifica|Endereçamen|DISCRIMINA|CONDI[ÇC][ÕO]ES|Total de mercadorias|Valor de encargos|Nome\/Raz[ãa]o|Nome fantasia|Munic[íi]pio|Transportadora|Local de retirada|CNPJ|Telefone|Endereço:/i;
 
 function cxInterpretar(linhas, arquivo){
-  var d={ id:(++cxSeq), arquivo:arquivo||'', carregamento:'', rota:'', data:'', itens:[] };
-  var blob=linhas.slice(0,8).join(' '), m, i, l, qtd;
+  var d={ id:(++cxSeq), arquivo:arquivo||'', tipo:'carregamento',
+          numero:'', rota:'', cliente:'', data:'', entrega:'', itens:[] };
+  var texto=linhas.join(' ');
+  d.tipo = /DISCRIMINA[ÇC][ÃA]O DOS PRODUTOS|CONDI[ÇC][ÕO]ES COMERCIAIS|Valor unit/i.test(texto)
+           ? 'pedido' : 'carregamento';
 
-  m=blob.match(/(\d{2}\/\d{2}\/\d{4})/);  if(m) d.data=m[1];
-  /* tira datas e horas antes de procurar o número do carregamento */
-  var semData=blob.replace(/\d{2}\/\d{2}\/\d{4}/g,' ').replace(/\d{1,2}:\d{2}(:\d{2})?/g,' ');
-  m=semData.match(/\b(\d{5,6})\b/) || semData.match(/\b(\d{4,6})\b/);
-  if(m) d.carregamento=m[1];
-  m=blob.match(/\b(\d{1,2}[A-Z])\s+([A-ZÀ-Ú]{3,}(?:\s+[A-ZÀ-Ú]{2,})*)/);
-  if(m) d.rota=m[1]+' '+m[2];
+  var m, i, l, qtd, frag='';
+
+  if(d.tipo==='pedido'){
+    var cab=linhas.slice(0,16).join(' ');
+    m=cab.match(/\b(\d{6})\b/) || cab.match(/\b(\d{5,7})\b/);
+    if(m) d.numero=m[1];
+    m=cab.match(/Nome fantasia\s+(.+?)\s+(?:CNPJ|IE\/RG|CEP)/i);
+    if(!m) m=cab.match(/Nome\/Raz[ãa]o Social\s+(.+?)\s+(?:CNPJ|Nome fantasia)/i);
+    if(m) d.cliente=m[1].trim();
+    m=cab.match(/Data entrega\s+(\d{2}\/\d{2}\/\d{4})/i);
+    if(m) d.entrega=m[1];
+    m=cab.match(/(\d{2}\/\d{2}\/\d{4})/);
+    if(m) d.data=m[1];
+  } else {
+    var blob=linhas.slice(0,8).join(' ');
+    m=blob.match(/(\d{2}\/\d{2}\/\d{4})/);  if(m) d.data=m[1];
+    /* tira datas e horas antes de procurar o número do carregamento */
+    var semData=blob.replace(/\d{2}\/\d{2}\/\d{4}/g,' ').replace(/\d{1,2}:\d{2}(:\d{2})?/g,' ');
+    m=semData.match(/\b(\d{5,6})\b/) || semData.match(/\b(\d{4,6})\b/);
+    if(m) d.numero=m[1];
+    m=blob.match(/\b(\d{1,2}[A-Z])\s+([A-ZÀ-Ú]{3,}(?:\s+[A-ZÀ-Ú]{2,})*)/);
+    if(m) d.rota=m[1]+' '+m[2];
+  }
 
   for(i=0;i<linhas.length;i++){
     l=linhas[i];
-    if(/Emitido pelo|Cód\s+Produto|Classifica|Endereçamen/i.test(l)) continue;
-    m=l.match(CX_RE);
-    if(!m) continue;
-    qtd=parseFloat(m[3].replace(',','.'));
-    if(!isFinite(qtd) || qtd<=0) continue;
-    d.itens.push({ cod:cxKey(m[1]), codPdf:m[1], nome:m[2].trim(), qtd:Math.round(qtd), un:m[4].toUpperCase() });
+    if(CX_LIXO.test(l)){ frag=''; continue; }
+
+    m = (d.tipo==='pedido') ? l.match(PD_RE) : l.match(CX_RE);
+    if(!m){
+      /* guarda o pedaço de descrição que quebrou de linha */
+      if(d.tipo==='pedido' && /[A-Za-zÀ-Ú]/.test(l) && l.indexOf('R$')<0) frag=l;
+      continue;
+    }
+    qtd=cxNumero(m[3]);
+    if(!isFinite(qtd) || qtd<=0){ frag=''; continue; }
+
+    var nome=(m[2]||'').trim();
+    if(!nome) nome=frag.trim();          /* descrição ficou na linha de cima */
+    frag='';
+    d.itens.push({ cod:cxKey(m[1]), codPdf:m[1], nome:nome, qtd:Math.round(qtd), un:m[4].toUpperCase() });
   }
   return d;
 }
@@ -3002,8 +3045,8 @@ function cxLerArquivos(lista){
             var d=cxInterpretar(todas, file.name);
             cxLendo--;
             if(!d.itens.length){ cxAviso('Nenhum produto reconhecido em '+file.name+'.'); render(); return; }
-            var rep=d.carregamento && cxDocs.some(function(x){ return x.carregamento===d.carregamento; });
-            if(rep && !confirm('O carregamento '+d.carregamento+' já está na lista.\n\nAdicionar mesmo assim? As quantidades vão somar duas vezes.')){ render(); return; }
+            var rep=d.numero && cxDocs.some(function(x){ return x.tipo===d.tipo && x.numero===d.numero; });
+            if(rep && !confirm(cxTipoNome(d)+' '+d.numero+' já está na lista.\n\nAdicionar mesmo assim? As quantidades vão somar duas vezes.')){ render(); return; }
             cxDocs.push(d);
             cxRegistrarNovos(d);
             render();
@@ -3061,7 +3104,7 @@ function cxCalcular(){
   for(i=0;i<itens.length;i++){
     it=itens[i];
     reg=cxRatios[it.cod] || {pct:null};
-    L={cod:it.codPdf, nome:it.nome, qtd:it.qtd, un:it.un, partes:it.partes, pct:reg.pct, cx:0, sobra:0};
+    L={cod:it.codPdf, nome:(reg.nome||it.nome||'—'), qtd:it.qtd, un:it.un, partes:it.partes, pct:reg.pct, cx:0, sobra:0};
     if(reg.pct>0){
       L.cx=Math.floor(it.qtd/reg.pct);
       L.sobra=it.qtd%reg.pct;
@@ -3073,10 +3116,14 @@ function cxCalcular(){
   return {linhas:linhas, total:total, sobras:sobras, faltando:faltando, docs:cxDocs.length};
 }
 
+function cxTipoNome(d){ return d.tipo==='pedido' ? 'Pedido' : 'Carregamento'; }
+
 function cxResumoOrigens(){
   return cxDocs.map(function(d){
-    return (d.carregamento||'sem número')+(d.rota?' · '+d.rota:'');
-  }).join('  +  ');
+    return cxTipoNome(d)+' '+(d.numero||'sem número')
+         + (d.rota?' · '+d.rota:'')
+         + (d.cliente?' · '+d.cliente:'');
+  }).join('   +   ');
 }
 
 /* ---- tela ---- */
@@ -3103,8 +3150,11 @@ function renderCaixas(){
       var ch='', i, d;
       for(i=0;i<cxDocs.length;i++){
         d=cxDocs[i];
-        ch+='<div class="cx-chip"><div><b>'+esc(d.carregamento||'—')+'</b>'
-          + '<span> · '+esc(d.rota||'sem rota')+' · '+d.itens.length+' itens</span></div>'
+        var det = d.tipo==='pedido'
+          ? (d.cliente||'sem cliente')+(d.entrega?' · entrega '+d.entrega:'')
+          : (d.rota||'sem rota');
+        ch+='<div class="cx-chip"><div><b>'+esc(cxTipoNome(d)+' '+(d.numero||'—'))+'</b>'
+          + '<span> · '+esc(det)+' · '+d.itens.length+' itens</span></div>'
           + '<button onclick="cxRemoverDoc('+d.id+')" title="Tirar da conta" aria-label="Tirar da conta">&times;</button></div>';
       }
       if(cxLendo) ch+='<div class="cx-chip"><span>Lendo '+cxLendo+' arquivo(s)…</span></div>';
@@ -3176,9 +3226,10 @@ function cxRenderPrint(R){
   h+='<div class="ph">';
   for(i=0;i<cxDocs.length;i++){
     d=cxDocs[i];
-    h+='<div><b>Carregamento '+esc(d.carregamento||'—')+'</b>'
+    h+='<div><b>'+esc(cxTipoNome(d)+' '+(d.numero||'—'))+'</b>'
       + (d.rota?' &nbsp;·&nbsp; Rota '+esc(d.rota):'')
-      + (d.data?' &nbsp;·&nbsp; '+esc(d.data):'')
+      + (d.cliente?' &nbsp;·&nbsp; '+esc(d.cliente):'')
+      + (d.entrega?' &nbsp;·&nbsp; entrega '+esc(d.entrega):(d.data?' &nbsp;·&nbsp; '+esc(d.data):''))
       + ' &nbsp;·&nbsp; '+d.itens.length+' itens</div>';
   }
   h+='<div style="margin-top:3px;color:#555">Impresso em '+esc(dataBR(hoje()))+' por '+esc(sessaoNome||sessaoEmail)+'</div>';
@@ -3307,7 +3358,7 @@ window.exportarCaixas=function(){
   l.push('');
   l.push(cxLinhaCsv(['TOTAL DE CAIXAS', R.total]));
   l.push(cxLinhaCsv(['PACOTES SOLTOS', R.sobras]));
-  baixar('caixas-'+(cxDocs[0].carregamento||hoje())+'.csv', l);
+  baixar('caixas-'+(cxDocs[0].numero||hoje())+'.csv', l);
 };
 
 /* área de upload */
