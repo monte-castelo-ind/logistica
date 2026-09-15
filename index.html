@@ -147,6 +147,37 @@ td.cx-zero{color:var(--muted)!important;font-weight:400}
 tr.cx-falta td{background:rgba(245,176,19,.08)}
 input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;padding:5px 7px}
 .cx-tag{font-size:10px;font-weight:700;color:var(--amber);letter-spacing:.3px}
+.cx-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.cx-chip{display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 11px;font-size:12.5px}
+.cx-chip b{font-family:'JetBrains Mono',monospace;font-size:13px}
+.cx-chip span{color:var(--muted);font-size:11.5px}
+.cx-chip button{background:none;border:none;color:var(--muted);font-size:16px;line-height:1;padding:0 2px;cursor:pointer}
+.cx-chip button:hover{color:var(--red)}
+.cx-part{display:block;font-size:9.5px;color:var(--muted);font-weight:400;margin-top:1px}
+#cx-print{display:none}
+@media print{
+  @page{ size:A4 portrait; margin:11mm 9mm; }
+  body *{ visibility:hidden !important; }
+  #cx-print, #cx-print *{ visibility:visible !important; }
+  #cx-print{ display:block !important; position:absolute; left:0; top:0; width:100%;
+             color:#000; background:#fff; font-family:'Archivo',sans-serif; }
+  #cx-print h1{ font-size:17px; margin:0 0 2px }
+  #cx-print .ph{ font-size:11px; margin-bottom:9px; line-height:1.5 }
+  #cx-print .ptot{ display:flex; gap:26px; border-top:2px solid #000; border-bottom:2px solid #000;
+                   padding:7px 0; margin-bottom:10px }
+  #cx-print .ptot div{ font-size:11px }
+  #cx-print .ptot b{ display:block; font-size:22px; font-family:'JetBrains Mono',monospace; line-height:1.1 }
+  #cx-print table{ width:100%; border-collapse:collapse; font-size:11px }
+  #cx-print th{ text-align:left; border-bottom:1.5px solid #000; padding:4px 5px; font-size:9.5px;
+                text-transform:uppercase; letter-spacing:.4px; background:none; position:static }
+  #cx-print td{ border-bottom:.5px solid #bbb; padding:4px 5px; white-space:normal }
+  #cx-print .r{ text-align:right; font-family:'JetBrains Mono',monospace }
+  #cx-print .cxn{ font-weight:700; font-size:13px }
+  #cx-print tr{ page-break-inside:avoid }
+  #cx-print thead{ display:table-header-group }
+  #cx-print .pfalta td{ background:#eee }
+  #cx-print .pfoot{ margin-top:11px; font-size:9.5px; color:#444; border-top:1px solid #000; padding-top:5px }
+}
 .fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
 .fgrid label,.fld label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;font-weight:600}
 .fhint{font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.4}
@@ -408,14 +439,18 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
     <!-- CAIXAS -->
     <div class="page" id="page-caixas">
       <div class="tools">
-        <input type="text" id="cx-busca" placeholder="Buscar produto ou código" oninput="render()" style="min-width:210px">
-        <button class="btn btn-sm btn-ghost" onclick="exportarCaixas()" style="margin-left:auto">⤓ CSV</button>
+        <button class="btn btn-sm" onclick="cxEscolher()">+ Adicionar PDF</button>
+        <input type="text" id="cx-busca" placeholder="Buscar produto ou código" oninput="render()" style="min-width:200px">
+        <button class="btn btn-sm btn-ghost" onclick="imprimirCaixas()">⎙ Imprimir</button>
+        <button class="btn btn-sm btn-ghost" onclick="exportarCaixas()">⤓ CSV</button>
+        <button class="btn btn-sm btn-danger" onclick="limparCaixas()" style="margin-left:auto">Limpar tudo</button>
       </div>
+      <div id="cx-chips"></div>
       <div class="cxdrop" id="cx-drop" tabindex="0" role="button" aria-label="Enviar PDF do carregamento">
         <b>Solte aqui o PDF do carregamento</b>
-        <span>ou toque para escolher o arquivo</span>
+        <span>pode soltar mais de um — as quantidades somam</span>
       </div>
-      <input type="file" id="cx-arq" accept="application/pdf" style="display:none">
+      <input type="file" id="cx-arq" accept="application/pdf" multiple style="display:none">
       <div id="cx-saida" style="margin-top:14px"></div>
     </div>
 
@@ -525,6 +560,7 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
 </div>
 
 <div id="modal-host"></div>
+<div id="cx-print" aria-hidden="true"></div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -2798,7 +2834,10 @@ window.exportarCustos=function(){
 };
 
 /* ============ CONVERSÃO DE CAIXAS ============ */
-var cxItens=[], cxCab={}, cxRatios={}, cxPronto=false, cxLendo=false;
+/* cxDocs guarda um carregamento por PDF lido. As quantidades somam antes de
+   converter — dois carregamentos no mesmo caminhão rendem menos caixa que
+   convertidos separados, que é justamente o motivo de juntar. */
+var cxDocs=[], cxRatios={}, cxLendo=0, cxSeq=0;
 
 /* Produlog compara código por número: "03" e "3" são o mesmo produto.
    Guardamos tudo pela forma sem zeros à esquerda. */
@@ -2852,10 +2891,10 @@ window.importarProdulog=function(){
     getDocs(collection(db2,'produtosConfeitaria')),
     getDocs(collection(db2,'quadraProdutosCustom'))
   ]).then(function(res){
-    var novos=0, renomeados=0, i, k, d, p, cod, nome;
+    var novos=0, renomeados=0, i, k, p, cod, nome;
     for(i=0;i<res.length;i++){
       for(k=0;k<res[i].docs.length;k++){
-        d=res[i].docs[k]; p=d.data()||{};
+        p=res[i].docs[k].data()||{};
         cod=cxKey(p.cod); nome=String(p.nome||'').trim();
         if(!cod || !nome) continue;
         if(!cxRatios[cod]){ cxRatios[cod]={pct:null, nome:nome}; novos++; }
@@ -2912,18 +2951,17 @@ function cxLinhas(tc){
 
 var CX_RE=/^(\d{1,4})\s+(.+?)\s+(\d+[.,]?\d*)\s+(PCT|UN)$/i;
 
-function cxInterpretar(linhas){
-  cxItens=[];
-  cxCab={carregamento:'', rota:'', data:''};
+function cxInterpretar(linhas, arquivo){
+  var d={ id:(++cxSeq), arquivo:arquivo||'', carregamento:'', rota:'', data:'', itens:[] };
   var blob=linhas.slice(0,8).join(' '), m, i, l, qtd;
 
-  m=blob.match(/(\d{2}\/\d{2}\/\d{4})/);  if(m) cxCab.data=m[1];
+  m=blob.match(/(\d{2}\/\d{2}\/\d{4})/);  if(m) d.data=m[1];
   /* tira datas e horas antes de procurar o número do carregamento */
   var semData=blob.replace(/\d{2}\/\d{2}\/\d{4}/g,' ').replace(/\d{1,2}:\d{2}(:\d{2})?/g,' ');
   m=semData.match(/\b(\d{5,6})\b/) || semData.match(/\b(\d{4,6})\b/);
-  if(m) cxCab.carregamento=m[1];
+  if(m) d.carregamento=m[1];
   m=blob.match(/\b(\d{1,2}[A-Z])\s+([A-ZÀ-Ú]{3,}(?:\s+[A-ZÀ-Ú]{2,})*)/);
-  if(m) cxCab.rota=m[1]+' '+m[2];
+  if(m) d.rota=m[1]+' '+m[2];
 
   for(i=0;i<linhas.length;i++){
     l=linhas[i];
@@ -2932,61 +2970,98 @@ function cxInterpretar(linhas){
     if(!m) continue;
     qtd=parseFloat(m[3].replace(',','.'));
     if(!isFinite(qtd) || qtd<=0) continue;
-    cxItens.push({ cod:cxKey(m[1]), codPdf:m[1], nome:m[2].trim(), qtd:Math.round(qtd), un:m[4].toUpperCase() });
+    d.itens.push({ cod:cxKey(m[1]), codPdf:m[1], nome:m[2].trim(), qtd:Math.round(qtd), un:m[4].toUpperCase() });
   }
-
-  /* produto que o carregamento tem e o cadastro não: entra sem conversão */
-  var c;
-  for(i=0;i<cxItens.length;i++){
-    c=cxItens[i].cod;
-    if(!cxRatios[c]) cxRatios[c]={pct:null, nome:cxItens[i].nome};
-    else if(!cxRatios[c].nome) cxRatios[c].nome=cxItens[i].nome;
-  }
-  cxPronto=true;
+  return d;
 }
 
-function cxLerPDF(file){
-  if(cxLendo) return;
-  cxLendo=true;
-  var saida=document.getElementById('cx-saida');
-  saida.innerHTML='<div class="alert a-info">Lendo o PDF…</div>';
+function cxLerArquivos(lista){
+  var arr=[], i;
+  for(i=0;i<lista.length;i++) arr.push(lista[i]);
+  if(!arr.length) return;
 
   cxCarregarPdfJs().then(function(lib){
-    var fr=new FileReader();
-    fr.onerror=function(){ cxLendo=false; saida.innerHTML='<div class="alert a-bad">Não foi possível abrir o arquivo.</div>'; };
-    fr.onload=function(){
-      lib.getDocument({data:new Uint8Array(fr.result)}).promise.then(function(pdf){
-        var todas=[], seq=Promise.resolve(), i;
-        for(i=1;i<=pdf.numPages;i++){
-          (function(n){
-            seq=seq.then(function(){
-              return pdf.getPage(n).then(function(pg){
-                return pg.getTextContent().then(function(tc){ todas=todas.concat(cxLinhas(tc)); });
+    arr.forEach(function(file){
+      cxLendo++;
+      render();
+      var fr=new FileReader();
+      fr.onerror=function(){ cxLendo--; cxAviso('Não foi possível abrir '+file.name+'.'); render(); };
+      fr.onload=function(){
+        lib.getDocument({data:new Uint8Array(fr.result)}).promise.then(function(pdf){
+          var todas=[], seq=Promise.resolve(), n;
+          for(n=1;n<=pdf.numPages;n++){
+            (function(k){
+              seq=seq.then(function(){
+                return pdf.getPage(k).then(function(pg){
+                  return pg.getTextContent().then(function(tc){ todas=todas.concat(cxLinhas(tc)); });
+                });
               });
-            });
-          })(i);
-        }
-        return seq.then(function(){ cxInterpretar(todas); cxLendo=false; render(); });
-      }).catch(function(e){
-        cxLendo=false;
-        console.error('caixas/pdf:', e);
-        saida.innerHTML='<div class="alert a-bad">Não deu para ler este PDF. Confira se é o relatório de carregamento do ELIGO. ('+esc(e.message||'erro')+')</div>';
-      });
-    };
-    fr.readAsArrayBuffer(file);
+            })(n);
+          }
+          return seq.then(function(){
+            var d=cxInterpretar(todas, file.name);
+            cxLendo--;
+            if(!d.itens.length){ cxAviso('Nenhum produto reconhecido em '+file.name+'.'); render(); return; }
+            var rep=d.carregamento && cxDocs.some(function(x){ return x.carregamento===d.carregamento; });
+            if(rep && !confirm('O carregamento '+d.carregamento+' já está na lista.\n\nAdicionar mesmo assim? As quantidades vão somar duas vezes.')){ render(); return; }
+            cxDocs.push(d);
+            cxRegistrarNovos(d);
+            render();
+          });
+        }).catch(function(e){
+          cxLendo--;
+          console.error('caixas/pdf:', e);
+          cxAviso('Não deu para ler '+file.name+'. Confira se é o relatório de carregamento do ELIGO.');
+          render();
+        });
+      };
+      fr.readAsArrayBuffer(file);
+    });
   }).catch(function(e){
-    cxLendo=false;
     console.error('caixas/pdfjs:', e);
-    saida.innerHTML='<div class="alert a-bad">O leitor de PDF não carregou: '+esc(e.message)+'</div>';
+    cxAviso('O leitor de PDF não carregou: '+e.message);
+    render();
   });
 }
 
+var cxMsg='';
+function cxAviso(t){ cxMsg=t; }
+
+/* produto que o carregamento tem e o cadastro não: entra sem conversão */
+function cxRegistrarNovos(d){
+  var i, c;
+  for(i=0;i<d.itens.length;i++){
+    c=d.itens[i].cod;
+    if(!cxRatios[c]) cxRatios[c]={pct:null, nome:d.itens[i].nome};
+    else if(!cxRatios[c].nome) cxRatios[c].nome=d.itens[i].nome;
+  }
+}
+
+/* soma os carregamentos carregados, produto a produto */
+function cxAgregar(){
+  var mapa={}, ordem=[], i, k, it, a;
+  for(i=0;i<cxDocs.length;i++){
+    for(k=0;k<cxDocs[i].itens.length;k++){
+      it=cxDocs[i].itens[k];
+      a=mapa[it.cod];
+      if(!a){
+        a=mapa[it.cod]={cod:it.cod, codPdf:it.codPdf, nome:it.nome, un:it.un, qtd:0, partes:[]};
+        ordem.push(it.cod);
+      }
+      a.qtd+=it.qtd;
+      a.partes.push(it.qtd);
+    }
+  }
+  ordem.sort(function(x,y){ return parseInt(x,10)-parseInt(y,10); });
+  return ordem.map(function(c){ return mapa[c]; });
+}
+
 function cxCalcular(){
-  var linhas=[], total=0, sobras=0, faltando=0, i, it, reg, L;
-  for(i=0;i<cxItens.length;i++){
-    it=cxItens[i];
+  var itens=cxAgregar(), linhas=[], total=0, sobras=0, faltando=0, i, it, reg, L;
+  for(i=0;i<itens.length;i++){
+    it=itens[i];
     reg=cxRatios[it.cod] || {pct:null};
-    L={cod:it.codPdf, nome:it.nome, qtd:it.qtd, un:it.un, pct:reg.pct, cx:0, sobra:0};
+    L={cod:it.codPdf, nome:it.nome, qtd:it.qtd, un:it.un, partes:it.partes, pct:reg.pct, cx:0, sobra:0};
     if(reg.pct>0){
       L.cx=Math.floor(it.qtd/reg.pct);
       L.sobra=it.qtd%reg.pct;
@@ -2995,30 +3070,71 @@ function cxCalcular(){
     } else { faltando++; }
     linhas.push(L);
   }
-  return {linhas:linhas, total:total, sobras:sobras, faltando:faltando};
+  return {linhas:linhas, total:total, sobras:sobras, faltando:faltando, docs:cxDocs.length};
 }
 
+function cxResumoOrigens(){
+  return cxDocs.map(function(d){
+    return (d.carregamento||'sem número')+(d.rota?' · '+d.rota:'');
+  }).join('  +  ');
+}
+
+/* ---- tela ---- */
+window.cxEscolher=function(){ var i=document.getElementById('cx-arq'); if(i) i.click(); };
+
+window.cxRemoverDoc=function(id){
+  cxDocs=cxDocs.filter(function(d){ return d.id!==Number(id); });
+  render();
+};
+
+window.limparCaixas=function(){
+  if(!cxDocs.length) return;
+  if(!confirm('Tirar todos os carregamentos da tela?')) return;
+  cxDocs=[]; cxMsg=''; render();
+};
+
 function renderCaixas(){
-  var saida=document.getElementById('cx-saida');
+  var saida=document.getElementById('cx-saida'), chips=document.getElementById('cx-chips');
   if(!saida) return;
-  if(!cxPronto){ saida.innerHTML=''; return; }
-  if(!cxItens.length){
-    saida.innerHTML='<div class="alert a-warn">Nenhum produto reconhecido neste PDF.</div>';
-    return;
+
+  if(chips){
+    if(!cxDocs.length && !cxLendo){ chips.innerHTML=''; chips.className=''; }
+    else{
+      var ch='', i, d;
+      for(i=0;i<cxDocs.length;i++){
+        d=cxDocs[i];
+        ch+='<div class="cx-chip"><div><b>'+esc(d.carregamento||'—')+'</b>'
+          + '<span> · '+esc(d.rota||'sem rota')+' · '+d.itens.length+' itens</span></div>'
+          + '<button onclick="cxRemoverDoc('+d.id+')" title="Tirar da conta" aria-label="Tirar da conta">&times;</button></div>';
+      }
+      if(cxLendo) ch+='<div class="cx-chip"><span>Lendo '+cxLendo+' arquivo(s)…</span></div>';
+      chips.className='cx-chips';
+      chips.innerHTML=ch;
+    }
   }
-  var R=cxCalcular(), h='', i, L;
+
+  var dz=document.getElementById('cx-drop');
+  if(dz) dz.style.display = cxDocs.length ? 'none' : '';
+
+  var h='';
+  if(cxMsg) h+='<div class="alert a-bad">'+esc(cxMsg)+'</div>';
+
+  if(!cxDocs.length){ saida.innerHTML=h; cxRenderPrint(null); return; }
+
+  var R=cxCalcular(), i, L;
   var termo=((document.getElementById('cx-busca')||{}).value||'').toLowerCase();
 
   h+='<div class="grid kpis">';
   h+='<div class="card"><div class="cxbig">'+R.total+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">caixas fechadas</div></div>';
   h+='<div class="card"><div class="cxbig" style="color:var(--amber)">'+R.sobras+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">pacotes soltos</div></div>';
-  h+='<div class="card"><div class="cxbig" style="color:var(--text)">'+cxItens.length+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">produtos no carregamento</div></div>';
+  h+='<div class="card"><div class="cxbig" style="color:var(--text)">'+R.linhas.length+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">produtos'+(R.docs>1?' · '+R.docs+' carregamentos':'')+'</div></div>';
   h+='</div>';
 
-  h+='<div style="font-size:11.5px;color:var(--muted);margin:11px 0">Carregamento <b style="color:var(--text)">'
-   + esc(cxCab.carregamento||'—')+'</b> &middot; Rota <b style="color:var(--text)">'+esc(cxCab.rota||'—')
-   + '</b> &middot; '+esc(cxCab.data||'')+'</div>';
+  h+='<div style="font-size:11.5px;color:var(--muted);margin:11px 0">'+esc(cxResumoOrigens())+'</div>';
 
+  if(R.docs>1){
+    h+='<div class="alert a-info">▤ As quantidades dos '+R.docs+' carregamentos foram somadas antes de virar caixa — é o que economiza caixa ao juntar carga.</div>';
+  }
   if(R.faltando){
     h+='<div class="alert a-warn">▲ '+R.faltando+' produto'+(R.faltando>1?'s':'')
      + ' sem conversão cadastrada — não entraram na conta. A conversão se cadastra em <b>Configurações</b>.</div>';
@@ -3035,7 +3151,9 @@ function renderCaixas(){
     h+='<tr'+(sem?' class="cx-falta"':'')+'>'
      + '<td class="mono" style="color:var(--muted)">'+esc(L.cod)+'</td>'
      + '<td>'+esc(L.nome)+'</td>'
-     + '<td class="cx-n">'+L.qtd+' <span style="color:var(--muted);font-size:10px">'+L.un.toLowerCase()+'</span></td>'
+     + '<td class="cx-n">'+L.qtd+' <span style="color:var(--muted);font-size:10px">'+L.un.toLowerCase()+'</span>'
+     +   (L.partes.length>1 ? '<span class="cx-part">'+L.partes.join(' + ')+'</span>' : '')
+     + '</td>'
      + '<td class="cx-n">'+(sem?'<span class="cx-tag">FALTA</span>':L.pct)+'</td>'
      + '<td class="cx-cx'+(L.cx?'':' cx-zero')+'">'+(sem?'—':L.cx)+'</td>'
      + '<td class="cx-sb'+(L.sobra?'':' cx-zero')+'">'+(sem?'—':L.sobra)+'</td>'
@@ -3043,7 +3161,70 @@ function renderCaixas(){
   }
   h+='</tbody></table></div></div>';
   saida.innerHTML=h;
+
+  cxRenderPrint(R);
 }
+
+/* ---- folha de impressão ---- */
+function cxRenderPrint(R){
+  var alvo=document.getElementById('cx-print');
+  if(!alvo) return;
+  if(!R){ alvo.innerHTML=''; return; }
+
+  var h='', i, L, d;
+  h+='<h1>Separação por caixas</h1>';
+  h+='<div class="ph">';
+  for(i=0;i<cxDocs.length;i++){
+    d=cxDocs[i];
+    h+='<div><b>Carregamento '+esc(d.carregamento||'—')+'</b>'
+      + (d.rota?' &nbsp;·&nbsp; Rota '+esc(d.rota):'')
+      + (d.data?' &nbsp;·&nbsp; '+esc(d.data):'')
+      + ' &nbsp;·&nbsp; '+d.itens.length+' itens</div>';
+  }
+  h+='<div style="margin-top:3px;color:#555">Impresso em '+esc(dataBR(hoje()))+' por '+esc(sessaoNome||sessaoEmail)+'</div>';
+  h+='</div>';
+
+  h+='<div class="ptot">'
+   + '<div><b>'+R.total+'</b>caixas fechadas</div>'
+   + '<div><b>'+R.sobras+'</b>pacotes soltos</div>'
+   + '<div><b>'+R.linhas.length+'</b>produtos</div>';
+  if(R.faltando) h+='<div><b>'+R.faltando+'</b>sem conversão</div>';
+  h+='</div>';
+
+  var multi = R.docs>1;
+  h+='<table><thead><tr><th style="width:8%">Cód</th><th>Produto</th>'
+   + '<th class="r" style="width:'+(multi?'16%':'11%')+'">Qtde</th>'
+   + '<th class="r" style="width:9%">Pct/cx</th>'
+   + '<th class="r" style="width:10%">Caixas</th>'
+   + '<th class="r" style="width:9%">Sobra</th>'
+   + '<th style="width:9%">Conferido</th></tr></thead><tbody>';
+  for(i=0;i<R.linhas.length;i++){
+    L=R.linhas[i];
+    var sem=!L.pct;
+    h+='<tr'+(sem?' class="pfalta"':'')+'>'
+     + '<td>'+esc(L.cod)+'</td>'
+     + '<td>'+esc(L.nome)+'</td>'
+     + '<td class="r">'+L.qtd+' '+L.un.toLowerCase()
+     +   (multi && L.partes.length>1 ? '<br><span style="font-size:8.5px;color:#666">'+L.partes.join(' + ')+'</span>' : '')
+     + '</td>'
+     + '<td class="r">'+(sem?'—':L.pct)+'</td>'
+     + '<td class="r cxn">'+(sem?'—':L.cx)+'</td>'
+     + '<td class="r">'+(sem?'—':L.sobra)+'</td>'
+     + '<td></td></tr>';
+  }
+  h+='</tbody></table>';
+  h+='<div class="pfoot">Caixas = quantidade dividida pelos pacotes que cabem na caixa. Sobra = pacote que não fechou caixa.'
+   + (R.faltando?' Linha cinza = produto sem conversão cadastrada, não entrou no total.':'')
+   + (multi?' Quando aparecem duas parcelas na quantidade, são os carregamentos somados.':'')
+   + '</div>';
+  alvo.innerHTML=h;
+}
+
+window.imprimirCaixas=function(){
+  if(!cxDocs.length){ alert('Envie um PDF de carregamento primeiro.'); return; }
+  window.scrollTo(0,0);
+  setTimeout(function(){ window.print(); }, 60);
+};
 
 /* ---- cadastro, dentro de Configurações ---- */
 window.renderConfigCaixas=function(){
@@ -3085,7 +3266,8 @@ window.cxSetPct=function(el){
   var c=el.getAttribute('data-cod'), v=parseInt(el.value,10);
   if(!cxRatios[c]) cxRatios[c]={pct:null, nome:''};
   cxRatios[c].pct=(isFinite(v)&&v>0)?v:null;
-  el.closest('tr').className = cxRatios[c].pct ? '' : 'cx-falta';
+  var tr=el.closest('tr');
+  if(tr) tr.className = cxRatios[c].pct ? '' : 'cx-falta';
 };
 
 window.salvarCaixas=function(){
@@ -3112,18 +3294,20 @@ function cxCel(v){ return String(v==null?'':v).replace(/[;\n\r]/g,' '); }
 function cxLinhaCsv(a){ return a.map(cxCel).join(';'); }
 
 window.exportarCaixas=function(){
-  if(!cxItens.length){ alert('Envie um PDF de carregamento primeiro.'); return; }
+  if(!cxDocs.length){ alert('Envie um PDF de carregamento primeiro.'); return; }
   var R=cxCalcular(), l=[], i, L;
-  l.push(cxLinhaCsv(['Carregamento','Rota','Codigo','Produto','Qtde','Unid','PctPorCaixa','Caixas','Sobra']));
+  l.push(cxLinhaCsv(['Carregamentos', cxResumoOrigens()]));
+  l.push('');
+  l.push(cxLinhaCsv(['Codigo','Produto','Qtde','Unid','Parcelas','PctPorCaixa','Caixas','Sobra']));
   for(i=0;i<R.linhas.length;i++){
     L=R.linhas[i];
-    l.push(cxLinhaCsv([cxCab.carregamento||'', cxCab.rota||'', L.cod, L.nome, L.qtd, L.un,
+    l.push(cxLinhaCsv([L.cod, L.nome, L.qtd, L.un, L.partes.join(' + '),
             L.pct||'', L.pct?L.cx:'', L.pct?L.sobra:'']));
   }
   l.push('');
   l.push(cxLinhaCsv(['TOTAL DE CAIXAS', R.total]));
   l.push(cxLinhaCsv(['PACOTES SOLTOS', R.sobras]));
-  baixar('caixas-'+(cxCab.carregamento||hoje())+'.csv', l);
+  baixar('caixas-'+(cxDocs[0].carregamento||hoje())+'.csv', l);
 };
 
 /* área de upload */
@@ -3136,9 +3320,23 @@ window.exportarCaixas=function(){
   dz.ondragleave=function(){ dz.classList.remove('hot'); };
   dz.ondrop=function(e){
     e.preventDefault(); dz.classList.remove('hot');
-    if(e.dataTransfer.files.length) cxLerPDF(e.dataTransfer.files[0]);
+    cxMsg='';
+    if(e.dataTransfer.files.length) cxLerArquivos(e.dataTransfer.files);
   };
-  inp.onchange=function(){ if(inp.files.length){ cxLerPDF(inp.files[0]); inp.value=''; } };
+  inp.onchange=function(){
+    cxMsg='';
+    if(inp.files.length){ cxLerArquivos(inp.files); inp.value=''; }
+  };
+  /* soltar em qualquer ponto da aba Caixas também vale */
+  var pg=document.getElementById('page-caixas');
+  if(pg){
+    pg.addEventListener('dragover', function(e){ e.preventDefault(); });
+    pg.addEventListener('drop', function(e){
+      if(e.target===dz || dz.contains(e.target)) return;
+      e.preventDefault(); cxMsg='';
+      if(e.dataTransfer.files.length) cxLerArquivos(e.dataTransfer.files);
+    });
+  }
 })();
 
 /* ============ SESSÃO ============ */
