@@ -135,6 +135,18 @@ tbody tr:hover{background:var(--card-2)}
 .a-warn{background:rgba(245,176,19,.09);border:1px solid rgba(245,176,19,.3);color:var(--amber)}
 .a-info{background:rgba(75,123,236,.09);border:1px solid rgba(75,123,236,.3);color:var(--blue)}
 .a-bad{background:rgba(242,106,106,.09);border:1px solid rgba(242,106,106,.3);color:var(--red)}
+.cxdrop{background:var(--card);border:2px dashed var(--border);border-radius:13px;padding:34px 18px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+.cxdrop:hover,.cxdrop.hot{border-color:var(--primary);background:var(--card-2)}
+.cxdrop b{display:block;font-size:15px;margin-bottom:4px}
+.cxdrop span{font-size:12px;color:var(--muted)}
+.cxbig{font-size:40px;font-weight:800;line-height:1;color:var(--primary);font-family:'JetBrains Mono',monospace}
+td.cx-n{text-align:right;font-family:'JetBrains Mono',monospace}
+td.cx-cx{text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--green);font-size:14px}
+td.cx-sb{text-align:right;font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--amber)}
+td.cx-zero{color:var(--muted)!important;font-weight:400}
+tr.cx-falta td{background:rgba(245,176,19,.08)}
+input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;padding:5px 7px}
+.cx-tag{font-size:10px;font-weight:700;color:var(--amber);letter-spacing:.3px}
 .fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
 .fgrid label,.fld label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;font-weight:600}
 .fhint{font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.4}
@@ -234,6 +246,7 @@ tbody tr:hover{background:var(--card-2)}
     <button class="navbtn" data-p="mov" onclick="nav('mov')"><span class="side-ico">⇅</span><span class="lbl">Lançamentos</span></button>
     <button class="navbtn" data-p="chk" onclick="nav('chk')"><span class="side-ico">☑</span><span class="lbl">Checklist</span><span class="cnt" id="cntChk" style="display:none">0</span></button>
     <button class="navbtn" data-p="docs" onclick="nav('docs')"><span class="side-ico">▣</span><span class="lbl">Documentos</span></button>
+    <button class="navbtn" data-p="caixas" onclick="nav('caixas')"><span class="side-ico">▤</span><span class="lbl">Caixas</span></button>
     <button class="navbtn gestao-only" data-p="custos" onclick="nav('custos')"><span class="side-ico">◷</span><span class="lbl">Custos e consumo</span></button>
     <button class="navbtn admin-only" data-p="config" onclick="nav('config')"><span class="side-ico">⚙</span><span class="lbl">Configurações</span></button>
     <div class="side-foot">
@@ -392,6 +405,33 @@ tbody tr:hover{background:var(--card-2)}
       <div class="tw"><div class="tscroll"><table id="tbl-docs"></table></div></div>
     </div>
 
+    <!-- CAIXAS -->
+    <div class="page" id="page-caixas">
+      <div class="tools">
+        <select id="cx-vis" onchange="render()">
+          <option value="sep" selected>Separação</option>
+          <option value="cad">Pacotes por caixa</option>
+        </select>
+        <input type="text" id="cx-busca" placeholder="Buscar produto ou código" oninput="render()" style="min-width:200px">
+        <button class="btn btn-sm btn-ghost frota-cad" id="cx-salvar" onclick="salvarCaixas()">Salvar cadastro</button>
+        <button class="btn btn-sm btn-ghost" onclick="exportarCaixas()" style="margin-left:auto">⤓ CSV</button>
+      </div>
+
+      <div id="cx-sep">
+        <div class="cxdrop" id="cx-drop" tabindex="0" role="button" aria-label="Enviar PDF do carregamento">
+          <b>Solte aqui o PDF do carregamento</b>
+          <span>ou toque para escolher o arquivo</span>
+        </div>
+        <input type="file" id="cx-arq" accept="application/pdf" style="display:none">
+        <div id="cx-saida" style="margin-top:14px"></div>
+      </div>
+
+      <div id="cx-cad" style="display:none">
+        <div class="alert a-info">▤ Quantos pacotes entram em uma caixa. O que ficar em branco aparece marcado na separação e não entra na conta.</div>
+        <div class="tw"><div class="tscroll"><table id="tbl-caixas"></table></div></div>
+      </div>
+    </div>
+
     <!-- CUSTOS -->
     <div class="page" id="page-custos">
       <div class="tools">
@@ -524,6 +564,7 @@ const TITLES={
   mov:['Lançamentos','Odômetro, abastecimento, óleo, manutenção e pneu'],
   chk:['Checklist','Inspeção semanal por tipo de veículo'],
   docs:['Documentos','IPVA, licenciamento, seguro, CNH'],
+  caixas:['Conversão de caixas','O PDF do carregamento vira número de caixas'],
   custos:['Custos e consumo','R$/km, R$/litro e km/L por veículo'],
   config:['Configurações','Intervalos e tipos']
 };
@@ -974,6 +1015,7 @@ function render(){
   else if(pagina==='mov') renderMov();
   else if(pagina==='chk') renderChk();
   else if(pagina==='docs') renderDocs();
+  else if(pagina==='caixas') renderCaixas();
   else if(pagina==='custos') renderCustos();
   else if(pagina==='config') renderConfig();
 }
@@ -2751,6 +2793,329 @@ window.exportarCustos=function(){
   baixar('frota-custos-'+hoje()+'.csv', l);
 };
 
+/* ============ CONVERSÃO DE CAIXAS ============ */
+var cxItens=[], cxCab={}, cxRatios={}, cxPronto=false, cxLendo=false;
+
+/* Regras conferidas com a separação manual do carregamento 18212 */
+var CX_SEMENTE={
+  '119':{pct:3, grupo:'PADARIA', nome:'PÃO FRANCES PREMIUM 75GR'},
+  '25' :{pct:7, grupo:'PADARIA', nome:'PÃO CENOURA 500GR'},
+  '140':{pct:7, grupo:'PADARIA', nome:'PÃO DE LEITE 500GR'},
+  '148':{pct:7, grupo:'PADARIA', nome:'PÃO AIPIM 500GR'},
+  '153':{pct:7, grupo:'PADARIA', nome:'PÃO MILHO DOCE 500GR'},
+  '186':{pct:10,grupo:'PADARIA', nome:'PÃO DE QUEIJO RECH. FRANGO 58GR'},
+  '187':{pct:10,grupo:'PADARIA', nome:'PÃO DE QUEIJO RECH. REQUEIJÃO 58GR'},
+  '188':{pct:10,grupo:'PADARIA', nome:'PÃO DE QUEIJO RECH. GOIABADA 58GR'},
+  '130':{pct:40,grupo:'PADARIA', nome:'CUCA ALEMÃ 320GR'}
+};
+
+function cxGrupoPadrao(cod){ return (parseInt(cod,10)>=205) ? 'CONGELADO' : 'PADARIA'; }
+function cxRotulo(g){ return g==='CONGELADO' ? 'Congelado' : (g==='PADARIA' ? 'Padaria' : g); }
+
+function cxAplicarSemente(){
+  var k;
+  for(k in CX_SEMENTE){
+    if(CX_SEMENTE.hasOwnProperty(k) && !cxRatios[k]) cxRatios[k]=JSON.parse(JSON.stringify(CX_SEMENTE[k]));
+  }
+}
+
+/* carrega o pdf.js sob demanda (UMD via tag <script>) */
+function cxCarregarPdfJs(){
+  return new Promise(function(ok, falhou){
+    if(window.pdfjsLib){ ok(window.pdfjsLib); return; }
+    var s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload=function(){
+      if(!window.pdfjsLib){ falhou(new Error('pdf.js não carregou')); return; }
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      ok(window.pdfjsLib);
+    };
+    s.onerror=function(){ falhou(new Error('sem conexão com o servidor do leitor de PDF')); };
+    document.head.appendChild(s);
+  });
+}
+
+/* reconstrói linhas do PDF agrupando por coordenada Y */
+function cxLinhas(tc){
+  var mapa={}, i, it, y;
+  for(i=0;i<tc.items.length;i++){
+    it=tc.items[i];
+    if(!it.str || !it.str.trim()) continue;
+    y=Math.round(it.transform[5]);
+    if(!mapa[y]) mapa[y]=[];
+    mapa[y].push({x:it.transform[4], t:it.str});
+  }
+  var ys=Object.keys(mapa).map(Number).sort(function(a,b){ return b-a; });
+  var out=[], j, k, p, txt;
+  for(j=0;j<ys.length;j++){
+    p=mapa[ys[j]].sort(function(a,b){ return a.x-b.x; });
+    txt='';
+    for(k=0;k<p.length;k++){ txt+=(k?' ':'')+p[k].t; }
+    out.push(txt.replace(/\s+/g,' ').trim());
+  }
+  return out;
+}
+
+var CX_RE=/^(\d{1,4})\s+(.+?)\s+(\d+[.,]?\d*)\s+(PCT|UN)$/i;
+
+function cxInterpretar(linhas){
+  cxItens=[];
+  cxCab={carregamento:'', rota:'', data:''};
+  var blob=linhas.slice(0,8).join(' '), m, i, l, qtd;
+
+  m=blob.match(/(\d{2}\/\d{2}\/\d{4})/);  if(m) cxCab.data=m[1];
+  /* tira datas e horas antes de procurar o número do carregamento */
+  var semData=blob.replace(/\d{2}\/\d{2}\/\d{4}/g,' ').replace(/\d{1,2}:\d{2}(:\d{2})?/g,' ');
+  m=semData.match(/\b(\d{5,6})\b/) || semData.match(/\b(\d{4,6})\b/);
+  if(m) cxCab.carregamento=m[1];
+  m=blob.match(/\b(\d{1,2}[A-Z])\s+([A-ZÀ-Ú]{3,}(?:\s+[A-ZÀ-Ú]{2,})*)/);
+  if(m) cxCab.rota=m[1]+' '+m[2];
+
+  for(i=0;i<linhas.length;i++){
+    l=linhas[i];
+    if(/Emitido pelo|Cód\s+Produto|Classifica|Endereçamen/i.test(l)) continue;
+    m=l.match(CX_RE);
+    if(!m) continue;
+    qtd=parseFloat(m[3].replace(',','.'));
+    if(!isFinite(qtd) || qtd<=0) continue;
+    cxItens.push({ cod:m[1], nome:m[2].trim(), qtd:Math.round(qtd), un:m[4].toUpperCase() });
+  }
+
+  /* produtos novos entram no cadastro sem proporção */
+  var novos=0, c;
+  for(i=0;i<cxItens.length;i++){
+    c=cxItens[i].cod;
+    if(!cxRatios[c]){ cxRatios[c]={pct:null, grupo:cxGrupoPadrao(c), nome:cxItens[i].nome}; novos++; }
+    else if(!cxRatios[c].nome){ cxRatios[c].nome=cxItens[i].nome; }
+  }
+  cxPronto=true;
+  return novos;
+}
+
+function cxLerPDF(file){
+  if(cxLendo) return;
+  cxLendo=true;
+  var saida=document.getElementById('cx-saida');
+  saida.innerHTML='<div class="alert a-info">Lendo o PDF…</div>';
+
+  cxCarregarPdfJs().then(function(lib){
+    var fr=new FileReader();
+    fr.onerror=function(){ cxLendo=false; saida.innerHTML='<div class="alert a-bad">Não foi possível abrir o arquivo.</div>'; };
+    fr.onload=function(){
+      lib.getDocument({data:new Uint8Array(fr.result)}).promise.then(function(pdf){
+        var todas=[], seq=Promise.resolve(), i;
+        for(i=1;i<=pdf.numPages;i++){
+          (function(n){
+            seq=seq.then(function(){
+              return pdf.getPage(n).then(function(pg){
+                return pg.getTextContent().then(function(tc){ todas=todas.concat(cxLinhas(tc)); });
+              });
+            });
+          })(i);
+        }
+        return seq.then(function(){ cxInterpretar(todas); cxLendo=false; render(); });
+      }).catch(function(e){
+        cxLendo=false;
+        console.error('caixas/pdf:', e);
+        saida.innerHTML='<div class="alert a-bad">Não deu para ler este PDF. Confira se é o relatório de carregamento do ELIGO. ('+esc(e.message||'erro')+')</div>';
+      });
+    };
+    fr.readAsArrayBuffer(file);
+  }).catch(function(e){
+    cxLendo=false;
+    console.error('caixas/pdfjs:', e);
+    saida.innerHTML='<div class="alert a-bad">O leitor de PDF não carregou: '+esc(e.message)+'</div>';
+  });
+}
+
+function cxCalcular(){
+  var grupos={}, faltando=0, i, it, reg, g, linha;
+  for(i=0;i<cxItens.length;i++){
+    it=cxItens[i];
+    reg=cxRatios[it.cod] || {pct:null, grupo:cxGrupoPadrao(it.cod)};
+    g=reg.grupo || cxGrupoPadrao(it.cod);
+    if(!grupos[g]) grupos[g]={itens:[], cx:0, sobras:0};
+    linha={cod:it.cod, nome:it.nome, qtd:it.qtd, un:it.un, pct:reg.pct, cx:0, sobra:0};
+    if(reg.pct>0){
+      linha.cx=Math.floor(it.qtd/reg.pct);
+      linha.sobra=it.qtd%reg.pct;
+      grupos[g].cx+=linha.cx;
+      grupos[g].sobras+=linha.sobra;
+    } else { faltando++; }
+    grupos[g].itens.push(linha);
+  }
+  var ordem=['PADARIA','CONGELADO'], k;
+  for(k in grupos){ if(grupos.hasOwnProperty(k) && ordem.indexOf(k)<0) ordem.push(k); }
+  var total=0;
+  for(k in grupos){ if(grupos.hasOwnProperty(k)) total+=grupos[k].cx; }
+  return {grupos:grupos, ordem:ordem, total:total, faltando:faltando};
+}
+
+function renderCaixas(){
+  var vis=(document.getElementById('cx-vis')||{}).value || 'sep';
+  document.getElementById('cx-sep').style.display = (vis==='sep') ? '' : 'none';
+  document.getElementById('cx-cad').style.display = (vis==='cad') ? '' : 'none';
+  var bs=document.getElementById('cx-salvar');
+  if(bs) bs.style.display = (vis==='cad' && podeCadastrar) ? '' : 'none';
+  if(vis==='cad') renderCaixasCadastro(); else renderCaixasSeparacao();
+}
+
+function renderCaixasSeparacao(){
+  var saida=document.getElementById('cx-saida');
+  if(!cxPronto){ saida.innerHTML=''; return; }
+  if(!cxItens.length){
+    saida.innerHTML='<div class="alert a-warn">Nenhum produto reconhecido neste PDF.</div>';
+    return;
+  }
+  var R=cxCalcular(), h='', i, j, L, G, termo=((document.getElementById('cx-busca')||{}).value||'').toLowerCase();
+
+  h+='<div class="grid kpis">';
+  h+='<div class="card"><div class="cxbig">'+R.total+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">caixas fechadas</div></div>';
+  for(i=0;i<R.ordem.length;i++){
+    G=R.grupos[R.ordem[i]]; if(!G) continue;
+    h+='<div class="card"><div class="cxbig" style="color:var(--text)">'+G.cx+'</div>'
+     + '<div style="font-size:11px;color:var(--muted);margin-top:5px">'+cxRotulo(R.ordem[i])
+     + ' &middot; '+G.sobras+' pacotes soltos</div></div>';
+  }
+  h+='</div>';
+
+  h+='<div style="font-size:11.5px;color:var(--muted);margin:11px 0">Carregamento <b style="color:var(--text)">'
+   + esc(cxCab.carregamento||'—')+'</b> &middot; Rota <b style="color:var(--text)">'+esc(cxCab.rota||'—')
+   + '</b> &middot; '+esc(cxCab.data||'')+' &middot; '+cxItens.length+' produtos</div>';
+
+  if(R.faltando){
+    h+='<div class="alert a-warn">▲ '+R.faltando+' produto'+(R.faltando>1?'s':'')
+     + ' sem cadastro — não entraram na conta. Troque para <b>Pacotes por caixa</b> e informe quantos pacotes cabem na caixa.</div>';
+  }
+
+  for(i=0;i<R.ordem.length;i++){
+    G=R.grupos[R.ordem[i]]; if(!G) continue;
+    h+='<div class="sect">'+cxRotulo(R.ordem[i])+' &middot; '+G.cx+' cx <span style="color:var(--muted);font-weight:400">+ '
+     + G.sobras+' soltos</span></div>';
+    h+='<div class="tw"><div class="tscroll"><table><thead><tr>'
+     + '<th>Cód</th><th>Produto</th><th style="text-align:right">Qtde</th>'
+     + '<th style="text-align:right">Pct/cx</th><th style="text-align:right">Caixas</th><th style="text-align:right">Sobra</th>'
+     + '</tr></thead><tbody>';
+    for(j=0;j<G.itens.length;j++){
+      L=G.itens[j];
+      if(termo && (L.cod+' '+L.nome).toLowerCase().indexOf(termo)<0) continue;
+      var sem=!L.pct;
+      h+='<tr'+(sem?' class="cx-falta"':'')+'>'
+       + '<td class="mono" style="color:var(--muted)">'+esc(L.cod)+'</td>'
+       + '<td>'+esc(L.nome)+'</td>'
+       + '<td class="cx-n">'+L.qtd+' <span style="color:var(--muted);font-size:10px">'+L.un.toLowerCase()+'</span></td>'
+       + '<td class="cx-n">'+(sem?'<span class="cx-tag">FALTA</span>':L.pct)+'</td>'
+       + '<td class="cx-cx'+(L.cx?'':' cx-zero')+'">'+(sem?'—':L.cx)+'</td>'
+       + '<td class="cx-sb'+(L.sobra?'':' cx-zero')+'">'+(sem?'—':L.sobra)+'</td>'
+       + '</tr>';
+    }
+    h+='</tbody></table></div></div>';
+  }
+  saida.innerHTML=h;
+}
+
+function renderCaixasCadastro(){
+  var alvo=document.getElementById('tbl-caixas');
+  var termo=((document.getElementById('cx-busca')||{}).value||'').toLowerCase();
+  var cods=Object.keys(cxRatios).sort(function(a,b){ return parseInt(a,10)-parseInt(b,10); });
+  if(!cods.length){
+    alvo.innerHTML='<tbody><tr><td style="padding:26px;text-align:center;color:var(--muted)">Envie um PDF de carregamento na aba Separação. Os produtos aparecem aqui para cadastrar.</td></tr></tbody>';
+    return;
+  }
+  var h='<thead><tr><th>Cód</th><th>Produto</th><th style="text-align:right">Pacotes por caixa</th><th>Grupo</th></tr></thead><tbody>';
+  var i, c, r, achou=0, dis=podeCadastrar?'':' disabled';
+  for(i=0;i<cods.length;i++){
+    c=cods[i]; r=cxRatios[c];
+    if(termo && (c+' '+(r.nome||'')).toLowerCase().indexOf(termo)<0) continue;
+    achou++;
+    h+='<tr'+(r.pct?'':' class="cx-falta"')+'>'
+     + '<td class="mono" style="color:var(--muted)">'+esc(c)+'</td>'
+     + '<td>'+esc(r.nome||'—')+'</td>'
+     + '<td style="text-align:right"><input type="number" min="1" step="1" class="cx-rat" value="'
+     +   (r.pct||'')+'" data-cod="'+esc(c)+'" oninput="cxSetPct(this)"'+dis+'></td>'
+     + '<td><select data-cod="'+esc(c)+'" onchange="cxSetGrupo(this)"'+dis+' style="min-width:120px">'
+     +   '<option value="PADARIA"'+(r.grupo==='PADARIA'?' selected':'')+'>Padaria</option>'
+     +   '<option value="CONGELADO"'+(r.grupo==='CONGELADO'?' selected':'')+'>Congelado</option>'
+     + '</select></td></tr>';
+  }
+  h+='</tbody>';
+  alvo.innerHTML = achou ? h : '<tbody><tr><td style="padding:26px;text-align:center;color:var(--muted)">Nenhum produto encontrado.</td></tr></tbody>';
+}
+
+window.cxSetPct=function(el){
+  var c=el.getAttribute('data-cod'), v=parseInt(el.value,10);
+  if(!cxRatios[c]) cxRatios[c]={pct:null, grupo:cxGrupoPadrao(c), nome:''};
+  cxRatios[c].pct=(isFinite(v)&&v>0)?v:null;
+};
+window.cxSetGrupo=function(el){
+  var c=el.getAttribute('data-cod');
+  if(!cxRatios[c]) cxRatios[c]={pct:null, grupo:cxGrupoPadrao(c), nome:''};
+  cxRatios[c].grupo=el.value;
+};
+
+window.salvarCaixas=function(){
+  if(!podeCadastrar){ alert('Você não tem permissão para alterar o cadastro.'); return; }
+  var b=document.getElementById('cx-salvar');
+  if(b) b.disabled=true;
+  setDoc(doc(dbC,'frotaConfig','caixas'), {
+    ratios: cxRatios,
+    atualizadoEm: agora(),
+    atualizadoPor: sessaoEmail
+  }, {merge:true})
+  .then(function(){ alert('Cadastro salvo.'); })
+  .catch(function(e){
+    console.error('caixas/salvar:', e);
+    alert('Não foi possível salvar: '+(e.code||e.message));
+  })
+  .then(function(){ if(b) b.disabled=false; });
+};
+
+function cxCel(v){ return String(v==null?'':v).replace(/[;\n\r]/g,' '); }
+function cxLinhaCsv(a){ return a.map(cxCel).join(';'); }
+
+window.exportarCaixas=function(){
+  var vis=(document.getElementById('cx-vis')||{}).value||'sep', l=[], i, j, G, L, r;
+  if(vis==='cad'){
+    l.push(cxLinhaCsv(['Codigo','Produto','PacotesPorCaixa','Grupo']));
+    var cods=Object.keys(cxRatios).sort(function(a,b){ return parseInt(a,10)-parseInt(b,10); });
+    for(i=0;i<cods.length;i++){
+      r=cxRatios[cods[i]];
+      l.push(cxLinhaCsv([cods[i], r.nome||'', r.pct||'', r.grupo||'']));
+    }
+    baixar('pacotes-por-caixa-'+hoje()+'.csv', l);
+    return;
+  }
+  if(!cxItens.length){ alert('Envie um PDF de carregamento primeiro.'); return; }
+  var R=cxCalcular();
+  l.push(cxLinhaCsv(['Carregamento','Rota','Grupo','Codigo','Produto','Qtde','Unid','PctPorCaixa','Caixas','Sobra']));
+  for(i=0;i<R.ordem.length;i++){
+    G=R.grupos[R.ordem[i]]; if(!G) continue;
+    for(j=0;j<G.itens.length;j++){
+      L=G.itens[j];
+      l.push(cxLinhaCsv([cxCab.carregamento||'', cxCab.rota||'', cxRotulo(R.ordem[i]), L.cod, L.nome, L.qtd, L.un,
+              L.pct||'', L.pct?L.cx:'', L.pct?L.sobra:'']));
+    }
+  }
+  l.push('');
+  l.push(cxLinhaCsv(['TOTAL DE CAIXAS', R.total]));
+  baixar('caixas-'+(cxCab.carregamento||hoje())+'.csv', l);
+};
+
+/* área de upload */
+(function(){
+  var dz=document.getElementById('cx-drop'), inp=document.getElementById('cx-arq');
+  if(!dz||!inp) return;
+  dz.onclick=function(){ inp.click(); };
+  dz.onkeydown=function(e){ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); inp.click(); } };
+  dz.ondragover=function(e){ e.preventDefault(); dz.classList.add('hot'); };
+  dz.ondragleave=function(){ dz.classList.remove('hot'); };
+  dz.ondrop=function(e){
+    e.preventDefault(); dz.classList.remove('hot');
+    if(e.dataTransfer.files.length) cxLerPDF(e.dataTransfer.files[0]);
+  };
+  inp.onchange=function(){ if(inp.files.length){ cxLerPDF(inp.files[0]); inp.value=''; } };
+})();
+
 /* ============ SESSÃO ============ */
 function negar(msg){
   document.getElementById('negado-msg').textContent=msg;
@@ -2812,6 +3177,15 @@ function liberar(d){
   });
   ouvir('frotaDocs', collection(dbC,'frotaDocs'), function(s){
     docs=s.docs.map(function(x){ return Object.assign({ firestoreId:x.id }, x.data()); });
+    render();
+  });
+  ouvir('frotaConfigCaixas', doc(dbC,'frotaConfig','caixas'), function(s){
+    if(s.exists() && s.data().ratios){
+      cxRatios=s.data().ratios;
+    }else{
+      cxRatios={};
+      cxAplicarSemente();
+    }
     render();
   });
   ouvir('frotaConfig', doc(dbC,'frotaConfig','app'), function(s){
