@@ -248,7 +248,7 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
     <button class="navbtn" data-p="docs" onclick="nav('docs')"><span class="side-ico">▣</span><span class="lbl">Documentos</span></button>
     <button class="navbtn" data-p="caixas" onclick="nav('caixas')"><span class="side-ico">▤</span><span class="lbl">Caixas</span></button>
     <button class="navbtn gestao-only" data-p="custos" onclick="nav('custos')"><span class="side-ico">◷</span><span class="lbl">Custos e consumo</span></button>
-    <button class="navbtn admin-only" data-p="config" onclick="nav('config')"><span class="side-ico">⚙</span><span class="lbl">Configurações</span></button>
+    <button class="navbtn caixas-only" data-p="config" onclick="nav('config')"><span class="side-ico">⚙</span><span class="lbl">Configurações</span></button>
     <div class="side-foot">
       <div class="uline">
         <div class="uav" id="uavatar">?</div>
@@ -408,28 +408,15 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
     <!-- CAIXAS -->
     <div class="page" id="page-caixas">
       <div class="tools">
-        <select id="cx-vis" onchange="render()">
-          <option value="sep" selected>Separação</option>
-          <option value="cad">Pacotes por caixa</option>
-        </select>
-        <input type="text" id="cx-busca" placeholder="Buscar produto ou código" oninput="render()" style="min-width:200px">
-        <button class="btn btn-sm btn-ghost frota-cad" id="cx-salvar" onclick="salvarCaixas()">Salvar cadastro</button>
+        <input type="text" id="cx-busca" placeholder="Buscar produto ou código" oninput="render()" style="min-width:210px">
         <button class="btn btn-sm btn-ghost" onclick="exportarCaixas()" style="margin-left:auto">⤓ CSV</button>
       </div>
-
-      <div id="cx-sep">
-        <div class="cxdrop" id="cx-drop" tabindex="0" role="button" aria-label="Enviar PDF do carregamento">
-          <b>Solte aqui o PDF do carregamento</b>
-          <span>ou toque para escolher o arquivo</span>
-        </div>
-        <input type="file" id="cx-arq" accept="application/pdf" style="display:none">
-        <div id="cx-saida" style="margin-top:14px"></div>
+      <div class="cxdrop" id="cx-drop" tabindex="0" role="button" aria-label="Enviar PDF do carregamento">
+        <b>Solte aqui o PDF do carregamento</b>
+        <span>ou toque para escolher o arquivo</span>
       </div>
-
-      <div id="cx-cad" style="display:none">
-        <div class="alert a-info">▤ Quantos pacotes entram em uma caixa. O que ficar em branco aparece marcado na separação e não entra na conta.</div>
-        <div class="tw"><div class="tscroll"><table id="tbl-caixas"></table></div></div>
-      </div>
+      <input type="file" id="cx-arq" accept="application/pdf" style="display:none">
+      <div id="cx-saida" style="margin-top:14px"></div>
     </div>
 
     <!-- CUSTOS -->
@@ -465,6 +452,22 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
 
     <!-- CONFIG -->
     <div class="page" id="page-config">
+      <div class="card caixas-only" style="max-width:860px;margin-bottom:14px">
+        <div class="klabel">Pacotes por caixa</div>
+        <div class="fhint" style="margin:6px 0 11px">Quantos pacotes entram em uma caixa, por produto. É o que a expedição usa para converter o carregamento. Produto sem número preenchido não entra na conta e aparece marcado na aba Caixas.</div>
+        <div class="tools" style="margin-bottom:11px">
+          <input type="text" id="cgcx-busca" placeholder="Buscar produto ou código" oninput="renderConfigCaixas()" style="min-width:210px">
+          <select id="cgcx-filtro" onchange="renderConfigCaixas()">
+            <option value="todos">Todos os produtos</option>
+            <option value="falta">Sem conversão</option>
+            <option value="ok">Já cadastrados</option>
+          </select>
+          <button class="btn btn-sm" onclick="salvarCaixas()">Salvar</button>
+          <button class="btn btn-sm btn-ghost" onclick="importarProdulog()">⟳ Puxar produtos do Produlog</button>
+          <span id="cgcx-status" style="font-size:12px;color:var(--muted)"></span>
+        </div>
+        <div class="tw"><div class="tscroll" style="max-height:440px"><table id="tbl-caixas"></table></div></div>
+      </div>
       <div class="card admin-only" style="max-width:620px;margin-bottom:14px">
         <div class="klabel">Importar por planilha</div>
         <div class="fhint" style="margin:6px 0 11px">O cabeçalho pode estar em qualquer uma das 10 primeiras linhas. Coluna em branco não apaga o que já existe, e lançamento repetido é ignorado — dá para reimportar a mesma planilha sem duplicar.</div>
@@ -479,7 +482,7 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
         <div id="imp-status" style="font-size:12.5px;color:var(--muted);margin-top:11px"></div>
       </div>
 
-      <div class="card" style="max-width:620px">
+      <div class="card admin-only" style="max-width:620px">
         <div class="klabel">Intervalos padrão</div>
         <div class="fhint" style="margin:6px 0 11px">Valem para veículo que não tiver intervalo próprio cadastrado.</div>
         <div class="fgrid">
@@ -497,7 +500,7 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
           <textarea id="cg-tipos" rows="6" placeholder="CAMINHÃO&#10;VAN&#10;UTILITÁRIO&#10;MOTO&#10;CARRO"></textarea></div>
       </div>
 
-      <div class="card" style="max-width:620px;margin-top:14px">
+      <div class="card admin-only" style="max-width:620px;margin-top:14px">
         <div class="klabel">Modelo de checklist por tipo</div>
         <div class="fhint" style="margin:6px 0 11px">Um item por linha. Cada tipo de veículo tem sua lista — o que se checa num caminhão não é o que se checa numa moto. Sem modelo, os veículos daquele tipo não podem ser inspecionados.</div>
         <div class="fgrid">
@@ -525,7 +528,7 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, collection, onSnapshot, doc, setDoc, addDoc, updateDoc, deleteDoc, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, onSnapshot, doc, setDoc, addDoc, updateDoc, deleteDoc, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const cfgFB = { apiKey:"AIzaSyCH_t074MvkJn-qVMvCtLfEMaQHf_e_d7M", authDomain:"manutencao-comodato.firebaseapp.com", projectId:"manutencao-comodato", storageBucket:"manutencao-comodato.firebasestorage.app", messagingSenderId:"89709396101", appId:"1:89709396101:web:22ee225ffa806e07a269ec" };
@@ -539,7 +542,7 @@ var pagina='painel', sessaoEmail='', sessaoUid='', sessaoNome='', ehAdmin=false,
    frotaLanc — lança manutenção, óleo, km, abastecimento, pneu e checklist
    frotaMov  — o de cima, mais cadastrar veículo e documento
    role admin — o de cima, mais Configurações e importadores            */
-var podeCadastrar=false;
+var podeCadastrar=false, podeCaixas=false;
 /* Painel e Custos são telas de gestão: quem só lança manutenção não precisa
    ver o gasto da frota inteira. */
 var PAGINAS_GESTAO=['painel','custos'];
@@ -619,7 +622,7 @@ window.togglePin=function(e){
 
 window.nav=function(p){
   if(!TITLES[p]) return;
-  if(p==='config' && !ehAdmin) p='veiculos';
+  if(p==='config' && !ehAdmin && !podeCaixas) p='veiculos';
   if(PAGINAS_GESTAO.indexOf(p)>=0 && !podeGestaoFrota()) p='veiculos';
   pagina=p;
   document.querySelectorAll('.page').forEach(function(el){ el.classList.remove('on'); });
@@ -1003,6 +1006,7 @@ function render(){
   document.querySelectorAll('.frota-mov').forEach(function(el){ el.style.display=podeLancar?'':'none'; });
   document.querySelectorAll('.frota-cad').forEach(function(el){ el.style.display=podeCadastrar?'':'none'; });
   document.querySelectorAll('.admin-only').forEach(function(el){ el.style.display=ehAdmin?'':'none'; });
+  document.querySelectorAll('.caixas-only').forEach(function(el){ el.style.display=(ehAdmin||podeCaixas)?'':'none'; });
   document.querySelectorAll('.gestao-only').forEach(function(el){ el.style.display=podeGestaoFrota()?'':'none'; });
   // a tela salva do último acesso não pode furar a restrição
   if(PAGINAS_GESTAO.indexOf(pagina)>=0 && !podeGestaoFrota()){ nav('veiculos'); return; }
@@ -1017,7 +1021,7 @@ function render(){
   else if(pagina==='docs') renderDocs();
   else if(pagina==='caixas') renderCaixas();
   else if(pagina==='custos') renderCustos();
-  else if(pagina==='config') renderConfig();
+  else if(pagina==='config'){ renderConfig(); renderConfigCaixas(); }
 }
 window.render=render;
 window.setVisaoVeic=function(v){
@@ -2796,30 +2800,80 @@ window.exportarCustos=function(){
 /* ============ CONVERSÃO DE CAIXAS ============ */
 var cxItens=[], cxCab={}, cxRatios={}, cxPronto=false, cxLendo=false;
 
+/* Produlog compara código por número: "03" e "3" são o mesmo produto.
+   Guardamos tudo pela forma sem zeros à esquerda. */
+function cxKey(cod){
+  var s=String(cod==null?'':cod).trim();
+  var n=parseInt(s,10);
+  return isFinite(n) ? String(n) : s;
+}
+
 /* Regras conferidas com a separação manual do carregamento 18212 */
 var CX_SEMENTE={
-  '119':{pct:3, grupo:'PADARIA', nome:'PÃO FRANCES PREMIUM 75GR'},
-  '25' :{pct:7, grupo:'PADARIA', nome:'PÃO CENOURA 500GR'},
-  '140':{pct:7, grupo:'PADARIA', nome:'PÃO DE LEITE 500GR'},
-  '148':{pct:7, grupo:'PADARIA', nome:'PÃO AIPIM 500GR'},
-  '153':{pct:7, grupo:'PADARIA', nome:'PÃO MILHO DOCE 500GR'},
-  '186':{pct:10,grupo:'PADARIA', nome:'PÃO DE QUEIJO RECH. FRANGO 58GR'},
-  '187':{pct:10,grupo:'PADARIA', nome:'PÃO DE QUEIJO RECH. REQUEIJÃO 58GR'},
-  '188':{pct:10,grupo:'PADARIA', nome:'PÃO DE QUEIJO RECH. GOIABADA 58GR'},
-  '130':{pct:40,grupo:'PADARIA', nome:'CUCA ALEMÃ 320GR'}
+  '119':{pct:3,  nome:'PÃO FRANCES PREMIUM 75GR'},
+  '25' :{pct:7,  nome:'PÃO CENOURA 500GR'},
+  '140':{pct:7,  nome:'PÃO DE LEITE 500GR'},
+  '148':{pct:7,  nome:'PÃO AIPIM 500GR'},
+  '153':{pct:7,  nome:'PÃO MILHO DOCE 500GR'},
+  '186':{pct:10, nome:'PÃO DE QUEIJO RECH. FRANGO 58GR'},
+  '187':{pct:10, nome:'PÃO DE QUEIJO RECH. REQUEIJÃO 58GR'},
+  '188':{pct:10, nome:'PÃO DE QUEIJO RECH. GOIABADA 58GR'},
+  '130':{pct:40, nome:'CUCA ALEMÃ 320GR'}
 };
-
-function cxGrupoPadrao(cod){ return (parseInt(cod,10)>=205) ? 'CONGELADO' : 'PADARIA'; }
-function cxRotulo(g){ return g==='CONGELADO' ? 'Congelado' : (g==='PADARIA' ? 'Padaria' : g); }
 
 function cxAplicarSemente(){
   var k;
   for(k in CX_SEMENTE){
-    if(CX_SEMENTE.hasOwnProperty(k) && !cxRatios[k]) cxRatios[k]=JSON.parse(JSON.stringify(CX_SEMENTE[k]));
+    if(CX_SEMENTE.hasOwnProperty(k) && !cxRatios[k]) cxRatios[k]={pct:CX_SEMENTE[k].pct, nome:CX_SEMENTE[k].nome};
   }
 }
 
-/* carrega o pdf.js sob demanda (UMD via tag <script>) */
+/* ---- base de produtos do Produlog (projeto montecastelo-a0764) ---- */
+var PL_CONFIG={
+  apiKey:"AIzaSyDY5ma_NbCmZ2dyXUjKm6GZQ3ibhwgcdmI",
+  authDomain:"montecastelo-a0764.firebaseapp.com",
+  projectId:"montecastelo-a0764",
+  storageBucket:"montecastelo-a0764.firebasestorage.app",
+  messagingSenderId:"158891969912",
+  appId:"1:158891969912:web:0541e828e0e0743cef0c8d"
+};
+var _dbProdulog=null;
+function dbProdulog(){
+  if(!_dbProdulog) _dbProdulog=getFirestore(initializeApp(PL_CONFIG,'produlog'));
+  return _dbProdulog;
+}
+
+window.importarProdulog=function(){
+  if(!podeCaixas){ alert('Você não tem permissão para alterar este cadastro.'); return; }
+  var st=document.getElementById('cgcx-status');
+  if(st){ st.setAttribute('data-busy','1'); st.textContent='Lendo o Produlog…'; }
+  var db2=dbProdulog();
+  Promise.all([
+    getDocs(collection(db2,'produtosConfeitaria')),
+    getDocs(collection(db2,'quadraProdutosCustom'))
+  ]).then(function(res){
+    var novos=0, renomeados=0, i, k, d, p, cod, nome;
+    for(i=0;i<res.length;i++){
+      for(k=0;k<res[i].docs.length;k++){
+        d=res[i].docs[k]; p=d.data()||{};
+        cod=cxKey(p.cod); nome=String(p.nome||'').trim();
+        if(!cod || !nome) continue;
+        if(!cxRatios[cod]){ cxRatios[cod]={pct:null, nome:nome}; novos++; }
+        else if(cxRatios[cod].nome!==nome){ cxRatios[cod].nome=nome; renomeados++; }
+      }
+    }
+    if(st) st.removeAttribute('data-busy');
+    renderConfigCaixas();
+    alert('Produtos do Produlog: '+novos+' novo(s), '+renomeados+' com nome atualizado.\n\n'+
+          'As conversões que já estavam preenchidas foram mantidas. Clique em Salvar para gravar.');
+  }).catch(function(e){
+    console.error('produlog/importar:', e);
+    if(st){ st.removeAttribute('data-busy'); st.textContent=''; }
+    alert('Não deu para ler os produtos do Produlog: '+(e.code||e.message));
+  });
+};
+
+/* ---- leitura do PDF ---- */
 function cxCarregarPdfJs(){
   return new Promise(function(ok, falhou){
     if(window.pdfjsLib){ ok(window.pdfjsLib); return; }
@@ -2878,18 +2932,17 @@ function cxInterpretar(linhas){
     if(!m) continue;
     qtd=parseFloat(m[3].replace(',','.'));
     if(!isFinite(qtd) || qtd<=0) continue;
-    cxItens.push({ cod:m[1], nome:m[2].trim(), qtd:Math.round(qtd), un:m[4].toUpperCase() });
+    cxItens.push({ cod:cxKey(m[1]), codPdf:m[1], nome:m[2].trim(), qtd:Math.round(qtd), un:m[4].toUpperCase() });
   }
 
-  /* produtos novos entram no cadastro sem proporção */
-  var novos=0, c;
+  /* produto que o carregamento tem e o cadastro não: entra sem conversão */
+  var c;
   for(i=0;i<cxItens.length;i++){
     c=cxItens[i].cod;
-    if(!cxRatios[c]){ cxRatios[c]={pct:null, grupo:cxGrupoPadrao(c), nome:cxItens[i].nome}; novos++; }
-    else if(!cxRatios[c].nome){ cxRatios[c].nome=cxItens[i].nome; }
+    if(!cxRatios[c]) cxRatios[c]={pct:null, nome:cxItens[i].nome};
+    else if(!cxRatios[c].nome) cxRatios[c].nome=cxItens[i].nome;
   }
   cxPronto=true;
-  return novos;
 }
 
 function cxLerPDF(file){
@@ -2929,103 +2982,89 @@ function cxLerPDF(file){
 }
 
 function cxCalcular(){
-  var grupos={}, faltando=0, i, it, reg, g, linha;
+  var linhas=[], total=0, sobras=0, faltando=0, i, it, reg, L;
   for(i=0;i<cxItens.length;i++){
     it=cxItens[i];
-    reg=cxRatios[it.cod] || {pct:null, grupo:cxGrupoPadrao(it.cod)};
-    g=reg.grupo || cxGrupoPadrao(it.cod);
-    if(!grupos[g]) grupos[g]={itens:[], cx:0, sobras:0};
-    linha={cod:it.cod, nome:it.nome, qtd:it.qtd, un:it.un, pct:reg.pct, cx:0, sobra:0};
+    reg=cxRatios[it.cod] || {pct:null};
+    L={cod:it.codPdf, nome:it.nome, qtd:it.qtd, un:it.un, pct:reg.pct, cx:0, sobra:0};
     if(reg.pct>0){
-      linha.cx=Math.floor(it.qtd/reg.pct);
-      linha.sobra=it.qtd%reg.pct;
-      grupos[g].cx+=linha.cx;
-      grupos[g].sobras+=linha.sobra;
+      L.cx=Math.floor(it.qtd/reg.pct);
+      L.sobra=it.qtd%reg.pct;
+      total+=L.cx;
+      sobras+=L.sobra;
     } else { faltando++; }
-    grupos[g].itens.push(linha);
+    linhas.push(L);
   }
-  var ordem=['PADARIA','CONGELADO'], k;
-  for(k in grupos){ if(grupos.hasOwnProperty(k) && ordem.indexOf(k)<0) ordem.push(k); }
-  var total=0;
-  for(k in grupos){ if(grupos.hasOwnProperty(k)) total+=grupos[k].cx; }
-  return {grupos:grupos, ordem:ordem, total:total, faltando:faltando};
+  return {linhas:linhas, total:total, sobras:sobras, faltando:faltando};
 }
 
 function renderCaixas(){
-  var vis=(document.getElementById('cx-vis')||{}).value || 'sep';
-  document.getElementById('cx-sep').style.display = (vis==='sep') ? '' : 'none';
-  document.getElementById('cx-cad').style.display = (vis==='cad') ? '' : 'none';
-  var bs=document.getElementById('cx-salvar');
-  if(bs) bs.style.display = (vis==='cad' && podeCadastrar) ? '' : 'none';
-  if(vis==='cad') renderCaixasCadastro(); else renderCaixasSeparacao();
-}
-
-function renderCaixasSeparacao(){
   var saida=document.getElementById('cx-saida');
+  if(!saida) return;
   if(!cxPronto){ saida.innerHTML=''; return; }
   if(!cxItens.length){
     saida.innerHTML='<div class="alert a-warn">Nenhum produto reconhecido neste PDF.</div>';
     return;
   }
-  var R=cxCalcular(), h='', i, j, L, G, termo=((document.getElementById('cx-busca')||{}).value||'').toLowerCase();
+  var R=cxCalcular(), h='', i, L;
+  var termo=((document.getElementById('cx-busca')||{}).value||'').toLowerCase();
 
   h+='<div class="grid kpis">';
   h+='<div class="card"><div class="cxbig">'+R.total+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">caixas fechadas</div></div>';
-  for(i=0;i<R.ordem.length;i++){
-    G=R.grupos[R.ordem[i]]; if(!G) continue;
-    h+='<div class="card"><div class="cxbig" style="color:var(--text)">'+G.cx+'</div>'
-     + '<div style="font-size:11px;color:var(--muted);margin-top:5px">'+cxRotulo(R.ordem[i])
-     + ' &middot; '+G.sobras+' pacotes soltos</div></div>';
-  }
+  h+='<div class="card"><div class="cxbig" style="color:var(--amber)">'+R.sobras+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">pacotes soltos</div></div>';
+  h+='<div class="card"><div class="cxbig" style="color:var(--text)">'+cxItens.length+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">produtos no carregamento</div></div>';
   h+='</div>';
 
   h+='<div style="font-size:11.5px;color:var(--muted);margin:11px 0">Carregamento <b style="color:var(--text)">'
    + esc(cxCab.carregamento||'—')+'</b> &middot; Rota <b style="color:var(--text)">'+esc(cxCab.rota||'—')
-   + '</b> &middot; '+esc(cxCab.data||'')+' &middot; '+cxItens.length+' produtos</div>';
+   + '</b> &middot; '+esc(cxCab.data||'')+'</div>';
 
   if(R.faltando){
     h+='<div class="alert a-warn">▲ '+R.faltando+' produto'+(R.faltando>1?'s':'')
-     + ' sem cadastro — não entraram na conta. Troque para <b>Pacotes por caixa</b> e informe quantos pacotes cabem na caixa.</div>';
+     + ' sem conversão cadastrada — não entraram na conta. A conversão se cadastra em <b>Configurações</b>.</div>';
   }
 
-  for(i=0;i<R.ordem.length;i++){
-    G=R.grupos[R.ordem[i]]; if(!G) continue;
-    h+='<div class="sect">'+cxRotulo(R.ordem[i])+' &middot; '+G.cx+' cx <span style="color:var(--muted);font-weight:400">+ '
-     + G.sobras+' soltos</span></div>';
-    h+='<div class="tw"><div class="tscroll"><table><thead><tr>'
-     + '<th>Cód</th><th>Produto</th><th style="text-align:right">Qtde</th>'
-     + '<th style="text-align:right">Pct/cx</th><th style="text-align:right">Caixas</th><th style="text-align:right">Sobra</th>'
-     + '</tr></thead><tbody>';
-    for(j=0;j<G.itens.length;j++){
-      L=G.itens[j];
-      if(termo && (L.cod+' '+L.nome).toLowerCase().indexOf(termo)<0) continue;
-      var sem=!L.pct;
-      h+='<tr'+(sem?' class="cx-falta"':'')+'>'
-       + '<td class="mono" style="color:var(--muted)">'+esc(L.cod)+'</td>'
-       + '<td>'+esc(L.nome)+'</td>'
-       + '<td class="cx-n">'+L.qtd+' <span style="color:var(--muted);font-size:10px">'+L.un.toLowerCase()+'</span></td>'
-       + '<td class="cx-n">'+(sem?'<span class="cx-tag">FALTA</span>':L.pct)+'</td>'
-       + '<td class="cx-cx'+(L.cx?'':' cx-zero')+'">'+(sem?'—':L.cx)+'</td>'
-       + '<td class="cx-sb'+(L.sobra?'':' cx-zero')+'">'+(sem?'—':L.sobra)+'</td>'
-       + '</tr>';
-    }
-    h+='</tbody></table></div></div>';
+  h+='<div class="tw"><div class="tscroll"><table><thead><tr>'
+   + '<th>Cód</th><th>Produto</th><th style="text-align:right">Qtde</th>'
+   + '<th style="text-align:right">Pct/cx</th><th style="text-align:right">Caixas</th><th style="text-align:right">Sobra</th>'
+   + '</tr></thead><tbody>';
+  for(i=0;i<R.linhas.length;i++){
+    L=R.linhas[i];
+    if(termo && (L.cod+' '+L.nome).toLowerCase().indexOf(termo)<0) continue;
+    var sem=!L.pct;
+    h+='<tr'+(sem?' class="cx-falta"':'')+'>'
+     + '<td class="mono" style="color:var(--muted)">'+esc(L.cod)+'</td>'
+     + '<td>'+esc(L.nome)+'</td>'
+     + '<td class="cx-n">'+L.qtd+' <span style="color:var(--muted);font-size:10px">'+L.un.toLowerCase()+'</span></td>'
+     + '<td class="cx-n">'+(sem?'<span class="cx-tag">FALTA</span>':L.pct)+'</td>'
+     + '<td class="cx-cx'+(L.cx?'':' cx-zero')+'">'+(sem?'—':L.cx)+'</td>'
+     + '<td class="cx-sb'+(L.sobra?'':' cx-zero')+'">'+(sem?'—':L.sobra)+'</td>'
+     + '</tr>';
   }
+  h+='</tbody></table></div></div>';
   saida.innerHTML=h;
 }
 
-function renderCaixasCadastro(){
+/* ---- cadastro, dentro de Configurações ---- */
+window.renderConfigCaixas=function(){
   var alvo=document.getElementById('tbl-caixas');
-  var termo=((document.getElementById('cx-busca')||{}).value||'').toLowerCase();
+  if(!alvo) return;
+  var termo=((document.getElementById('cgcx-busca')||{}).value||'').toLowerCase();
+  var filtro=((document.getElementById('cgcx-filtro')||{}).value||'todos');
   var cods=Object.keys(cxRatios).sort(function(a,b){ return parseInt(a,10)-parseInt(b,10); });
+
   if(!cods.length){
-    alvo.innerHTML='<tbody><tr><td style="padding:26px;text-align:center;color:var(--muted)">Envie um PDF de carregamento na aba Separação. Os produtos aparecem aqui para cadastrar.</td></tr></tbody>';
+    alvo.innerHTML='<tbody><tr><td style="padding:26px;text-align:center;color:var(--muted)">Nenhum produto ainda. Clique em <b>Puxar produtos do Produlog</b> para trazer a lista.</td></tr></tbody>';
     return;
   }
-  var h='<thead><tr><th>Cód</th><th>Produto</th><th style="text-align:right">Pacotes por caixa</th><th>Grupo</th></tr></thead><tbody>';
-  var i, c, r, achou=0, dis=podeCadastrar?'':' disabled';
+
+  var h='<thead><tr><th style="width:70px">Cód</th><th>Produto</th><th style="text-align:right;width:150px">Pacotes por caixa</th></tr></thead><tbody>';
+  var i, c, r, achou=0, faltam=0, dis=podeCaixas?'':' disabled';
   for(i=0;i<cods.length;i++){
     c=cods[i]; r=cxRatios[c];
+    if(!r.pct) faltam++;
+    if(filtro==='falta' && r.pct) continue;
+    if(filtro==='ok' && !r.pct) continue;
     if(termo && (c+' '+(r.nome||'')).toLowerCase().indexOf(termo)<0) continue;
     achou++;
     h+='<tr'+(r.pct?'':' class="cx-falta"')+'>'
@@ -3033,71 +3072,57 @@ function renderCaixasCadastro(){
      + '<td>'+esc(r.nome||'—')+'</td>'
      + '<td style="text-align:right"><input type="number" min="1" step="1" class="cx-rat" value="'
      +   (r.pct||'')+'" data-cod="'+esc(c)+'" oninput="cxSetPct(this)"'+dis+'></td>'
-     + '<td><select data-cod="'+esc(c)+'" onchange="cxSetGrupo(this)"'+dis+' style="min-width:120px">'
-     +   '<option value="PADARIA"'+(r.grupo==='PADARIA'?' selected':'')+'>Padaria</option>'
-     +   '<option value="CONGELADO"'+(r.grupo==='CONGELADO'?' selected':'')+'>Congelado</option>'
-     + '</select></td></tr>';
+     + '</tr>';
   }
   h+='</tbody>';
   alvo.innerHTML = achou ? h : '<tbody><tr><td style="padding:26px;text-align:center;color:var(--muted)">Nenhum produto encontrado.</td></tr></tbody>';
-}
+
+  var st=document.getElementById('cgcx-status');
+  if(st && st.getAttribute('data-busy')!=='1') st.textContent = cods.length+' produtos · '+faltam+' sem conversão';
+};
 
 window.cxSetPct=function(el){
   var c=el.getAttribute('data-cod'), v=parseInt(el.value,10);
-  if(!cxRatios[c]) cxRatios[c]={pct:null, grupo:cxGrupoPadrao(c), nome:''};
+  if(!cxRatios[c]) cxRatios[c]={pct:null, nome:''};
   cxRatios[c].pct=(isFinite(v)&&v>0)?v:null;
-};
-window.cxSetGrupo=function(el){
-  var c=el.getAttribute('data-cod');
-  if(!cxRatios[c]) cxRatios[c]={pct:null, grupo:cxGrupoPadrao(c), nome:''};
-  cxRatios[c].grupo=el.value;
+  el.closest('tr').className = cxRatios[c].pct ? '' : 'cx-falta';
 };
 
 window.salvarCaixas=function(){
-  if(!podeCadastrar){ alert('Você não tem permissão para alterar o cadastro.'); return; }
-  var b=document.getElementById('cx-salvar');
-  if(b) b.disabled=true;
+  if(!podeCaixas){ alert('Você não tem permissão para alterar este cadastro.'); return; }
+  var st=document.getElementById('cgcx-status');
+  if(st){ st.setAttribute('data-busy','1'); st.textContent='Salvando…'; }
   setDoc(doc(dbC,'frotaConfig','caixas'), {
     ratios: cxRatios,
     atualizadoEm: agora(),
     atualizadoPor: sessaoEmail
   }, {merge:true})
-  .then(function(){ alert('Cadastro salvo.'); })
+  .then(function(){
+    if(st) st.textContent='Salvo.';
+    setTimeout(function(){ if(st) st.removeAttribute('data-busy'); renderConfigCaixas(); },1400);
+  })
   .catch(function(e){
     console.error('caixas/salvar:', e);
+    if(st){ st.removeAttribute('data-busy'); st.textContent=''; }
     alert('Não foi possível salvar: '+(e.code||e.message));
-  })
-  .then(function(){ if(b) b.disabled=false; });
+  });
 };
 
 function cxCel(v){ return String(v==null?'':v).replace(/[;\n\r]/g,' '); }
 function cxLinhaCsv(a){ return a.map(cxCel).join(';'); }
 
 window.exportarCaixas=function(){
-  var vis=(document.getElementById('cx-vis')||{}).value||'sep', l=[], i, j, G, L, r;
-  if(vis==='cad'){
-    l.push(cxLinhaCsv(['Codigo','Produto','PacotesPorCaixa','Grupo']));
-    var cods=Object.keys(cxRatios).sort(function(a,b){ return parseInt(a,10)-parseInt(b,10); });
-    for(i=0;i<cods.length;i++){
-      r=cxRatios[cods[i]];
-      l.push(cxLinhaCsv([cods[i], r.nome||'', r.pct||'', r.grupo||'']));
-    }
-    baixar('pacotes-por-caixa-'+hoje()+'.csv', l);
-    return;
-  }
   if(!cxItens.length){ alert('Envie um PDF de carregamento primeiro.'); return; }
-  var R=cxCalcular();
-  l.push(cxLinhaCsv(['Carregamento','Rota','Grupo','Codigo','Produto','Qtde','Unid','PctPorCaixa','Caixas','Sobra']));
-  for(i=0;i<R.ordem.length;i++){
-    G=R.grupos[R.ordem[i]]; if(!G) continue;
-    for(j=0;j<G.itens.length;j++){
-      L=G.itens[j];
-      l.push(cxLinhaCsv([cxCab.carregamento||'', cxCab.rota||'', cxRotulo(R.ordem[i]), L.cod, L.nome, L.qtd, L.un,
-              L.pct||'', L.pct?L.cx:'', L.pct?L.sobra:'']));
-    }
+  var R=cxCalcular(), l=[], i, L;
+  l.push(cxLinhaCsv(['Carregamento','Rota','Codigo','Produto','Qtde','Unid','PctPorCaixa','Caixas','Sobra']));
+  for(i=0;i<R.linhas.length;i++){
+    L=R.linhas[i];
+    l.push(cxLinhaCsv([cxCab.carregamento||'', cxCab.rota||'', L.cod, L.nome, L.qtd, L.un,
+            L.pct||'', L.pct?L.cx:'', L.pct?L.sobra:'']));
   }
   l.push('');
   l.push(cxLinhaCsv(['TOTAL DE CAIXAS', R.total]));
+  l.push(cxLinhaCsv(['PACOTES SOLTOS', R.sobras]));
   baixar('caixas-'+(cxCab.carregamento||hoje())+'.csv', l);
 };
 
@@ -3142,6 +3167,7 @@ function iniciarSessao(user){
     if(d.ativo!==true){ negar('Sua conta ainda não foi liberada por um administrador.'); return; }
     if(!ehAdmin && d.frota!==true){ negar('O app de Frota é restrito a quem tem a permissão (flag frota).'); return; }
     podeCadastrar=(ehAdmin || d.frotaMov===true);
+    podeCaixas=(ehAdmin || d.frotaCaixas===true);
     podeLancar=(podeCadastrar || d.frotaLanc===true);
     liberar(d);
   }, function(err){ console.error('usuarios:',err); negar('Não foi possível carregar suas permissões: '+(err.code||err.message)); });
