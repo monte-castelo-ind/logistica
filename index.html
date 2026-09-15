@@ -501,6 +501,7 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
           <button class="btn btn-sm btn-ghost" onclick="importarProdulog()">⟳ Puxar produtos do Produlog</button>
           <span id="cgcx-status" style="font-size:12px;color:var(--muted)"></span>
         </div>
+        <div id="cgcx-aviso" style="display:none"></div>
         <div class="tw"><div class="tscroll" style="max-height:440px"><table id="tbl-caixas"></table></div></div>
       </div>
       <div class="card admin-only" style="max-width:620px;margin-bottom:14px">
@@ -2838,6 +2839,8 @@ window.exportarCustos=function(){
    converter — dois carregamentos no mesmo caminhão rendem menos caixa que
    convertidos separados, que é justamente o motivo de juntar. */
 var cxDocs=[], cxRatios={}, cxLendo=0, cxSeq=0;
+/* cxSujo: tem edição não salva — o snapshot não pode sobrescrever digitação em andamento */
+var cxSujo=false, cxMigracao=null;
 
 /* Produlog compara código por número: "03" e "3" são o mesmo produto.
    Guardamos tudo pela forma sem zeros à esquerda. */
@@ -2845,6 +2848,25 @@ function cxKey(cod){
   var s=String(cod==null?'':cod).trim();
   var n=parseInt(s,10);
   return isFinite(n) ? String(n) : s;
+}
+
+/* O cadastro antigo guardava o código como vinha do PDF ("03") enquanto o
+   Produlog manda "3". Ao carregar, unifica tudo na forma sem zero à esquerda. */
+function cxMigrarChaves(bruto){
+  var saida={}, unidos=0, conflitos=[], chaves=Object.keys(bruto||{});
+  /* chave canônica primeiro, para ela mandar no nome */
+  chaves.sort(function(a,b){ return (a.length-b.length) || a.localeCompare(b); });
+  chaves.forEach(function(k){
+    var reg=bruto[k]||{}, key=cxKey(k), cur=saida[key];
+    var pct=(reg.pct!=null && reg.pct!=='') ? Number(reg.pct) : null;
+    var nome=String(reg.nome||'').trim();
+    if(!cur){ saida[key]={pct:(pct>0?pct:null), nome:nome}; return; }
+    unidos++;
+    if(cur.pct==null && pct>0) cur.pct=pct;
+    else if(cur.pct!=null && pct>0 && cur.pct!==pct) conflitos.push(key+' ('+cur.pct+' ou '+pct+')');
+    if(!cur.nome && nome) cur.nome=nome;
+  });
+  return {ratios:saida, unidos:unidos, conflitos:conflitos};
 }
 
 /* Regras conferidas com a separação manual do carregamento 18212 */
@@ -2902,6 +2924,7 @@ window.importarProdulog=function(){
       }
     }
     if(st) st.removeAttribute('data-busy');
+    if(novos||renomeados) cxSujo=true;
     renderConfigCaixas();
     alert('Produtos do Produlog: '+novos+' novo(s), '+renomeados+' com nome atualizado.\n\n'+
           'As conversões que já estavam preenchidas foram mantidas. Clique em Salvar para gravar.');
@@ -3310,13 +3333,30 @@ window.renderConfigCaixas=function(){
   alvo.innerHTML = achou ? h : '<tbody><tr><td style="padding:26px;text-align:center;color:var(--muted)">Nenhum produto encontrado.</td></tr></tbody>';
 
   var st=document.getElementById('cgcx-status');
-  if(st && st.getAttribute('data-busy')!=='1') st.textContent = cods.length+' produtos · '+faltam+' sem conversão';
+  if(st && st.getAttribute('data-busy')!=='1'){
+    st.textContent = cods.length+' produtos · '+faltam+' sem conversão'+(cxSujo?' · alterações não salvas':'');
+    st.style.color = cxSujo ? 'var(--amber)' : 'var(--muted)';
+  }
+
+  var av=document.getElementById('cgcx-aviso');
+  if(av){
+    if(cxMigracao){
+      av.className='alert a-warn';
+      av.innerHTML='▲ '+cxMigracao.unidos+' código(s) duplicado(s) foram unificados — "03" e "3" eram o mesmo produto. '
+        + (cxMigracao.conflitos.length
+            ? 'Confira estes, que tinham conversões diferentes: <b>'+esc(cxMigracao.conflitos.join(', '))+'</b>. '
+            : '')
+        + 'Clique em <b>Salvar</b> para gravar a lista limpa.';
+      av.style.display='';
+    } else { av.style.display='none'; av.innerHTML=''; }
+  }
 };
 
 window.cxSetPct=function(el){
   var c=el.getAttribute('data-cod'), v=parseInt(el.value,10);
   if(!cxRatios[c]) cxRatios[c]={pct:null, nome:''};
   cxRatios[c].pct=(isFinite(v)&&v>0)?v:null;
+  cxSujo=true;
   var tr=el.closest('tr');
   if(tr) tr.className = cxRatios[c].pct ? '' : 'cx-falta';
 };
@@ -3325,12 +3365,14 @@ window.salvarCaixas=function(){
   if(!podeCaixas){ alert('Você não tem permissão para alterar este cadastro.'); return; }
   var st=document.getElementById('cgcx-status');
   if(st){ st.setAttribute('data-busy','1'); st.textContent='Salvando…'; }
+  /* sem merge: com merge o Firestore mantém as chaves antigas dentro do mapa */
   setDoc(doc(dbC,'frotaConfig','caixas'), {
     ratios: cxRatios,
     atualizadoEm: agora(),
     atualizadoPor: sessaoEmail
-  }, {merge:true})
+  })
   .then(function(){
+    cxSujo=false; cxMigracao=null;
     if(st) st.textContent='Salvo.';
     setTimeout(function(){ if(st) st.removeAttribute('data-busy'); renderConfigCaixas(); },1400);
   })
@@ -3455,11 +3497,16 @@ function liberar(d){
     render();
   });
   ouvir('frotaConfigCaixas', doc(dbC,'frotaConfig','caixas'), function(s){
+    if(cxSujo) return;   /* alguém está digitando: não sobrescreve */
     if(s.exists() && s.data().ratios){
-      cxRatios=s.data().ratios;
+      var mig=cxMigrarChaves(s.data().ratios);
+      cxRatios=mig.ratios;
+      cxMigracao=(mig.unidos>0)?mig:null;
+      if(mig.unidos>0) cxSujo=true;   /* a limpeza só grava quando salvar */
     }else{
       cxRatios={};
       cxAplicarSemente();
+      cxMigracao=null;
     }
     render();
   });
