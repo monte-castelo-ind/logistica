@@ -279,7 +279,7 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
     <button class="navbtn" data-p="docs" onclick="nav('docs')"><span class="side-ico">▣</span><span class="lbl">Documentos</span></button>
     <button class="navbtn" data-p="caixas" onclick="nav('caixas')"><span class="side-ico">▤</span><span class="lbl">Caixas</span></button>
     <button class="navbtn gestao-only" data-p="custos" onclick="nav('custos')"><span class="side-ico">◷</span><span class="lbl">Custos e consumo</span></button>
-    <button class="navbtn caixas-only" data-p="config" onclick="nav('config')"><span class="side-ico">⚙</span><span class="lbl">Configurações</span></button>
+    <button class="navbtn config-only" data-p="config" onclick="nav('config')"><span class="side-ico">⚙</span><span class="lbl">Configurações</span></button>
     <div class="side-foot">
       <div class="uline">
         <div class="uav" id="uavatar">?</div>
@@ -518,7 +518,7 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
         <div id="imp-status" style="font-size:12.5px;color:var(--muted);margin-top:11px"></div>
       </div>
 
-      <div class="card admin-only" style="max-width:620px">
+      <div class="card config-only" style="max-width:620px">
         <div class="klabel">Intervalos padrão</div>
         <div class="fhint" style="margin:6px 0 11px">Valem para veículo que não tiver intervalo próprio cadastrado.</div>
         <div class="fgrid">
@@ -536,7 +536,7 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
           <textarea id="cg-tipos" rows="6" placeholder="CAMINHÃO&#10;VAN&#10;UTILITÁRIO&#10;MOTO&#10;CARRO"></textarea></div>
       </div>
 
-      <div class="card admin-only" style="max-width:620px;margin-top:14px">
+      <div class="card config-only" style="max-width:620px;margin-top:14px">
         <div class="klabel">Modelo de checklist por tipo</div>
         <div class="fhint" style="margin:6px 0 11px">Um item por linha. Cada tipo de veículo tem sua lista — o que se checa num caminhão não é o que se checa numa moto. Sem modelo, os veículos daquele tipo não podem ser inspecionados.</div>
         <div class="fgrid">
@@ -579,7 +579,7 @@ var pagina='painel', sessaoEmail='', sessaoUid='', sessaoNome='', ehAdmin=false,
    frotaLanc — lança manutenção, óleo, km, abastecimento, pneu e checklist
    frotaMov  — o de cima, mais cadastrar veículo e documento
    role admin — o de cima, mais Configurações e importadores            */
-var podeCadastrar=false, podeCaixas=false;
+var podeCadastrar=false, podeCaixas=false, podeConfig=false;
 /* Painel e Custos são telas de gestão: quem só lança manutenção não precisa
    ver o gasto da frota inteira. */
 var PAGINAS_GESTAO=['painel','custos'];
@@ -659,7 +659,7 @@ window.togglePin=function(e){
 
 window.nav=function(p){
   if(!TITLES[p]) return;
-  if(p==='config' && !ehAdmin && !podeCaixas) p='veiculos';
+  if(p==='config' && !podeConfig) p='veiculos';
   if(PAGINAS_GESTAO.indexOf(p)>=0 && !podeGestaoFrota()) p='veiculos';
   pagina=p;
   document.querySelectorAll('.page').forEach(function(el){ el.classList.remove('on'); });
@@ -1043,7 +1043,8 @@ function render(){
   document.querySelectorAll('.frota-mov').forEach(function(el){ el.style.display=podeLancar?'':'none'; });
   document.querySelectorAll('.frota-cad').forEach(function(el){ el.style.display=podeCadastrar?'':'none'; });
   document.querySelectorAll('.admin-only').forEach(function(el){ el.style.display=ehAdmin?'':'none'; });
-  document.querySelectorAll('.caixas-only').forEach(function(el){ el.style.display=(ehAdmin||podeCaixas)?'':'none'; });
+  document.querySelectorAll('.caixas-only').forEach(function(el){ el.style.display=podeCaixas?'':'none'; });
+  document.querySelectorAll('.config-only').forEach(function(el){ el.style.display=podeConfig?'':'none'; });
   document.querySelectorAll('.gestao-only').forEach(function(el){ el.style.display=podeGestaoFrota()?'':'none'; });
   // a tela salva do último acesso não pode furar a restrição
   if(PAGINAS_GESTAO.indexOf(pagina)>=0 && !podeGestaoFrota()){ nav('veiculos'); return; }
@@ -2014,7 +2015,7 @@ window.chkModeloTrocar=function(){
     ' · '+n+' veículo(s) deste tipo'+(m&&m.atualizadoEm?' · atualizado em '+dataBR(m.atualizadoEm):'');
 };
 window.salvarModeloChk=function(){
-  if(!ehAdmin){ alert('Só o administrador altera os modelos.'); return; }
+  if(!podeConfig){ alert('Você não tem permissão para alterar os modelos.'); return; }
   var t=document.getElementById('cg-chk-tipo').value;
   if(!t){ alert('Escolha o tipo.'); return; }
   var linhas=String(document.getElementById('cg-chk-itens').value||'').split('\n')
@@ -2060,7 +2061,7 @@ function renderConfig(){
   document.getElementById('cg-tipos').value=(cfg.tipos||[]).join('\n');
 }
 window.salvarConfig=function(){
-  if(!ehAdmin){ alert('Só o administrador altera a configuração.'); return; }
+  if(!podeConfig){ alert('Você não tem permissão para alterar a configuração.'); return; }
   var st=document.getElementById('cg-status'); st.textContent='Salvando…';
   setDoc(doc(dbC,'frotaConfig','app'), {
     oleoKm:num(document.getElementById('cg-oleo').value),
@@ -3458,7 +3459,9 @@ function iniciarSessao(user){
     if(d.ativo!==true){ negar('Sua conta ainda não foi liberada por um administrador.'); return; }
     if(!ehAdmin && d.frota!==true){ negar('O app de Frota é restrito a quem tem a permissão (flag frota).'); return; }
     podeCadastrar=(ehAdmin || d.frotaMov===true);
-    podeCaixas=(ehAdmin || d.frotaCaixas===true);
+    /* gerente: quem já cadastra também cuida das caixas e das configurações */
+    podeCaixas=(ehAdmin || d.frotaCaixas===true || d.frotaMov===true);
+    podeConfig=(ehAdmin || podeCadastrar || podeCaixas);
     podeLancar=(podeCadastrar || d.frotaLanc===true);
     liberar(d);
   }, function(err){ console.error('usuarios:',err); negar('Não foi possível carregar suas permissões: '+(err.code||err.message)); });
@@ -3470,7 +3473,7 @@ function liberar(d){
   document.getElementById('uname').textContent=sessaoNome;
   document.getElementById('urole').textContent=
     ehAdmin ? 'Administrador'
-    : (podeCadastrar ? 'Lança e cadastra'
+    : (podeCadastrar ? 'Gerente'
     : (podeLancar ? 'Lança manutenção' : 'Só consulta'));
   document.getElementById('uavatar').textContent=(sessaoNome||'?').trim().charAt(0).toUpperCase();
 
