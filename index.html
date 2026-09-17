@@ -228,6 +228,32 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
 .mixdet .mixcx:last-child{margin-bottom:14px}
 .mixcx-auto{cursor:default;background:rgba(86,135,168,.07)}
 .mixcx-auto:hover{border-color:rgba(86,135,168,.32)}
+/* caixa de papelão vista de frente, abas abertas */
+.cxbox{margin-bottom:12px}
+.cxbox-abas{display:flex;height:22px;gap:3px}
+.aba{flex:1;background:linear-gradient(180deg,rgba(150,112,68,.30),rgba(150,112,68,.16));
+     border:1px solid rgba(168,126,77,.5);border-bottom:none}
+.aba-e{clip-path:polygon(9% 0,100% 0,100% 100%,0 100%);border-right:none}
+.aba-d{clip-path:polygon(0 0,91% 0,100% 100%,0 100%);border-left:none}
+.cxbox-corpo{position:relative;border:1px solid rgba(168,126,77,.55);border-top:none;
+             border-radius:0 0 11px 11px;padding:15px 16px 20px;
+             background:linear-gradient(180deg,rgba(150,112,68,.16),rgba(150,112,68,.05));
+             background-image:repeating-linear-gradient(90deg,rgba(168,126,77,.07) 0 2px,transparent 2px 9px),
+                              linear-gradient(180deg,rgba(150,112,68,.16),rgba(150,112,68,.05));
+             min-height:78px}
+.cxbox-fita{position:absolute;left:50%;transform:translateX(-50%);bottom:0;width:78px;height:8px;
+            background:rgba(168,126,77,.28);border-radius:3px 3px 0 0}
+.cxbox-n{font-family:'JetBrains Mono',monospace;font-size:21px;font-weight:700;
+         color:#D6A664;margin-bottom:10px}
+.cxbox-n span{font-family:'Archivo',sans-serif;font-size:12px;font-weight:400;color:var(--muted)}
+.cxbox-vaziotxt{text-align:center;color:var(--muted);font-size:13px;font-weight:600;padding:14px 0 8px;line-height:1.7}
+.cxbox-vaziotxt span{font-size:11.5px;font-weight:400}
+.cxbox-vazia .aba,.cxbox-vazia .cxbox-corpo{border-style:dashed;opacity:.72}
+.cxbox-itens .chip-in{background:rgba(168,126,77,.16);border-color:rgba(168,126,77,.45)}
+.cxmini{display:inline-block;width:13px;height:11px;border:1.5px solid rgba(168,126,77,.75);
+        border-radius:2px;position:relative;flex:none}
+.cxmini::after{content:'';position:absolute;left:50%;top:-1.5px;transform:translateX(-50%);
+               width:4px;height:1.5px;background:rgba(168,126,77,.75)}
 .mixcont{font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;color:#7FB3D5;margin-bottom:9px}
 .mixcont span{font-family:'Archivo',sans-serif;font-size:12px;font-weight:400;color:var(--muted)}
 .mixfechar{margin-top:11px;width:100%}
@@ -3690,19 +3716,24 @@ function renderCaixas(){
      + (R.manual.length||R.emMontagem.length ? '<button class="btn btn-sm btn-ghost" onclick="cxLimparResto()">Desmontar</button>' : '')
      + '</div></div>';
 
-    h+='<div class="mixatual">';
-    if(R.emMontagem.length){
-      h+='<div class="mixcont">'+cxSomaItens(R.emMontagem)+' <span>pacotes nesta caixa</span></div>';
-      h+='<div class="mixchips">';
+    var nCx=cxSomaItens(R.emMontagem);
+    h+='<div class="cxbox'+(nCx?'':' cxbox-vazia')+'">'
+     + '<div class="cxbox-abas"><div class="aba aba-e"></div><div class="aba aba-d"></div></div>'
+     + '<div class="cxbox-corpo">';
+    if(nCx){
+      h+='<div class="cxbox-n">'+nCx+' <span>'+(nCx===1?'item':'itens')+' na caixa</span></div>';
+      h+='<div class="mixchips cxbox-itens">';
       for(ct=0;ct<R.emMontagem.length;ct++){
-        h+='<button class="chip chip-in" onclick="cxTirarResto(\''+esc(R.emMontagem[ct].cod)+'\')">'
+        h+='<button class="chip chip-in" onclick="cxTirarResto(\''+esc(R.emMontagem[ct].cod)+'\')" '
+         + 'title="tirar um da caixa">'
          + '<b>'+R.emMontagem[ct].qtd+'</b> '+esc(R.emMontagem[ct].nome)+' <span class="x">&minus;</span></button>';
       }
       h+='</div>';
-      h+='<button class="btn btn-sm mixfechar" onclick="cxFecharResto()">Fechar esta caixa</button>';
     } else {
-      h+='<div class="mixvazio">Caixa vazia &mdash; toque num produto abaixo</div>';
+      h+='<div class="cxbox-vaziotxt">Caixa vazia<br><span>toque num produto abaixo para pôr dentro</span></div>';
     }
+    h+='<div class="cxbox-fita"></div></div>';
+    if(nCx) h+='<button class="btn btn-sm mixfechar" onclick="cxFecharResto()">Fechar esta caixa</button>';
     h+='</div>';
 
     if(R.restoLivre.length){
@@ -3724,6 +3755,7 @@ function renderCaixas(){
       for(ci=0;ci<R.manual.length;ci++){
         C=R.manual[ci];
         h+='<button class="mixcx" onclick="cxReabrirResto('+ci+')">'
+         + '<span class="cxmini"></span>'
          + '<span class="mixcxid">M-'+(ci+1)+'</span>';
         for(ct=0;ct<C.length;ct++){
           h+='<span class="mixcxi">'+(ct?'+ ':'')+esc(C[ct].nome)+' <b>('+C[ct].qtd+')</b></span>';
