@@ -180,6 +180,19 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
 .mixcx:hover{border-color:var(--red)}
 .mixcxid{font-family:'JetBrains Mono',monospace;font-weight:700;color:#7FB3D5;font-size:12px}
 .mixcxi{color:var(--text)}
+.mixdet{padding:0}
+.mixsum{display:flex;align-items:center;gap:11px;flex-wrap:wrap;padding:13px 15px;cursor:pointer;
+        list-style:none;user-select:none;border-radius:12px}
+.mixsum::-webkit-details-marker{display:none}
+.mixsum:hover{background:rgba(255,255,255,.03)}
+.mixsum b{font-size:14.5px}
+.mixseta{display:inline-block;color:#7FB3D5;font-size:18px;line-height:1;transition:transform .15s}
+.mixdet[open] .mixseta{transform:rotate(90deg)}
+.mixqt{font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:700;color:#7FB3D5;
+       background:rgba(86,135,168,.14);border:1px solid rgba(86,135,168,.35);border-radius:20px;padding:2px 10px}
+.mixdet-i{font-size:12px;color:var(--muted)}
+.mixdet .mixcx{margin:0 15px 6px}
+.mixdet .mixcx:last-child{margin-bottom:14px}
 .mixcx-auto{cursor:default;background:rgba(86,135,168,.07)}
 .mixcx-auto:hover{border-color:rgba(86,135,168,.32)}
 .mixcont{font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;color:#7FB3D5;margin-bottom:9px}
@@ -485,6 +498,10 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
         <input type="text" id="cx-busca" placeholder="Buscar produto ou código" oninput="render()" style="min-width:200px">
         <button class="btn btn-sm btn-ghost" onclick="imprimirCaixas()">⎙ Imprimir</button>
         <button class="btn btn-sm btn-ghost" onclick="exportarCaixas()">⤓ CSV</button>
+        <button class="btn btn-sm btn-ghost" onclick="salvarConversao()">💾 Salvar</button>
+        <select id="cx-salvas" onchange="abrirConversao(this.value)" style="min-width:190px">
+          <option value="">Conversões salvas…</option>
+        </select>
         <button class="btn btn-sm btn-danger" onclick="limparCaixas()" style="margin-left:auto">Limpar tudo</button>
       </div>
       <div id="cx-chips"></div>
@@ -3217,6 +3234,76 @@ window.limparCaixas=function(){
   cxDocs=[]; cxMsg=''; cxZerarMontagem(); render();
 };
 
+/* ===== CONVERSÕES SALVAS =====
+   Guarda os PDFs já interpretados e a montagem do operador. As caixas são
+   recalculadas na abertura a partir do cadastro vigente — se a conversão de
+   algum produto mudar depois, o relatório reaberto reflete o cadastro de hoje,
+   não o da época. Guardamos também o resumo da época para comparar. */
+var cxSalvas=[];
+
+window.salvarConversao=function(){
+  if(!cxDocs.length){ alert('Carregue ao menos um PDF antes de salvar.'); return; }
+  var R=cxCalcular();
+  var nome=prompt('Nome desta conversão:', cxResumoOrigens().slice(0,80));
+  if(nome===null) return;
+  nome=String(nome).trim() || cxResumoOrigens().slice(0,80);
+  addDoc(collection(dbC,'frotaCaixasConv'), {
+    nome: nome,
+    em: agora(),
+    por: sessaoEmail,
+    docs: cxDocs,
+    manual: cxManual,
+    resumo: { total:R.total, autoCx:R.autoCx, manualCx:R.manualCx,
+              totalGeral:R.totalGeral, soltos:R.soltosFinal, produtos:R.linhas.length }
+  })
+  .then(function(){ alert('Conversão salva.'); })
+  .catch(function(e){
+    console.error('caixas/salvarConversao:', e);
+    alert('Não foi possível salvar: '+(e.code||e.message));
+  });
+};
+
+window.abrirConversao=function(id){
+  var sel=document.getElementById('cx-salvas');
+  if(!id){ return; }
+  if(sel) sel.value='';
+  var c=null, i;
+  for(i=0;i<cxSalvas.length;i++) if(cxSalvas[i].firestoreId===id) c=cxSalvas[i];
+  if(!c) return;
+  if(cxDocs.length && !confirm('Isto troca o que está na tela pela conversão salva. Continuar?')) return;
+  cxDocs=(c.docs||[]).map(function(d){ return d; });
+  cxSeq=cxDocs.reduce(function(a,d){ return Math.max(a, d.id||0); },0);
+  cxManual=(c.manual && c.manual.caixas) ? c.manual : {caixas:[], atual:[]};
+  cxMsg='';
+  var j;
+  for(j=0;j<cxDocs.length;j++) cxRegistrarNovos(cxDocs[j]);
+  render();
+};
+
+window.apagarConversao=function(){
+  var sel=document.getElementById('cx-salvas');
+  var id=sel && sel.value;
+  if(!id){ alert('Escolha uma conversão salva na lista primeiro.'); return; }
+  if(!confirm('Apagar esta conversão salva?')) return;
+  deleteDoc(doc(dbC,'frotaCaixasConv',id))
+    .catch(function(e){
+      console.error('caixas/apagarConversao:', e);
+      alert('Não foi possível apagar: '+(e.code||e.message));
+    });
+};
+
+function pintarSalvas(){
+  var sel=document.getElementById('cx-salvas');
+  if(!sel) return;
+  var h='<option value="">Conversões salvas'+(cxSalvas.length?' ('+cxSalvas.length+')':'')+'…</option>', i, c;
+  for(i=0;i<cxSalvas.length;i++){
+    c=cxSalvas[i];
+    h+='<option value="'+esc(c.firestoreId)+'">'+esc(dataBR((c.em||'').slice(0,10))+' · '+(c.nome||'sem nome'))
+     + (c.resumo?' ('+c.resumo.totalGeral+' cx)':'')+'</option>';
+  }
+  sel.innerHTML=h;
+}
+
 /* ===== MISTURA DE SOBRAS =====
    Duas etapas.
    1) Automática: dentro de cada multiplicador, sobra de produtos diferentes
@@ -3352,6 +3439,7 @@ window.cxLimparResto=function(){
 function renderCaixas(){
   var saida=document.getElementById('cx-saida'), chips=document.getElementById('cx-chips');
   if(!saida) return;
+  pintarSalvas();
 
   if(chips){
     if(!cxDocs.length && !cxLendo){ chips.innerHTML=''; chips.className=''; }
@@ -3430,10 +3518,12 @@ function renderCaixas(){
     for(gi=0;gi<R.grupos.length;gi++){
       G=R.grupos[gi];
       if(!G.caixas.length) continue;
-      h+='<div class="mixg"><div class="mixh"><div><b>'+G.pct+' por caixa</b>'
-       + '<span> &middot; '+G.sobraTotal+' pacotes de '+G.itens+' produtos &rarr; '
-       + G.caixas.length+' caixa'+(G.caixas.length===1?'':'s')
-       + (G.resto?', '+G.resto+' foram para o resto':'')+'</span></div></div>';
+      h+='<details class="mixg mixdet"><summary class="mixsum">'
+       + '<span class="mixseta">&rsaquo;</span>'
+       + '<b>'+G.pct+' por caixa</b>'
+       + '<span class="mixqt">'+G.caixas.length+' caixa'+(G.caixas.length===1?'':'s')+'</span>'
+       + '<span class="mixdet-i">'+G.sobraTotal+' pacotes de '+G.itens+' produtos'
+       + (G.resto?' &middot; '+G.resto+' foram para o resto':'')+'</span></summary>';
       for(ci=0;ci<G.caixas.length;ci++){
         C=G.caixas[ci];
         h+='<div class="mixcx mixcx-auto"><span class="mixcxid">'+G.pct+'-'+(ci+1)+'</span>';
@@ -3442,7 +3532,7 @@ function renderCaixas(){
         }
         h+='</div>';
       }
-      h+='</div>';
+      h+='</details>';
     }
   }
 
@@ -3841,6 +3931,10 @@ function liberar(d){
   ouvir('frotaDocs', collection(dbC,'frotaDocs'), function(s){
     docs=s.docs.map(function(x){ return Object.assign({ firestoreId:x.id }, x.data()); });
     render();
+  });
+  ouvir('frotaCaixasConv', query(collection(dbC,'frotaCaixasConv'), orderBy('em','desc'), limit(60)), function(s){
+    cxSalvas=s.docs.map(function(x){ return Object.assign({ firestoreId:x.id }, x.data()); });
+    pintarSalvas();
   });
   ouvir('frotaConfigCaixas', doc(dbC,'frotaConfig','caixas'), function(s){
     if(cxSujo) return;   /* alguém está digitando: não sobrescreve */
