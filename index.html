@@ -177,6 +177,8 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
   #cx-print thead{ display:table-header-group }
   #cx-print .pfalta td{ background:#eee }
   #cx-print .pfoot{ margin-top:11px; font-size:9.5px; color:#444; border-top:1px solid #000; padding-top:5px }
+  #cx-print .pquebra{ page-break-before:always; height:0 }
+  #cx-print .pgrupo{ font-size:11px; margin:11px 0 4px; padding:4px 6px; background:#eee; border-left:3px solid #000 }
 }
 .fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
 .fgrid label,.fld label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;font-weight:600}
@@ -3137,7 +3139,48 @@ function cxCalcular(){
     } else { faltando++; }
     linhas.push(L);
   }
-  return {linhas:linhas, total:total, sobras:sobras, faltando:faltando, docs:cxDocs.length};
+  var M=cxMontarMistas(linhas);
+  return {linhas:linhas, total:total, sobras:sobras, faltando:faltando,
+          docs:cxDocs.length, mistas:M.grupos, qtdMistas:M.caixas, soltosFinal:M.restam,
+          totalGeral:total+M.caixas};
+}
+
+/* Sobra de produtos com o MESMO multiplicador fecha caixa junto — cabem 7 de
+   qualquer coisa que venha 7 por caixa. Enche sequencialmente, do jeito que a
+   pessoa monta na bancada: vai pondo até fechar, o que não fechar fica solto. */
+function cxMontarMistas(linhas){
+  var porMult={}, i, L, m;
+  for(i=0;i<linhas.length;i++){
+    L=linhas[i];
+    if(!L.pct || !L.sobra) continue;
+    if(!porMult[L.pct]) porMult[L.pct]=[];
+    porMult[L.pct].push({cod:L.cod, nome:L.nome, resta:L.sobra, un:L.un});
+  }
+  var mults=Object.keys(porMult).map(Number).sort(function(a,b){ return a-b; });
+  var grupos=[], caixas=0, restam=0, g, fila, caixa, livre, item, usa, k;
+
+  for(k=0;k<mults.length;k++){
+    m=mults[k];
+    fila=porMult[m];
+    g={ pct:m, caixas:[], sobraFinal:0, itens:fila.length,
+        totalPct:fila.reduce(function(a,b){ return a+b.resta; },0) };
+    caixa=[]; livre=m;
+    for(i=0;i<fila.length;i++){
+      item=fila[i];
+      while(item.resta>0){
+        usa=Math.min(item.resta, livre);
+        caixa.push({cod:item.cod, nome:item.nome, qtd:usa, un:item.un});
+        item.resta-=usa; livre-=usa;
+        if(livre===0){ g.caixas.push(caixa); caixa=[]; livre=m; }
+      }
+    }
+    /* o que sobrou na última caixa não fecha: continua solto */
+    if(caixa.length){ g.sobraFinal=m-livre; g.resto=caixa; }
+    caixas+=g.caixas.length;
+    restam+=g.sobraFinal;
+    if(g.caixas.length || g.sobraFinal) grupos.push(g);
+  }
+  return {grupos:grupos, caixas:caixas, restam:restam};
 }
 
 function cxTipoNome(d){ return d.tipo==='pedido' ? 'Pedido' : 'Carregamento'; }
@@ -3199,9 +3242,10 @@ function renderCaixas(){
   var termo=((document.getElementById('cx-busca')||{}).value||'').toLowerCase();
 
   h+='<div class="grid kpis">';
-  h+='<div class="card"><div class="cxbig">'+R.total+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">caixas fechadas</div></div>';
-  h+='<div class="card"><div class="cxbig" style="color:var(--amber)">'+R.sobras+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">pacotes soltos</div></div>';
-  h+='<div class="card"><div class="cxbig" style="color:var(--text)">'+R.linhas.length+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">produtos'+(R.docs>1?' · '+R.docs+' carregamentos':'')+'</div></div>';
+  h+='<div class="card"><div class="cxbig">'+R.totalGeral+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">caixas no total</div></div>';
+  h+='<div class="card"><div class="cxbig" style="color:var(--text)">'+R.total+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">fechadas de um produto só</div></div>';
+  h+='<div class="card"><div class="cxbig" style="color:#7FB3D5">'+R.qtdMistas+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">mistas, de sobras</div></div>';
+  h+='<div class="card"><div class="cxbig" style="color:var(--amber)">'+R.soltosFinal+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">pacotes que ficam soltos</div></div>';
   h+='</div>';
 
   h+='<div style="font-size:11.5px;color:var(--muted);margin:11px 0">'+esc(cxResumoOrigens())+'</div>';
@@ -3234,6 +3278,41 @@ function renderCaixas(){
      + '</tr>';
   }
   h+='</tbody></table></div></div>';
+
+  if(R.mistas.length){
+    h+='<div class="sect">Caixas mistas <span style="color:var(--muted);font-weight:400">'
+     + '&middot; sobras de produtos com o mesmo multiplicador, fechando caixa juntas</span></div>';
+    var gi, ci, ct, G, C;
+    for(gi=0;gi<R.mistas.length;gi++){
+      G=R.mistas[gi];
+      h+='<div class="card" style="margin-bottom:11px">'
+       + '<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:9px">'
+       + '<b style="font-size:14px">Grupo de '+G.pct+' pacotes por caixa</b>'
+       + '<span style="font-size:12px;color:var(--muted)">'+G.totalPct+' pacotes soltos de '+G.itens+' produtos &rarr; <b style="color:#7FB3D5">'+G.caixas.length+' caixa'+(G.caixas.length===1?'':'s')+'</b>'
+       + (G.sobraFinal?' &middot; sobram '+G.sobraFinal:'')+'</span></div>';
+      for(ci=0;ci<G.caixas.length;ci++){
+        C=G.caixas[ci];
+        h+='<div style="font-size:12.5px;padding:5px 0;border-top:1px solid var(--border)">'
+         + '<b style="color:#7FB3D5">Caixa '+(ci+1)+'</b> &nbsp; ';
+        for(ct=0;ct<C.length;ct++){
+          h+=(ct?' &nbsp;+&nbsp; ':'')+'<span class="mono" style="color:var(--muted)">'+esc(C[ct].cod)+'</span> '
+           + esc(C[ct].nome)+' <b>('+C[ct].qtd+')</b>';
+        }
+        h+='</div>';
+      }
+      if(G.resto && G.resto.length){
+        h+='<div style="font-size:12.5px;padding:5px 0;border-top:1px solid var(--border);color:var(--amber)">'
+         + '<b>Ficam soltos</b> &nbsp; ';
+        for(ct=0;ct<G.resto.length;ct++){
+          h+=(ct?' &nbsp;+&nbsp; ':'')+'<span class="mono">'+esc(G.resto[ct].cod)+'</span> '
+           + esc(G.resto[ct].nome)+' <b>('+G.resto[ct].qtd+')</b>';
+        }
+        h+='</div>';
+      }
+      h+='</div>';
+    }
+  }
+
   saida.innerHTML=h;
 
   cxRenderPrint(R);
@@ -3260,8 +3339,10 @@ function cxRenderPrint(R){
   h+='</div>';
 
   h+='<div class="ptot">'
-   + '<div><b>'+R.total+'</b>caixas fechadas</div>'
-   + '<div><b>'+R.sobras+'</b>pacotes soltos</div>'
+   + '<div><b>'+R.totalGeral+'</b>caixas no total</div>'
+   + '<div><b>'+R.total+'</b>de um produto só</div>'
+   + '<div><b>'+R.qtdMistas+'</b>mistas</div>'
+   + '<div><b>'+R.soltosFinal+'</b>pacotes soltos</div>'
    + '<div><b>'+R.linhas.length+'</b>produtos</div>';
   if(R.faltando) h+='<div><b>'+R.faltando+'</b>sem conversão</div>';
   h+='</div>';
@@ -3288,6 +3369,38 @@ function cxRenderPrint(R){
      + '<td></td></tr>';
   }
   h+='</tbody></table>';
+
+  if(R.mistas.length){
+    h+='<div class="pquebra"></div>';
+    h+='<h1 style="margin-top:0">Caixas mistas</h1>';
+    h+='<div class="ph">Sobras de produtos com o mesmo multiplicador, fechando caixa juntas. Monte na ordem: cada linha é uma caixa.</div>';
+    var gi, ci, ct, G, C;
+    for(gi=0;gi<R.mistas.length;gi++){
+      G=R.mistas[gi];
+      h+='<div class="pgrupo"><b>'+G.pct+' por caixa</b> &mdash; '+G.totalPct+' pacotes de '
+       + G.itens+' produtos, dão '+G.caixas.length+' caixa'+(G.caixas.length===1?'':'s')
+       + (G.sobraFinal?', sobram '+G.sobraFinal:'')+'</div>';
+      h+='<table><thead><tr><th style="width:11%">Caixa</th><th>Conteúdo</th>'
+       + '<th style="width:9%">Conferido</th></tr></thead><tbody>';
+      for(ci=0;ci<G.caixas.length;ci++){
+        C=G.caixas[ci];
+        h+='<tr><td class="cxn">'+G.pct+'-'+(ci+1)+'</td><td>';
+        for(ct=0;ct<C.length;ct++){
+          h+=(ct?'&nbsp; + &nbsp;':'')+esc(C[ct].cod)+' '+esc(C[ct].nome)+' <b>('+C[ct].qtd+')</b>';
+        }
+        h+='</td><td></td></tr>';
+      }
+      if(G.resto && G.resto.length){
+        h+='<tr class="pfalta"><td>solto</td><td>';
+        for(ct=0;ct<G.resto.length;ct++){
+          h+=(ct?'&nbsp; + &nbsp;':'')+esc(G.resto[ct].cod)+' '+esc(G.resto[ct].nome)+' <b>('+G.resto[ct].qtd+')</b>';
+        }
+        h+='</td><td></td></tr>';
+      }
+      h+='</tbody></table>';
+    }
+  }
+
   h+='<div class="pfoot">Caixas = quantidade dividida pelos pacotes que cabem na caixa. Sobra = pacote que não fechou caixa.'
    + (R.faltando?' Linha cinza = produto sem conversão cadastrada, não entrou no total.':'')
    + (multi?' Quando aparecem duas parcelas na quantidade, são os carregamentos somados.':'')
