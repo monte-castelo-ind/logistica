@@ -502,6 +502,7 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
         <select id="cx-salvas" onchange="abrirConversao(this.value)" style="min-width:190px">
           <option value="">Conversões salvas…</option>
         </select>
+        <button class="btn btn-sm btn-danger" id="cx-apagar" onclick="apagarConversao()" style="display:none">Apagar esta</button>
         <button class="btn btn-sm btn-danger" onclick="limparCaixas()" style="margin-left:auto">Limpar tudo</button>
       </div>
       <div id="cx-chips"></div>
@@ -3132,6 +3133,8 @@ function cxLerArquivos(lista){
             if(rep && !confirm(cxTipoNome(d)+' '+d.numero+' já está na lista.\n\nAdicionar mesmo assim? As quantidades vão somar duas vezes.')){ render(); return; }
             cxDocs.push(d);
             cxRegistrarNovos(d);
+            cxZerarMontagem();
+            cxConvAberta=null;
             render();
           });
         }).catch(function(e){
@@ -3225,13 +3228,14 @@ window.cxEscolher=function(){ var i=document.getElementById('cx-arq'); if(i) i.c
 window.cxRemoverDoc=function(id){
   cxDocs=cxDocs.filter(function(d){ return d.id!==Number(id); });
   cxZerarMontagem();
+  cxConvAberta=null;
   render();
 };
 
 window.limparCaixas=function(){
   if(!cxDocs.length) return;
   if(!confirm('Tirar todos os carregamentos da tela?')) return;
-  cxDocs=[]; cxMsg=''; cxZerarMontagem(); render();
+  cxDocs=[]; cxMsg=''; cxZerarMontagem(); cxConvAberta=null; render();
 };
 
 /* ===== CONVERSÕES SALVAS =====
@@ -3239,7 +3243,7 @@ window.limparCaixas=function(){
    recalculadas na abertura a partir do cadastro vigente — se a conversão de
    algum produto mudar depois, o relatório reaberto reflete o cadastro de hoje,
    não o da época. Guardamos também o resumo da época para comparar. */
-var cxSalvas=[];
+var cxSalvas=[], cxConvAberta=null;
 
 window.salvarConversao=function(){
   if(!cxDocs.length){ alert('Carregue ao menos um PDF antes de salvar.'); return; }
@@ -3271,6 +3275,7 @@ window.abrirConversao=function(id){
   for(i=0;i<cxSalvas.length;i++) if(cxSalvas[i].firestoreId===id) c=cxSalvas[i];
   if(!c) return;
   if(cxDocs.length && !confirm('Isto troca o que está na tela pela conversão salva. Continuar?')) return;
+  cxConvAberta=id;
   cxDocs=(c.docs||[]).map(function(d){ return d; });
   cxSeq=cxDocs.reduce(function(a,d){ return Math.max(a, d.id||0); },0);
   cxManual=(c.manual && c.manual.caixas) ? c.manual : {caixas:[], atual:[]};
@@ -3281,11 +3286,14 @@ window.abrirConversao=function(id){
 };
 
 window.apagarConversao=function(){
-  var sel=document.getElementById('cx-salvas');
-  var id=sel && sel.value;
-  if(!id){ alert('Escolha uma conversão salva na lista primeiro.'); return; }
-  if(!confirm('Apagar esta conversão salva?')) return;
+  if(!cxConvAberta) return;
+  var c=null, i;
+  for(i=0;i<cxSalvas.length;i++) if(cxSalvas[i].firestoreId===cxConvAberta) c=cxSalvas[i];
+  var nome=(c && c.nome) ? c.nome : 'esta conversão';
+  if(!confirm('Apagar "'+nome+'" das conversões salvas?\n\nO que está na tela continua — só sai do histórico.')) return;
+  var id=cxConvAberta;
   deleteDoc(doc(dbC,'frotaCaixasConv',id))
+    .then(function(){ cxConvAberta=null; render(); })
     .catch(function(e){
       console.error('caixas/apagarConversao:', e);
       alert('Não foi possível apagar: '+(e.code||e.message));
@@ -3440,6 +3448,8 @@ function renderCaixas(){
   var saida=document.getElementById('cx-saida'), chips=document.getElementById('cx-chips');
   if(!saida) return;
   pintarSalvas();
+  var bap=document.getElementById('cx-apagar');
+  if(bap) bap.style.display = (cxConvAberta && ehAdmin) ? '' : 'none';
 
   if(chips){
     if(!cxDocs.length && !cxLendo){ chips.innerHTML=''; chips.className=''; }
