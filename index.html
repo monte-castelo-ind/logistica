@@ -178,6 +178,13 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
 .mixcx:hover{border-color:var(--red)}
 .mixcxid{font-family:'JetBrains Mono',monospace;font-weight:700;color:#7FB3D5;font-size:12px}
 .mixcxi{color:var(--text)}
+.mixcx-auto{cursor:default;background:rgba(86,135,168,.07)}
+.mixcx-auto:hover{border-color:rgba(86,135,168,.32)}
+.mixcont{font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;color:#7FB3D5;margin-bottom:9px}
+.mixcont span{font-family:'Archivo',sans-serif;font-size:12px;font-weight:400;color:var(--muted)}
+.mixfechar{margin-top:11px;width:100%}
+.chip .pctag{font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--muted);
+             border:1px solid var(--border);border-radius:5px;padding:1px 4px;margin-left:3px}
 .cx-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 .cx-chip{display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 11px;font-size:12.5px}
 .cx-chip b{font-family:'JetBrains Mono',monospace;font-size:13px}
@@ -3170,184 +3177,150 @@ function cxCalcular(){
     } else { faltando++; }
     linhas.push(L);
   }
-  var M=cxEstadoMix(linhas);
+  var A=cxAutoMix(linhas);
+  var restoLivre=cxRestoLivre(A.residuo);
+  var autoCx=0, gi;
+  for(gi=0;gi<A.grupos.length;gi++) autoCx+=A.grupos[gi].caixas.length;
+  var bandejaSoltas=0;
+  for(gi=0;gi<A.bandejas.length;gi++)
+    bandejaSoltas+=A.bandejas[gi].itens.reduce(function(a,b){ return a+b.resta; },0);
+  var soltos = restoLivre.reduce(function(a,b){ return a+b.resta; },0)
+             + cxSomaItens(cxManual.atual) + bandejaSoltas;
   return {linhas:linhas, total:total, sobras:sobras, faltando:faltando, docs:cxDocs.length,
-          grupos:M.grupos, semMix:M.semMix, qtdMistas:M.caixas, soltosFinal:M.soltos,
-          totalGeral:total+M.caixas};
+          grupos:A.grupos, bandejas:A.bandejas, residuo:A.residuo, restoLivre:restoLivre,
+          manual:cxManual.caixas, emMontagem:cxManual.atual,
+          autoCx:autoCx, manualCx:cxManual.caixas.length,
+          qtdMistas:autoCx+cxManual.caixas.length, soltosFinal:soltos,
+          totalGeral:total+autoCx+cxManual.caixas.length};
 }
 
 /* ===== MISTURA DE SOBRAS =====
-   Sobra de produtos com o mesmo multiplicador fecha caixa junto: cabem 7 de
-   qualquer coisa que venha 7 por caixa.
-   Exceção: o grupo de 40 é bandeja de cuca, contada em unidade e não em
-   pacote. Bandeja não divide caixa com mais nada, então fica de fora. */
+   Duas etapas.
+   1) Automática: dentro de cada multiplicador, sobra de produtos diferentes
+      fecha caixa junto — cabem 7 de qualquer coisa que venha 7 por caixa.
+      O app resolve isso sozinho, é conta.
+   2) Manual: o que resta em cada grupo já não fecha caixa ali (é menos que o
+      multiplicador). Só que pacote de grupo 7 e de grupo 20 ainda cabem juntos
+      numa caixa — o app não sabe a capacidade dessa mistura, o operador sabe.
+      Então esse resto vai para ele montar à mão.
+   Exceção: o grupo de 40 é bandeja de cuca, contada em unidade. Não divide
+   caixa com nada e fica fora das duas etapas. */
 var MIX_NUNCA = [40];
 
-/* cxMontagem[pct] = { fechadas: [ [ {cod,nome,qtd} ] ], atual: [ {...} ] }
-   Fica só na memória da sessão: o fluxo é carregar, montar e imprimir. */
-var cxMontagem = {};
-
-function cxZerarMontagem(){ cxMontagem = {}; }
-
-function cxGrupoMix(pct){
-  if(!cxMontagem[pct]) cxMontagem[pct]={fechadas:[], atual:[]};
-  return cxMontagem[pct];
-}
+/* caixas que o operador monta com o resto. Só na memória da sessão. */
+var cxManual = { caixas: [], atual: [] };
+function cxZerarMontagem(){ cxManual = { caixas: [], atual: [] }; }
 
 function cxSomaItens(lista){
   var t=0,i; for(i=0;i<lista.length;i++) t+=lista[i].qtd; return t;
 }
-
-/* quanto de cada produto ainda não foi colocado em caixa nenhuma */
-function cxDisponivel(linhas, pct){
-  var g=cxGrupoMix(pct), usado={}, i, k, c;
-  for(i=0;i<g.fechadas.length;i++)
-    for(k=0;k<g.fechadas[i].length;k++){ c=g.fechadas[i][k]; usado[c.cod]=(usado[c.cod]||0)+c.qtd; }
-  for(k=0;k<g.atual.length;k++){ c=g.atual[k]; usado[c.cod]=(usado[c.cod]||0)+c.qtd; }
-  var out=[];
-  for(i=0;i<linhas.length;i++){
-    var L=linhas[i];
-    if(L.pct!==pct || !L.sobra) continue;
-    var resta=L.sobra-(usado[L.cod]||0);
-    if(resta>0) out.push({cod:L.cod, nome:L.nome, resta:resta, un:L.un});
-  }
-  return out;
-}
-
-function cxEstadoMix(linhas){
-  var mults={}, i, L;
-  for(i=0;i<linhas.length;i++){
-    L=linhas[i];
-    if(!L.pct || !L.sobra) continue;
-    if(!mults[L.pct]) mults[L.pct]={pct:L.pct, sobraTotal:0, itens:0};
-    mults[L.pct].sobraTotal+=L.sobra;
-    mults[L.pct].itens++;
-  }
-  var lista=Object.keys(mults).map(Number).sort(function(a,b){ return a-b; });
-  var grupos=[], semMix=[], caixas=0, soltos=0, k, pct, info, g, disp;
-
-  for(k=0;k<lista.length;k++){
-    pct=lista[k];
-    info=mults[pct];
-    if(MIX_NUNCA.indexOf(pct)>=0){
-      info.disponivel=cxDisponivel(linhas, pct);
-      semMix.push(info);
-      soltos+=info.sobraTotal;
-      continue;
-    }
-    g=cxGrupoMix(pct);
-    disp=cxDisponivel(linhas, pct);
-    info.fechadas=g.fechadas;
-    info.atual=g.atual;
-    info.naAtual=cxSomaItens(g.atual);
-    info.disponivel=disp;
-    info.restam=disp.reduce(function(a,b){ return a+b.resta; },0);
-    caixas+=g.fechadas.length;
-    soltos+=info.restam+info.naAtual;
-    grupos.push(info);
-  }
-  return {grupos:grupos, semMix:semMix, caixas:caixas, soltos:soltos};
-}
-
-/* preenche sozinho, do jeito que se monta na bancada: vai pondo até fechar */
-window.cxSugerirMix=function(pct){
-  pct=Number(pct);
-  var R=cxCalcular(), g=cxGrupoMix(pct);
-  var disp=cxDisponivel(R.linhas, pct), i, item, usa;
-  var caixa=g.atual.slice(), livre=pct-cxSomaItens(caixa);
-  for(i=0;i<disp.length;i++){
-    item=disp[i];
-    while(item.resta>0){
-      usa=Math.min(item.resta, livre);
-      caixa.push({cod:item.cod, nome:item.nome, qtd:usa});
-      item.resta-=usa; livre-=usa;
-      if(livre===0){ g.fechadas.push(cxJuntarIguais(caixa)); caixa=[]; livre=pct; }
-    }
-  }
-  g.atual=caixa;
-  render();
-};
 
 /* 03(2) + 03(1) na mesma caixa vira 03(3) */
 function cxJuntarIguais(caixa){
   var mapa={}, ordem=[], i, c;
   for(i=0;i<caixa.length;i++){
     c=caixa[i];
-    if(!mapa[c.cod]){ mapa[c.cod]={cod:c.cod, nome:c.nome, qtd:0}; ordem.push(c.cod); }
+    if(!mapa[c.cod]){ mapa[c.cod]={cod:c.cod, nome:c.nome, qtd:0, pct:c.pct}; ordem.push(c.cod); }
     mapa[c.cod].qtd+=c.qtd;
   }
   return ordem.map(function(k){ return mapa[k]; });
 }
 
-window.cxAddMix=function(pct, cod, n){
-  pct=Number(pct); n=Number(n)||1;
-  var R=cxCalcular(), g=cxGrupoMix(pct);
-  var disp=cxDisponivel(R.linhas, pct);
-  var item=null, i;
+/* etapa 1 — enche sozinho, do jeito que se monta na bancada */
+function cxAutoMix(linhas){
+  var porMult={}, i, L;
+  for(i=0;i<linhas.length;i++){
+    L=linhas[i];
+    if(!L.pct || !L.sobra) continue;
+    if(!porMult[L.pct]) porMult[L.pct]=[];
+    porMult[L.pct].push({cod:L.cod, nome:L.nome, pct:L.pct, resta:L.sobra});
+  }
+  var mults=Object.keys(porMult).map(Number).sort(function(a,b){ return a-b; });
+  var grupos=[], bandejas=[], residuo=[], k, m, fila, caixa, livre, item, usa, g;
+
+  for(k=0;k<mults.length;k++){
+    m=mults[k];
+    fila=porMult[m];
+    if(MIX_NUNCA.indexOf(m)>=0){
+      bandejas.push({pct:m, itens:fila.slice()});
+      continue;
+    }
+    g={pct:m, caixas:[], itens:fila.length,
+       sobraTotal:fila.reduce(function(a,b){ return a+b.resta; },0)};
+    caixa=[]; livre=m;
+    for(i=0;i<fila.length;i++){
+      item=fila[i];
+      while(item.resta>0){
+        usa=Math.min(item.resta, livre);
+        caixa.push({cod:item.cod, nome:item.nome, pct:m, qtd:usa});
+        item.resta-=usa; livre-=usa;
+        if(livre===0){ g.caixas.push(cxJuntarIguais(caixa)); caixa=[]; livre=m; }
+      }
+    }
+    /* o que ficou na última caixa não fecha aqui: vai para o operador */
+    if(caixa.length) residuo=residuo.concat(cxJuntarIguais(caixa).map(function(c){
+      return {cod:c.cod, nome:c.nome, pct:m, resta:c.qtd};
+    }));
+    g.resto=caixa.length ? cxSomaItens(caixa) : 0;
+    if(g.caixas.length || g.resto) grupos.push(g);
+  }
+  return {grupos:grupos, bandejas:bandejas, residuo:residuo};
+}
+
+/* quanto do resto ainda não foi para nenhuma caixa do operador */
+function cxRestoLivre(residuo){
+  var usado={}, i, k, c;
+  for(i=0;i<cxManual.caixas.length;i++)
+    for(k=0;k<cxManual.caixas[i].length;k++){ c=cxManual.caixas[i][k]; usado[c.cod]=(usado[c.cod]||0)+c.qtd; }
+  for(k=0;k<cxManual.atual.length;k++){ c=cxManual.atual[k]; usado[c.cod]=(usado[c.cod]||0)+c.qtd; }
+  var out=[];
+  for(i=0;i<residuo.length;i++){
+    var r=residuo[i], livre=r.resta-(usado[r.cod]||0);
+    if(livre>0) out.push({cod:r.cod, nome:r.nome, pct:r.pct, resta:livre});
+  }
+  return out;
+}
+
+window.cxAddResto=function(cod){
+  var R=cxCalcular(), disp=R.restoLivre, item=null, i;
   for(i=0;i<disp.length;i++) if(disp[i].cod===cod) item=disp[i];
   if(!item) return;
-  var livre=pct-cxSomaItens(g.atual);
-  n=Math.min(n, item.resta, livre);
-  if(n<=0) return;
-  g.atual.push({cod:cod, nome:item.nome, qtd:n});
-  g.atual=cxJuntarIguais(g.atual);
-  /* encheu: fecha sozinha, que é o que acontece na prática */
-  if(cxSomaItens(g.atual)>=pct){ g.fechadas.push(g.atual); g.atual=[]; }
+  cxManual.atual.push({cod:cod, nome:item.nome, pct:item.pct, qtd:1});
+  cxManual.atual=cxJuntarIguais(cxManual.atual);
   render();
 };
 
-window.cxTirarMix=function(pct, cod){
-  pct=Number(pct);
-  var g=cxGrupoMix(pct), i;
-  for(i=g.atual.length-1;i>=0;i--){
-    if(g.atual[i].cod===cod){
-      g.atual[i].qtd--;
-      if(g.atual[i].qtd<=0) g.atual.splice(i,1);
+window.cxTirarResto=function(cod){
+  var i;
+  for(i=cxManual.atual.length-1;i>=0;i--){
+    if(cxManual.atual[i].cod===cod){
+      cxManual.atual[i].qtd--;
+      if(cxManual.atual[i].qtd<=0) cxManual.atual.splice(i,1);
       break;
     }
   }
   render();
 };
 
-window.cxReabrirMix=function(pct, idx){
-  pct=Number(pct); idx=Number(idx);
-  var g=cxGrupoMix(pct);
-  if(!g.fechadas[idx]) return;
-  if(g.atual.length && !confirm('A caixa em montagem vai voltar para os disponíveis. Continuar?')) return;
-  var volta=g.fechadas.splice(idx,1)[0];
-  g.atual=cxJuntarIguais(g.atual.concat(volta));
-  if(cxSomaItens(g.atual)>pct){ g.fechadas.splice(idx,0,volta); g.atual=g.atual.filter(function(){ return false; }); }
+window.cxFecharResto=function(){
+  if(!cxManual.atual.length) return;
+  cxManual.caixas.push(cxManual.atual);
+  cxManual.atual=[];
   render();
 };
 
-function cxTipoNome(d){ return d.tipo==='pedido' ? 'Pedido' : 'Carregamento'; }
+window.cxReabrirResto=function(idx){
+  idx=Number(idx);
+  if(!cxManual.caixas[idx]) return;
+  var volta=cxManual.caixas.splice(idx,1)[0];
+  cxManual.atual=cxJuntarIguais(cxManual.atual.concat(volta));
+  render();
+};
 
-function cxResumoOrigens(){
-  return cxDocs.map(function(d){
-    return cxTipoNome(d)+' '+(d.numero||'sem número')
-         + (d.rota?' · '+d.rota:'')
-         + (d.cliente?' · '+d.cliente:'');
-  }).join('   +   ');
-}
-
-window.cxEscolher=function(){ var i=document.getElementById('cx-arq'); if(i) i.click(); };
-
-window.cxRemoverDoc=function(id){
-  cxDocs=cxDocs.filter(function(d){ return d.id!==Number(id); });
+window.cxLimparResto=function(){
+  if(!cxManual.caixas.length && !cxManual.atual.length) return;
+  if(!confirm('Desmontar as caixas do resto?')) return;
   cxZerarMontagem();
-  render();
-};
-
-window.limparCaixas=function(){
-  if(!cxDocs.length) return;
-  if(!confirm('Tirar todos os carregamentos da tela?')) return;
-  cxDocs=[]; cxMsg=''; cxZerarMontagem(); render();
-};
-
-window.cxLimparMix=function(pct){
-  pct=Number(pct);
-  if(!confirm('Desmontar todas as caixas mistas deste grupo?')) return;
-  cxMontagem[pct]={fechadas:[], atual:[]};
   render();
 };
 
@@ -3388,7 +3361,7 @@ function renderCaixas(){
   h+='<div class="grid kpis">';
   h+='<div class="card"><div class="cxbig">'+R.totalGeral+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">caixas no total</div></div>';
   h+='<div class="card"><div class="cxbig" style="color:var(--text)">'+R.total+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">fechadas de um produto só</div></div>';
-  h+='<div class="card"><div class="cxbig" style="color:#7FB3D5">'+R.qtdMistas+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">mistas, de sobras</div></div>';
+  h+='<div class="card"><div class="cxbig" style="color:#7FB3D5">'+R.qtdMistas+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">mistas &middot; '+R.autoCx+' automáticas'+(R.manualCx?' + '+R.manualCx+' do operador':'')+'</div></div>';
   h+='<div class="card"><div class="cxbig" style="color:var(--amber)">'+R.soltosFinal+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">pacotes que ficam soltos</div></div>';
   h+='</div>';
 
@@ -3423,81 +3396,97 @@ function renderCaixas(){
   }
   h+='</tbody></table></div></div>';
 
-  if(R.grupos.length || R.semMix.length){
-    h+='<div class="sect">Montagem das caixas mistas <span style="color:var(--muted);font-weight:400">'
-     + '&middot; toque no produto para colocar na caixa</span></div>';
+  var gi, ci, ct, G, C, D;
 
-    var gi, ci, ct, G, C, D;
+  /* etapa 1 — o que o app fechou sozinho */
+  if(R.autoCx){
+    h+='<div class="sect">Caixas mistas montadas <span style="color:var(--muted);font-weight:400">'
+     + '&middot; sobras de produtos do mesmo multiplicador, fechadas automaticamente</span></div>';
     for(gi=0;gi<R.grupos.length;gi++){
       G=R.grupos[gi];
-      h+='<div class="mixg">';
-      h+='<div class="mixh"><div><b>'+G.pct+' por caixa</b>'
-       + '<span> &middot; '+G.itens+' produtos com sobra</span></div>'
-       + '<div class="mixbtns">'
-       + '<button class="btn btn-sm" onclick="cxSugerirMix('+G.pct+')">Montar sozinho</button>'
-       + (G.fechadas.length||G.atual.length ? '<button class="btn btn-sm btn-ghost" onclick="cxLimparMix('+G.pct+')">Desmontar</button>' : '')
-       + '</div></div>';
-
-      /* caixa em montagem */
-      var pct100 = Math.round(G.naAtual/G.pct*100);
-      h+='<div class="mixatual">'
-       + '<div class="mixbar"><div class="mixfill" style="width:'+pct100+'%"></div>'
-       + '<span class="mixnum">'+G.naAtual+' / '+G.pct+'</span></div>';
-      if(G.atual.length){
-        h+='<div class="mixchips">';
-        for(ct=0;ct<G.atual.length;ct++){
-          h+='<button class="chip chip-in" onclick="cxTirarMix('+G.pct+',\''+esc(G.atual[ct].cod)+'\')">'
-           + '<b>'+G.atual[ct].qtd+'</b> '+esc(G.atual[ct].nome)+' <span class="x">&minus;</span></button>';
+      if(!G.caixas.length) continue;
+      h+='<div class="mixg"><div class="mixh"><div><b>'+G.pct+' por caixa</b>'
+       + '<span> &middot; '+G.sobraTotal+' pacotes de '+G.itens+' produtos &rarr; '
+       + G.caixas.length+' caixa'+(G.caixas.length===1?'':'s')
+       + (G.resto?', '+G.resto+' foram para o resto':'')+'</span></div></div>';
+      for(ci=0;ci<G.caixas.length;ci++){
+        C=G.caixas[ci];
+        h+='<div class="mixcx mixcx-auto"><span class="mixcxid">'+G.pct+'-'+(ci+1)+'</span>';
+        for(ct=0;ct<C.length;ct++){
+          h+='<span class="mixcxi">'+(ct?'+ ':'')+esc(C[ct].nome)+' <b>('+C[ct].qtd+')</b></span>';
         }
         h+='</div>';
-      } else {
-        h+='<div class="mixvazio">Caixa vazia &mdash; toque num produto abaixo</div>';
-      }
-      h+='</div>';
-
-      /* disponíveis */
-      if(G.disponivel.length){
-        h+='<div class="mixlab">Sobras disponíveis</div><div class="mixchips">';
-        for(ct=0;ct<G.disponivel.length;ct++){
-          D=G.disponivel[ct];
-          h+='<button class="chip" onclick="cxAddMix('+G.pct+',\''+esc(D.cod)+'\',1)">'
-           + '<span class="cod">'+esc(D.cod)+'</span> '+esc(D.nome)
-           + ' <b>&times;'+D.resta+'</b></button>';
-        }
-        h+='</div>';
-      } else if(!G.atual.length){
-        h+='<div class="mixlab" style="color:var(--green)">Tudo encaixotado neste grupo.</div>';
-      }
-
-      /* fechadas */
-      if(G.fechadas.length){
-        h+='<div class="mixlab">'+G.fechadas.length+' caixa'+(G.fechadas.length===1?'':'s')+' pronta'+(G.fechadas.length===1?'':'s')+' <span style="color:var(--muted);font-weight:400">&middot; toque para desfazer</span></div>';
-        for(ci=0;ci<G.fechadas.length;ci++){
-          C=G.fechadas[ci];
-          h+='<button class="mixcx" onclick="cxReabrirMix('+G.pct+','+ci+')">'
-           + '<span class="mixcxid">'+G.pct+'-'+(ci+1)+'</span>';
-          for(ct=0;ct<C.length;ct++){
-            h+='<span class="mixcxi">'+(ct?'+ ':'')+esc(C[ct].nome)+' <b>('+C[ct].qtd+')</b></span>';
-          }
-          h+='</button>';
-        }
       }
       h+='</div>';
     }
+  }
 
-    /* grupos que nunca misturam */
-    for(gi=0;gi<R.semMix.length;gi++){
-      G=R.semMix[gi];
-      h+='<div class="mixg mixg-off"><div class="mixh"><div><b>'+G.pct+' por caixa &mdash; bandeja</b>'
-       + '<span> &middot; contado em unidade, não mistura com outro produto</span></div></div>';
+  /* etapa 2 — o resto, que só o operador consegue juntar */
+  if(R.restoLivre.length || R.emMontagem.length || R.manual.length){
+    var totResto=R.restoLivre.reduce(function(a,b){ return a+b.resta; },0);
+    h+='<div class="sect">Resto para montar à mão <span style="color:var(--muted);font-weight:400">'
+     + '&middot; pacotes de multiplicadores diferentes, que já não fecham caixa sozinhos</span></div>';
+    h+='<div class="mixg">';
+    h+='<div class="mixh"><div><b>'+totResto+' pacotes soltos</b>'
+     + '<span> &middot; junte o que couber e feche a caixa</span></div><div class="mixbtns">'
+     + (R.manual.length||R.emMontagem.length ? '<button class="btn btn-sm btn-ghost" onclick="cxLimparResto()">Desmontar</button>' : '')
+     + '</div></div>';
+
+    h+='<div class="mixatual">';
+    if(R.emMontagem.length){
+      h+='<div class="mixcont">'+cxSomaItens(R.emMontagem)+' <span>pacotes nesta caixa</span></div>';
       h+='<div class="mixchips">';
-      for(ct=0;ct<G.disponivel.length;ct++){
-        D=G.disponivel[ct];
-        h+='<span class="chip chip-off"><span class="cod">'+esc(D.cod)+'</span> '+esc(D.nome)
-         + ' <b>&times;'+D.resta+'</b></span>';
+      for(ct=0;ct<R.emMontagem.length;ct++){
+        h+='<button class="chip chip-in" onclick="cxTirarResto(\''+esc(R.emMontagem[ct].cod)+'\')">'
+         + '<b>'+R.emMontagem[ct].qtd+'</b> '+esc(R.emMontagem[ct].nome)+' <span class="x">&minus;</span></button>';
       }
-      h+='</div></div>';
+      h+='</div>';
+      h+='<button class="btn btn-sm mixfechar" onclick="cxFecharResto()">Fechar esta caixa</button>';
+    } else {
+      h+='<div class="mixvazio">Caixa vazia &mdash; toque num produto abaixo</div>';
     }
+    h+='</div>';
+
+    if(R.restoLivre.length){
+      h+='<div class="mixlab">Disponíveis</div><div class="mixchips">';
+      for(ct=0;ct<R.restoLivre.length;ct++){
+        D=R.restoLivre[ct];
+        h+='<button class="chip" onclick="cxAddResto(\''+esc(D.cod)+'\')">'
+         + '<span class="cod">'+esc(D.cod)+'</span> '+esc(D.nome)
+         + ' <b>&times;'+D.resta+'</b><span class="pctag">'+D.pct+'</span></button>';
+      }
+      h+='</div>';
+    } else if(!R.emMontagem.length){
+      h+='<div class="mixlab" style="color:var(--green)">Nada sobrando.</div>';
+    }
+
+    if(R.manual.length){
+      h+='<div class="mixlab">'+R.manual.length+' caixa'+(R.manual.length===1?'':'s')+' do operador'
+       + ' <span style="color:var(--muted);font-weight:400">&middot; toque para desfazer</span></div>';
+      for(ci=0;ci<R.manual.length;ci++){
+        C=R.manual[ci];
+        h+='<button class="mixcx" onclick="cxReabrirResto('+ci+')">'
+         + '<span class="mixcxid">M-'+(ci+1)+'</span>';
+        for(ct=0;ct<C.length;ct++){
+          h+='<span class="mixcxi">'+(ct?'+ ':'')+esc(C[ct].nome)+' <b>('+C[ct].qtd+')</b></span>';
+        }
+        h+='</button>';
+      }
+    }
+    h+='</div>';
+  }
+
+  /* bandejas */
+  for(gi=0;gi<R.bandejas.length;gi++){
+    G=R.bandejas[gi];
+    h+='<div class="mixg mixg-off"><div class="mixh"><div><b>'+G.pct+' por caixa &mdash; bandeja</b>'
+     + '<span> &middot; contado em unidade, não mistura com outro produto</span></div></div>';
+    h+='<div class="mixchips">';
+    for(ct=0;ct<G.itens.length;ct++){
+      h+='<span class="chip chip-off"><span class="cod">'+esc(G.itens[ct].cod)+'</span> '
+       + esc(G.itens[ct].nome)+' <b>&times;'+G.itens[ct].resta+'</b></span>';
+    }
+    h+='</div></div>';
   }
 
   saida.innerHTML=h;
@@ -3557,50 +3546,66 @@ function cxRenderPrint(R){
   }
   h+='</tbody></table>';
 
-  if(R.qtdMistas || R.semMix.length || R.soltosFinal){
+  if(R.qtdMistas || R.soltosFinal){
     h+='<div class="pquebra"></div>';
     h+='<h1 style="margin-top:0">Caixas mistas</h1>';
-    h+='<div class="ph">Sobras de produtos com o mesmo multiplicador, fechando caixa juntas. Cada linha é uma caixa.</div>';
+    h+='<div class="ph">Sobras de produtos fechando caixa juntas. Cada linha é uma caixa.</div>';
     var gi, ci, ct, G, C, D;
+
     for(gi=0;gi<R.grupos.length;gi++){
       G=R.grupos[gi];
-      if(!G.fechadas.length && !G.restam && !G.naAtual) continue;
-      h+='<div class="pgrupo"><b>'+G.pct+' por caixa</b> &mdash; '+G.fechadas.length+' caixa'
-       + (G.fechadas.length===1?'':'s')+' montada'+(G.fechadas.length===1?'':'s')
-       + ((G.restam+G.naAtual)?', '+(G.restam+G.naAtual)+' pacotes fora de caixa':'')+'</div>';
+      if(!G.caixas.length) continue;
+      h+='<div class="pgrupo"><b>'+G.pct+' por caixa</b> &mdash; '+G.caixas.length+' caixa'
+       + (G.caixas.length===1?'':'s')+'</div>';
       h+='<table><thead><tr><th style="width:11%">Caixa</th><th>Conteúdo</th>'
        + '<th style="width:9%">Conferido</th></tr></thead><tbody>';
-      for(ci=0;ci<G.fechadas.length;ci++){
-        C=G.fechadas[ci];
+      for(ci=0;ci<G.caixas.length;ci++){
+        C=G.caixas[ci];
         h+='<tr><td class="cxn">'+G.pct+'-'+(ci+1)+'</td><td>';
         for(ct=0;ct<C.length;ct++){
           h+=(ct?'&nbsp; + &nbsp;':'')+esc(C[ct].cod)+' '+esc(C[ct].nome)+' <b>('+C[ct].qtd+')</b>';
         }
         h+='</td><td></td></tr>';
       }
-      if(G.atual.length){
-        h+='<tr class="pfalta"><td>parcial</td><td>';
-        for(ct=0;ct<G.atual.length;ct++){
-          h+=(ct?'&nbsp; + &nbsp;':'')+esc(G.atual[ct].cod)+' '+esc(G.atual[ct].nome)+' <b>('+G.atual[ct].qtd+')</b>';
+      h+='</tbody></table>';
+    }
+
+    if(R.manual.length || R.emMontagem.length || R.restoLivre.length){
+      h+='<div class="pgrupo"><b>Resto montado à mão</b> &mdash; '+R.manual.length+' caixa'
+       + (R.manual.length===1?'':'s')+'</div>';
+      h+='<table><thead><tr><th style="width:11%">Caixa</th><th>Conteúdo</th>'
+       + '<th style="width:9%">Conferido</th></tr></thead><tbody>';
+      for(ci=0;ci<R.manual.length;ci++){
+        C=R.manual[ci];
+        h+='<tr><td class="cxn">M-'+(ci+1)+'</td><td>';
+        for(ct=0;ct<C.length;ct++){
+          h+=(ct?'&nbsp; + &nbsp;':'')+esc(C[ct].cod)+' '+esc(C[ct].nome)+' <b>('+C[ct].qtd+')</b>';
         }
         h+='</td><td></td></tr>';
       }
-      if(G.disponivel.length){
+      if(R.emMontagem.length){
+        h+='<tr class="pfalta"><td>aberta</td><td>';
+        for(ct=0;ct<R.emMontagem.length;ct++){
+          h+=(ct?'&nbsp; + &nbsp;':'')+esc(R.emMontagem[ct].cod)+' '+esc(R.emMontagem[ct].nome)+' <b>('+R.emMontagem[ct].qtd+')</b>';
+        }
+        h+='</td><td></td></tr>';
+      }
+      if(R.restoLivre.length){
         h+='<tr class="pfalta"><td>solto</td><td>';
-        for(ct=0;ct<G.disponivel.length;ct++){
-          h+=(ct?'&nbsp; + &nbsp;':'')+esc(G.disponivel[ct].cod)+' '+esc(G.disponivel[ct].nome)+' <b>('+G.disponivel[ct].resta+')</b>';
+        for(ct=0;ct<R.restoLivre.length;ct++){
+          h+=(ct?'&nbsp; + &nbsp;':'')+esc(R.restoLivre[ct].cod)+' '+esc(R.restoLivre[ct].nome)+' <b>('+R.restoLivre[ct].resta+')</b>';
         }
         h+='</td><td></td></tr>';
       }
       h+='</tbody></table>';
     }
-    for(gi=0;gi<R.semMix.length;gi++){
-      G=R.semMix[gi];
+
+    for(gi=0;gi<R.bandejas.length;gi++){
+      G=R.bandejas[gi];
       h+='<div class="pgrupo"><b>'+G.pct+' por caixa &mdash; bandeja</b> &mdash; contado em unidade, não mistura</div>';
       h+='<table><tbody><tr><td>';
-      for(ct=0;ct<G.disponivel.length;ct++){
-        D=G.disponivel[ct];
-        h+=(ct?'&nbsp; + &nbsp;':'')+esc(D.cod)+' '+esc(D.nome)+' <b>('+D.resta+')</b>';
+      for(ct=0;ct<G.itens.length;ct++){
+        h+=(ct?'&nbsp; + &nbsp;':'')+esc(G.itens[ct].cod)+' '+esc(G.itens[ct].nome)+' <b>('+G.itens[ct].resta+')</b>';
       }
       h+='</td><td style="width:9%"></td></tr></tbody></table>';
     }
@@ -3720,11 +3725,16 @@ window.exportarCaixas=function(){
   var gi, ci, G, C;
   for(gi=0;gi<R.grupos.length;gi++){
     G=R.grupos[gi];
-    for(ci=0;ci<G.fechadas.length;ci++){
-      C=G.fechadas[ci];
+    for(ci=0;ci<G.caixas.length;ci++){
+      C=G.caixas[ci];
       l.push(cxLinhaCsv(['CAIXA MISTA', G.pct+'-'+(ci+1),
         C.map(function(x){ return x.cod+' '+x.nome+' ('+x.qtd+')'; }).join(' + ')]));
     }
+  }
+  for(ci=0;ci<R.manual.length;ci++){
+    C=R.manual[ci];
+    l.push(cxLinhaCsv(['CAIXA DO OPERADOR', 'M-'+(ci+1),
+      C.map(function(x){ return x.cod+' '+x.nome+' ('+x.qtd+')'; }).join(' + ')]));
   }
   l.push('');
   l.push(cxLinhaCsv(['CAIXAS DE UM PRODUTO', R.total]));
