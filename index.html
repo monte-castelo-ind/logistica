@@ -3194,6 +3194,30 @@ function cxCalcular(){
           totalGeral:total+autoCx+cxManual.caixas.length};
 }
 
+function cxTipoNome(d){ return d.tipo==='pedido' ? 'Pedido' : 'Carregamento'; }
+
+function cxResumoOrigens(){
+  return cxDocs.map(function(d){
+    return cxTipoNome(d)+' '+(d.numero||'sem número')
+         + (d.rota?' · '+d.rota:'')
+         + (d.cliente?' · '+d.cliente:'');
+  }).join('   +   ');
+}
+
+window.cxEscolher=function(){ var i=document.getElementById('cx-arq'); if(i) i.click(); };
+
+window.cxRemoverDoc=function(id){
+  cxDocs=cxDocs.filter(function(d){ return d.id!==Number(id); });
+  cxZerarMontagem();
+  render();
+};
+
+window.limparCaixas=function(){
+  if(!cxDocs.length) return;
+  if(!confirm('Tirar todos os carregamentos da tela?')) return;
+  cxDocs=[]; cxMsg=''; cxZerarMontagem(); render();
+};
+
 /* ===== MISTURA DE SOBRAS =====
    Duas etapas.
    1) Automática: dentro de cada multiplicador, sobra de produtos diferentes
