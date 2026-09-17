@@ -170,6 +170,8 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
 .chip b{font-family:'JetBrains Mono',monospace;color:#7FB3D5}
 .chip-in{background:rgba(86,135,168,.16);border-color:rgba(86,135,168,.45)}
 .chip-in .x{color:var(--red);font-weight:700;font-size:15px;margin-left:2px}
+.chip-un{background:rgba(245,176,19,.08);border-color:rgba(245,176,19,.32)}
+.chip-un .pctag{color:var(--amber);border-color:rgba(245,176,19,.4)}
 .chip-off{cursor:default;opacity:.8}
 .chip-off:hover{border-color:var(--border)}
 .mixcx{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%;text-align:left;
@@ -3181,13 +3183,10 @@ function cxCalcular(){
   var restoLivre=cxRestoLivre(A.residuo);
   var autoCx=0, gi;
   for(gi=0;gi<A.grupos.length;gi++) autoCx+=A.grupos[gi].caixas.length;
-  var bandejaSoltas=0;
-  for(gi=0;gi<A.bandejas.length;gi++)
-    bandejaSoltas+=A.bandejas[gi].itens.reduce(function(a,b){ return a+b.resta; },0);
   var soltos = restoLivre.reduce(function(a,b){ return a+b.resta; },0)
-             + cxSomaItens(cxManual.atual) + bandejaSoltas;
+             + cxSomaItens(cxManual.atual);
   return {linhas:linhas, total:total, sobras:sobras, faltando:faltando, docs:cxDocs.length,
-          grupos:A.grupos, bandejas:A.bandejas, residuo:A.residuo, restoLivre:restoLivre,
+          grupos:A.grupos, residuo:A.residuo, restoLivre:restoLivre,
           manual:cxManual.caixas, emMontagem:cxManual.atual,
           autoCx:autoCx, manualCx:cxManual.caixas.length,
           qtdMistas:autoCx+cxManual.caixas.length, soltosFinal:soltos,
@@ -3227,8 +3226,9 @@ window.limparCaixas=function(){
       multiplicador). Só que pacote de grupo 7 e de grupo 20 ainda cabem juntos
       numa caixa — o app não sabe a capacidade dessa mistura, o operador sabe.
       Então esse resto vai para ele montar à mão.
-   Exceção: o grupo de 40 é bandeja de cuca, contada em unidade. Não divide
-   caixa com nada e fica fora das duas etapas. */
+   Exceção: o grupo de 40 é bandeja de cuca, contada em unidade. Fica fora da
+   etapa automática — o app não fecha caixa de bandeja com mais nada — mas vai
+   para o pote do operador, que decide na mão se cabe junto. */
 var MIX_NUNCA = [40];
 
 /* caixas que o operador monta com o resto. Só na memória da sessão. */
@@ -3244,7 +3244,7 @@ function cxJuntarIguais(caixa){
   var mapa={}, ordem=[], i, c;
   for(i=0;i<caixa.length;i++){
     c=caixa[i];
-    if(!mapa[c.cod]){ mapa[c.cod]={cod:c.cod, nome:c.nome, qtd:0, pct:c.pct}; ordem.push(c.cod); }
+    if(!mapa[c.cod]){ mapa[c.cod]={cod:c.cod, nome:c.nome, qtd:0, pct:c.pct, un:c.un}; ordem.push(c.cod); }
     mapa[c.cod].qtd+=c.qtd;
   }
   return ordem.map(function(k){ return mapa[k]; });
@@ -3257,16 +3257,17 @@ function cxAutoMix(linhas){
     L=linhas[i];
     if(!L.pct || !L.sobra) continue;
     if(!porMult[L.pct]) porMult[L.pct]=[];
-    porMult[L.pct].push({cod:L.cod, nome:L.nome, pct:L.pct, resta:L.sobra});
+    porMult[L.pct].push({cod:L.cod, nome:L.nome, pct:L.pct, un:L.un, resta:L.sobra});
   }
   var mults=Object.keys(porMult).map(Number).sort(function(a,b){ return a-b; });
-  var grupos=[], bandejas=[], residuo=[], k, m, fila, caixa, livre, item, usa, g;
+  var grupos=[], residuo=[], k, m, fila, caixa, livre, item, usa, g;
 
   for(k=0;k<mults.length;k++){
     m=mults[k];
     fila=porMult[m];
     if(MIX_NUNCA.indexOf(m)>=0){
-      bandejas.push({pct:m, itens:fila.slice()});
+      /* não fecha caixa sozinha aqui, mas o operador pode usar na mistura dele */
+      residuo=residuo.concat(fila.slice());
       continue;
     }
     g={pct:m, caixas:[], itens:fila.length,
@@ -3276,19 +3277,19 @@ function cxAutoMix(linhas){
       item=fila[i];
       while(item.resta>0){
         usa=Math.min(item.resta, livre);
-        caixa.push({cod:item.cod, nome:item.nome, pct:m, qtd:usa});
+        caixa.push({cod:item.cod, nome:item.nome, pct:m, un:item.un, qtd:usa});
         item.resta-=usa; livre-=usa;
         if(livre===0){ g.caixas.push(cxJuntarIguais(caixa)); caixa=[]; livre=m; }
       }
     }
     /* o que ficou na última caixa não fecha aqui: vai para o operador */
     if(caixa.length) residuo=residuo.concat(cxJuntarIguais(caixa).map(function(c){
-      return {cod:c.cod, nome:c.nome, pct:m, resta:c.qtd};
+      return {cod:c.cod, nome:c.nome, pct:m, un:c.un, resta:c.qtd};
     }));
     g.resto=caixa.length ? cxSomaItens(caixa) : 0;
     if(g.caixas.length || g.resto) grupos.push(g);
   }
-  return {grupos:grupos, bandejas:bandejas, residuo:residuo};
+  return {grupos:grupos, residuo:residuo};
 }
 
 /* quanto do resto ainda não foi para nenhuma caixa do operador */
@@ -3300,7 +3301,7 @@ function cxRestoLivre(residuo){
   var out=[];
   for(i=0;i<residuo.length;i++){
     var r=residuo[i], livre=r.resta-(usado[r.cod]||0);
-    if(livre>0) out.push({cod:r.cod, nome:r.nome, pct:r.pct, resta:livre});
+    if(livre>0) out.push({cod:r.cod, nome:r.nome, pct:r.pct, un:r.un, resta:livre});
   }
   return out;
 }
@@ -3309,7 +3310,7 @@ window.cxAddResto=function(cod){
   var R=cxCalcular(), disp=R.restoLivre, item=null, i;
   for(i=0;i<disp.length;i++) if(disp[i].cod===cod) item=disp[i];
   if(!item) return;
-  cxManual.atual.push({cod:cod, nome:item.nome, pct:item.pct, qtd:1});
+  cxManual.atual.push({cod:cod, nome:item.nome, pct:item.pct, un:item.un, qtd:1});
   cxManual.atual=cxJuntarIguais(cxManual.atual);
   render();
 };
@@ -3449,9 +3450,9 @@ function renderCaixas(){
   if(R.restoLivre.length || R.emMontagem.length || R.manual.length){
     var totResto=R.restoLivre.reduce(function(a,b){ return a+b.resta; },0);
     h+='<div class="sect">Resto para montar à mão <span style="color:var(--muted);font-weight:400">'
-     + '&middot; pacotes de multiplicadores diferentes, que já não fecham caixa sozinhos</span></div>';
+     + '&middot; o que já não fecha caixa sozinho, mais as bandejas &mdash; você decide o que cabe junto</span></div>';
     h+='<div class="mixg">';
-    h+='<div class="mixh"><div><b>'+totResto+' pacotes soltos</b>'
+    h+='<div class="mixh"><div><b>'+totResto+' soltos</b>'
      + '<span> &middot; junte o que couber e feche a caixa</span></div><div class="mixbtns">'
      + (R.manual.length||R.emMontagem.length ? '<button class="btn btn-sm btn-ghost" onclick="cxLimparResto()">Desmontar</button>' : '')
      + '</div></div>';
@@ -3475,9 +3476,9 @@ function renderCaixas(){
       h+='<div class="mixlab">Disponíveis</div><div class="mixchips">';
       for(ct=0;ct<R.restoLivre.length;ct++){
         D=R.restoLivre[ct];
-        h+='<button class="chip" onclick="cxAddResto(\''+esc(D.cod)+'\')">'
+        h+='<button class="chip'+(D.un==='UN'?' chip-un':'')+'" onclick="cxAddResto(\''+esc(D.cod)+'\')">'
          + '<span class="cod">'+esc(D.cod)+'</span> '+esc(D.nome)
-         + ' <b>&times;'+D.resta+'</b><span class="pctag">'+D.pct+'</span></button>';
+         + ' <b>&times;'+D.resta+'</b><span class="pctag">'+(D.un==='UN'?'bandeja':D.pct)+'</span></button>';
       }
       h+='</div>';
     } else if(!R.emMontagem.length){
@@ -3498,19 +3499,6 @@ function renderCaixas(){
       }
     }
     h+='</div>';
-  }
-
-  /* bandejas */
-  for(gi=0;gi<R.bandejas.length;gi++){
-    G=R.bandejas[gi];
-    h+='<div class="mixg mixg-off"><div class="mixh"><div><b>'+G.pct+' por caixa &mdash; bandeja</b>'
-     + '<span> &middot; contado em unidade, não mistura com outro produto</span></div></div>';
-    h+='<div class="mixchips">';
-    for(ct=0;ct<G.itens.length;ct++){
-      h+='<span class="chip chip-off"><span class="cod">'+esc(G.itens[ct].cod)+'</span> '
-       + esc(G.itens[ct].nome)+' <b>&times;'+G.itens[ct].resta+'</b></span>';
-    }
-    h+='</div></div>';
   }
 
   saida.innerHTML=h;
@@ -3624,15 +3612,6 @@ function cxRenderPrint(R){
       h+='</tbody></table>';
     }
 
-    for(gi=0;gi<R.bandejas.length;gi++){
-      G=R.bandejas[gi];
-      h+='<div class="pgrupo"><b>'+G.pct+' por caixa &mdash; bandeja</b> &mdash; contado em unidade, não mistura</div>';
-      h+='<table><tbody><tr><td>';
-      for(ct=0;ct<G.itens.length;ct++){
-        h+=(ct?'&nbsp; + &nbsp;':'')+esc(G.itens[ct].cod)+' '+esc(G.itens[ct].nome)+' <b>('+G.itens[ct].resta+')</b>';
-      }
-      h+='</td><td style="width:9%"></td></tr></tbody></table>';
-    }
   }
 
   h+='<div class="pfoot">Caixas = quantidade dividida pelos pacotes que cabem na caixa. Sobra = pacote que não fechou caixa.'
