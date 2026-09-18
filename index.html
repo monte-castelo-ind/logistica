@@ -188,6 +188,31 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
 .cx-alerta-p{font-size:12px;background:rgba(242,106,106,.14);border:1px solid rgba(242,106,106,.4);
              border-radius:8px;padding:5px 10px}
 .cx-alerta-p .mono{color:var(--red);font-weight:700;margin-right:4px}
+/* faixa da telemetria do Cobli no cartao do veiculo */
+.cobli-l{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:9px;padding-top:9px;
+         border-top:1px dashed var(--border);font-size:11.5px;color:var(--muted)}
+.cobli-l span{white-space:nowrap}
+.cobli-t{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.6px;
+         color:#7FB3D5;border:1px solid rgba(86,135,168,.42);border-radius:5px;padding:1px 5px}
+.cobli-d{margin-left:auto;font-size:10.5px;opacity:.75}
+.cobli-aviso{margin-bottom:12px}
+.es-tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.3px;padding:2px 8px;
+        border-radius:20px;text-transform:uppercase}
+.es-pneu{background:rgba(75,123,236,.16);color:var(--blue);border:1px solid rgba(75,123,236,.38)}
+.es-oleo{background:rgba(245,176,19,.14);color:var(--amber);border:1px solid rgba(245,176,19,.36)}
+.es-entrada{background:rgba(28,204,71,.14);color:var(--green);border:1px solid rgba(28,204,71,.34)}
+.es-saida{background:rgba(242,106,106,.14);color:var(--red);border:1px solid rgba(242,106,106,.34)}
+.es-saldo{text-align:right;font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700}
+.es-saldo span{font-family:'Archivo',sans-serif;font-size:10px;font-weight:400;color:var(--muted)}
+.es-vermelho{color:var(--red)}
+.es-ambar{color:var(--amber)}
+tr.es-zero td{background:rgba(242,106,106,.07)}
+tr.es-baixo td{background:rgba(245,176,19,.06)}
+.es-b{background:none;border:1px solid var(--border);color:var(--muted);border-radius:7px;
+      font-family:inherit;font-size:11px;padding:4px 9px;cursor:pointer;margin-left:5px;white-space:nowrap}
+.es-b:hover{border-color:var(--text);color:var(--text)}
+.es-b-e:hover{border-color:var(--green);color:var(--green)}
+.es-b-s:hover{border-color:var(--red);color:var(--red)}
 .nv-modal{position:fixed;inset:0;background:rgba(0,0,0,.62);display:flex;align-items:center;
            justify-content:center;z-index:9000;padding:20px}
 .nv-box{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px 24px;
@@ -396,6 +421,7 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
     <button class="navbtn" data-p="chk" onclick="nav('chk')"><span class="side-ico">☑</span><span class="lbl">Checklist</span><span class="cnt" id="cntChk" style="display:none">0</span></button>
     <button class="navbtn" data-p="docs" onclick="nav('docs')"><span class="side-ico">▣</span><span class="lbl">Documentos</span></button>
     <button class="navbtn" data-p="caixas" onclick="nav('caixas')"><span class="side-ico">▤</span><span class="lbl">Caixas</span></button>
+    <button class="navbtn" data-p="estoque" onclick="nav('estoque')"><span class="side-ico">◉</span><span class="lbl">Pneus e óleos</span></button>
     <button class="navbtn gestao-only" data-p="custos" onclick="nav('custos')"><span class="side-ico">◷</span><span class="lbl">Custos e consumo</span></button>
     <button class="navbtn config-only" data-p="config" onclick="nav('config')"><span class="side-ico">⚙</span><span class="lbl">Configurações</span></button>
     <div class="side-foot">
@@ -552,6 +578,26 @@ input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;
         <button class="btn btn-sm frota-cad" onclick="abrirDoc(null)" style="margin-left:auto">+ Novo documento</button>
       </div>
       <div class="tw"><div class="tscroll"><table id="tbl-docs"></table></div></div>
+    </div>
+
+    <!-- ESTOQUE OFICINA -->
+    <div class="page" id="page-estoque">
+      <div class="tools">
+        <select id="es-tipo" onchange="render()">
+          <option value="">Pneus e óleos</option>
+          <option value="pneu">Só pneus</option>
+          <option value="oleo">Só óleos</option>
+        </select>
+        <select id="es-filtro" onchange="render()">
+          <option value="">Todos</option>
+          <option value="baixo">Abaixo do mínimo</option>
+          <option value="zero">Zerados</option>
+        </select>
+        <input type="text" id="es-busca" placeholder="Buscar item, medida ou marca" oninput="render()" style="min-width:200px">
+        <button class="btn btn-sm frota-cad" onclick="novoItemEstoque()">+ Item</button>
+        <button class="btn btn-sm btn-ghost" onclick="exportarEstoque()" style="margin-left:auto">⤓ CSV</button>
+      </div>
+      <div id="es-saida"></div>
     </div>
 
     <!-- CAIXAS -->
@@ -713,6 +759,10 @@ function desdeJanela(){
   return new Date(Date.now()-JANELA_DIAS*86400000).toISOString().slice(0,10);
 }
 function podeGestaoFrota(){ return ehAdmin || podeCadastrar; }
+var estoque=[], estoqueMov=[];
+/* telemetria do Cobli: um documento por placa, gravado pelo robo do Actions.
+   O app so le — a regra do Firestore bloqueia escrita de propósito. */
+var telemetria={}, telemetriaMeta=null;
 var veiculos=[], movs=[], docs=[], cfg={ oleoKm:10000, oleoMeses:6, revisaoKm:20000, revisaoMeses:12,
   diasAviso:30, kmParadoDias:15, desvioPct:15, tipos:[] };
 var modelosChk={}, checklists=[];
@@ -728,6 +778,7 @@ const TITLES={
   chk:['Checklist','Inspeção semanal por tipo de veículo'],
   docs:['Documentos','IPVA, licenciamento, seguro, CNH'],
   caixas:['Conversão de caixas','O PDF do carregamento vira número de caixas'],
+  estoque:['Pneus e óleos','Estoque da oficina — o que tem em casa'],
   custos:['Custos e consumo','R$/km, R$/litro e km/L por veículo'],
   config:['Configurações','Intervalos e tipos']
 };
@@ -1181,6 +1232,7 @@ function render(){
   else if(pagina==='chk') renderChk();
   else if(pagina==='docs') renderDocs();
   else if(pagina==='caixas') renderCaixas();
+  else if(pagina==='estoque') renderEstoque();
   else if(pagina==='custos') renderCustos();
   else if(pagina==='config'){ renderConfig(); renderConfigCaixas(); }
 }
@@ -1755,6 +1807,14 @@ function renderVeiculos(){
   document.querySelectorAll('.vbtn').forEach(function(el){
     el.classList.toggle('on', el.getAttribute('data-v')===visaoVeic);
   });
+  var av=document.getElementById('v-cobli-aviso');
+  if(!av){
+    av=document.createElement('div'); av.id='v-cobli-aviso';
+    var host=document.getElementById('vlista');
+    if(host && host.parentNode) host.parentNode.insertBefore(av, host);
+  }
+  if(av) av.innerHTML=avisoCobli();
+
   document.getElementById('vlista').innerHTML = lista.length
     ? (visaoVeic==='lista' ? listaVeic(lista) : '<div class="vgrid">'+lista.map(cartaoVeic).join('')+'</div>')
     : '<div class="card empty">'+(veiculos.length?'Nenhum veículo com esses filtros.':'Nenhum veículo cadastrado. Use <strong>+ Novo veículo</strong>.')+'</div>';
@@ -1808,6 +1868,34 @@ function listaVeic(lista){
   });
   return html+'</tbody></table></div></div>';
 }
+/* O robo indexa por placa sem hifen e em maiuscula. O cadastro do app pode
+   ter a placa em qualquer formato, entao normaliza dos dois lados. */
+function telemetriaDe(v){
+  if(!v || !v.placa) return null;
+  var k=String(v.placa).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  return telemetria[k] || null;
+}
+
+/* O robo do Cobli confere as placas dos dois lados e grava o resultado em
+   frotaTelemetria/_meta. Placa rastreada sem cadastro aqui gera dado que
+   nunca aparece na tela — por isso o aviso, senao a falha e silenciosa. */
+function avisoCobli(){
+  if(!telemetriaMeta) return '';
+  var orfas=telemetriaMeta.placasOrfas||[];
+  var h='';
+  if(orfas.length){
+    h+='<div class="alert a-warn cobli-aviso">▲ <div><b>'+orfas.length+' placa(s) rastreadas no Cobli sem cadastro aqui:</b> '
+     + orfas.map(esc).join(', ')
+     + '. O robô grava a quilometragem delas, mas ela não aparece em lugar nenhum enquanto o veículo não for cadastrado.</div></div>';
+  }
+  if(telemetriaMeta.atualizadoEm){
+    var quando=String(telemetriaMeta.atualizadoEm).slice(0,10);
+    h+='<div style="font-size:11.5px;color:var(--muted);margin-bottom:11px">'
+     + 'Telemetria do Cobli · '+(telemetriaMeta.veiculos||0)+' veículos · última leitura '+esc(dataBR(quando))+'</div>';
+  }
+  return h;
+}
+
 function cartaoVeic(v){
   var id=v.firestoreId;
   var ka=kmAtual(id);
@@ -1822,6 +1910,7 @@ function cartaoVeic(v){
     rot = po.faltam<=0 ? ('vencida há '+fmtN(-po.faltam,0)+' km') : ('faltam '+fmtN(po.faltam,0)+' km');
   }
   var dv=docs.filter(function(d){ return d.veiculoId===id && situacaoDoc(d).st==='vencido'; }).length;
+  var tel=telemetriaDe(v);
   return '<div class="veic'+(v.ativo===false?' inativo':'')+'" onclick="verVeiculo(\''+esc(id)+'\')">'+
     '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">'+
       '<div style="min-width:0"><div class="placa">'+esc(v.placa||'—')+'</div>'+
@@ -1838,7 +1927,13 @@ function cartaoVeic(v){
       '<div>Consumo<b>'+(c.kmL?fmtN(c.kmL,2)+' km/L':'—')+'</b></div>'+
       '<div>Gasto '+JANELA_DIAS+'d<b>'+(g.total>0?fmtR$k(g.total):'—')+'</b></div>'+
       '<div>R$/km '+JANELA_DIAS+'d<b>'+(function(){ var k=kmRodado(id,desdeJanela()); return k>0?fmtR$(g.total/k,2):'—'; })()+'</b></div>'+
-    '</div></div>';
+    '</div>'+
+    (tel?'<div class="cobli-l"><span class="cobli-t">COBLI</span>'+
+      '<span>'+fmtN(tel.kmPeriodo||0,0)+' km</span>'+
+      (tel.horasRodando?'<span>'+fmtN(tel.horasRodando,1)+' h</span>':'')+
+      (tel.custoPorKm?'<span>'+fmtR$(tel.custoPorKm,2)+'/km</span>':'')+
+      '<span class="cobli-d">'+esc(dataBR(tel.periodoDe))+'</span></div>':'')+
+    '</div>';
 }
 
 var COLS_MOV=[
@@ -3315,6 +3410,287 @@ window.limparCaixas=function(){
   cxDocs=[]; cxMsg=''; cxZerarMontagem(); cxConvAberta=null; render();
 };
 
+
+/* ============ ESTOQUE DA OFICINA — PNEUS E ÓLEOS ============
+   Itens de uso exclusivo da oficina, separados do estoque de peças que o
+   Predial compartilha. O saldo NÃO fica gravado no item: é somado a partir
+   dos movimentos. Assim entrada e saída nunca saem de sincronia com o saldo,
+   e o histórico continua sendo a verdade. */
+
+function esItens(){
+  var saldos={}, i, m;
+  for(i=0;i<estoqueMov.length;i++){
+    m=estoqueMov[i];
+    if(!m.itemId) continue;
+    saldos[m.itemId]=(saldos[m.itemId]||0) + (m.tipo==='saida' ? -num(m.qtd) : num(m.qtd));
+  }
+  return estoque.map(function(it){
+    var saldo=saldos[it.firestoreId]||0;
+    var min=num(it.minimo);
+    return Object.assign({}, it, {
+      saldo: saldo,
+      status: saldo<=0 ? 'zero' : (min>0 && saldo<=min ? 'baixo' : 'ok')
+    });
+  }).sort(function(a,b){
+    return (a.tipo||'').localeCompare(b.tipo||'') || (a.nome||'').localeCompare(b.nome||'');
+  });
+}
+
+function esRotuloTipo(t){ return t==='pneu' ? 'Pneu' : (t==='oleo' ? 'Óleo' : '—'); }
+
+function renderEstoque(){
+  var alvo=document.getElementById('es-saida');
+  if(!alvo) return;
+  var tipo=(document.getElementById('es-tipo')||{}).value||'';
+  var filtro=(document.getElementById('es-filtro')||{}).value||'';
+  var termo=((document.getElementById('es-busca')||{}).value||'').toLowerCase();
+
+  var itens=esItens();
+  var baixo=0, zero=0, i, it;
+  for(i=0;i<itens.length;i++){
+    if(itens[i].status==='baixo') baixo++;
+    if(itens[i].status==='zero') zero++;
+  }
+
+  var h='';
+  h+='<div class="grid kpis">';
+  h+='<div class="card"><div class="cxbig" style="color:var(--text)">'+itens.length+'</div>'
+   + '<div style="font-size:11px;color:var(--muted);margin-top:5px">itens cadastrados</div></div>';
+  h+='<div class="card"><div class="cxbig" style="color:var(--amber)">'+baixo+'</div>'
+   + '<div style="font-size:11px;color:var(--muted);margin-top:5px">abaixo do mínimo</div></div>';
+  h+='<div class="card"><div class="cxbig" style="color:'+(zero?'var(--red)':'var(--muted)')+'">'+zero+'</div>'
+   + '<div style="font-size:11px;color:var(--muted);margin-top:5px">zerados</div></div>';
+  h+='</div>';
+
+  if(!estoque.length){
+    h+='<div class="alert a-info">Nenhum item cadastrado. Use <b>+ Item</b> para criar os pneus e óleos que a oficina mantém em casa.</div>';
+    alvo.innerHTML=h;
+    return;
+  }
+
+  if(zero||baixo){
+    h+='<div class="alert a-warn">▲ '+(zero?zero+' item'+(zero>1?'s':'')+' zerado'+(zero>1?'s':''):'')
+     + (zero&&baixo?' e ':'')+(baixo?baixo+' abaixo do mínimo':'')+'. Hora de repor.</div>';
+  }
+
+  h+='<div class="tw"><div class="tscroll"><table><thead><tr>'
+   + '<th style="width:58px">Tipo</th><th>Item</th><th>Medida / marca</th>'
+   + '<th style="text-align:right;width:80px">Saldo</th>'
+   + '<th style="text-align:right;width:70px">Mínimo</th>'
+   + '<th style="width:60px">Local</th>'
+   + '<th style="width:180px"></th>'
+   + '</tr></thead><tbody>';
+
+  var mostrados=0;
+  for(i=0;i<itens.length;i++){
+    it=itens[i];
+    if(tipo && it.tipo!==tipo) continue;
+    if(filtro==='baixo' && it.status!=='baixo') continue;
+    if(filtro==='zero' && it.status!=='zero') continue;
+    if(termo && ((it.nome||'')+' '+(it.medida||'')+' '+(it.marca||'')).toLowerCase().indexOf(termo)<0) continue;
+    mostrados++;
+    h+='<tr class="'+(it.status==='zero'?'es-zero':(it.status==='baixo'?'es-baixo':''))+'">'
+     + '<td><span class="es-tag es-'+esc(it.tipo||'')+'">'+esRotuloTipo(it.tipo)+'</span></td>'
+     + '<td><b>'+esc(it.nome||'—')+'</b></td>'
+     + '<td style="color:var(--muted)">'+esc([it.medida,it.marca].filter(Boolean).join(' · ')||'—')+'</td>'
+     + '<td class="es-saldo '+(it.status==='zero'?'es-vermelho':(it.status==='baixo'?'es-ambar':''))+'">'
+     +   it.saldo+' <span>'+esc(it.unidade||'un')+'</span></td>'
+     + '<td class="cx-n" style="color:var(--muted)">'+(num(it.minimo)||'—')+'</td>'
+     + '<td style="color:var(--muted);font-size:11.5px">'+esc(it.local||'—')+'</td>'
+     + '<td style="text-align:right">'
+     +   (podeLancar
+          ? '<button class="es-b es-b-e" onclick="movEstoque(\'' + esc(it.firestoreId) + '\',\'entrada\')">+ entrada</button>'
+          + '<button class="es-b es-b-s" onclick="movEstoque(\'' + esc(it.firestoreId) + '\',\'saida\')">− saída</button>'
+          : '')
+     +   '<button class="es-b" onclick="historicoEstoque(\'' + esc(it.firestoreId) + '\')">histórico</button>'
+     +   (podeCadastrar ? '<button class="es-b" onclick="editarItemEstoque(\'' + esc(it.firestoreId) + '\')">editar</button>' : '')
+     + '</td></tr>';
+  }
+  h+='</tbody></table></div></div>';
+  if(!mostrados) h='<div class="alert a-info">Nenhum item com esse filtro.</div>';
+  alvo.innerHTML = (mostrados? h : h);
+}
+
+/* ---- movimento ---- */
+window.movEstoque=function(id, tipo){
+  if(!podeLancar){ alert('Você não tem permissão para movimentar o estoque.'); return; }
+  var it=null, i;
+  for(i=0;i<estoque.length;i++) if(estoque[i].firestoreId===id) it=estoque[i];
+  if(!it) return;
+  var atual=0, m;
+  for(i=0;i<estoqueMov.length;i++){
+    m=estoqueMov[i];
+    if(m.itemId!==id) continue;
+    atual += (m.tipo==='saida' ? -num(m.qtd) : num(m.qtd));
+  }
+  var ent=(tipo==='entrada');
+  var opVeic='<option value="">— nenhum —</option>';
+  for(i=0;i<veiculos.length;i++){
+    opVeic+='<option value="'+esc(veiculos[i].firestoreId)+'">'
+      + esc((veiculos[i].placa||'')+' · '+(veiculos[i].modelo||''))+'</option>';
+  }
+  var host=document.getElementById('modal-host')||document.body;
+  var d=document.createElement('div');
+  d.className='nv-modal';
+  d.innerHTML='<div class="nv-box">'
+    + '<div class="nv-h">'+(ent?'Entrada':'Saída')+' de estoque</div>'
+    + '<div class="nv-p"><b>'+esc(it.nome||'')+'</b>'
+    +   (it.medida?' · '+esc(it.medida):'')
+    +   '<br><span class="nv-tot">saldo atual: '+atual+' '+esc(it.unidade||'un')+'</span></div>'
+    + '<label class="nv-l">Quantidade</label>'
+    + '<input type="number" id="es-q" min="1" step="1" value="1">'
+    + (ent? '' :
+       '<label class="nv-l" style="margin-top:14px">Aplicado no veículo</label>'
+       + '<select id="es-v" style="width:100%">'+opVeic+'</select>')
+    + '<label class="nv-l" style="margin-top:14px">Observação</label>'
+    + '<input type="text" id="es-o" maxlength="140" placeholder="'+(ent?'nota fiscal, fornecedor':'motivo, km do veículo')+'">'
+    + '<div class="nv-btns"><button class="btn btn-sm btn-ghost" id="es-c">Cancelar</button>'
+    +   '<button class="btn btn-sm" id="es-ok">Confirmar</button></div></div>';
+  host.appendChild(d);
+  function fechar(){ d.remove(); }
+  d.querySelector('#es-c').onclick=fechar;
+  d.onclick=function(e){ if(e.target===d) fechar(); };
+  d.querySelector('#es-ok').onclick=function(){
+    var q=parseInt(d.querySelector('#es-q').value,10);
+    if(!isFinite(q)||q<1){ alert('Informe uma quantidade válida.'); return; }
+    if(!ent && q>atual && !confirm('A saída de '+q+' deixa o saldo negativo (atual: '+atual+').\n\nConfirmar mesmo assim?')) return;
+    var vsel=d.querySelector('#es-v');
+    var reg={ itemId:id, tipo:tipo, qtd:q, em:agora(), por:sessaoEmail,
+              obs:String(d.querySelector('#es-o').value||'').trim() };
+    if(!ent && vsel && vsel.value) reg.veiculoId=vsel.value;
+    d.querySelector('#es-ok').disabled=true;
+    addDoc(collection(dbC,'frotaEstoqueMov'), reg)
+      .then(function(){ fechar(); })
+      .catch(function(e){
+        console.error('estoque/mov:', e);
+        alert('Não foi possível gravar: '+(e.code||e.message));
+        d.querySelector('#es-ok').disabled=false;
+      });
+  };
+  setTimeout(function(){ d.querySelector('#es-q').focus(); d.querySelector('#es-q').select(); },30);
+};
+
+/* ---- cadastro do item ---- */
+function formItemEstoque(it){
+  if(!podeCadastrar){ alert('Você não tem permissão para cadastrar itens.'); return; }
+  var novo=!it;
+  it=it||{};
+  var host=document.getElementById('modal-host')||document.body;
+  var d=document.createElement('div');
+  d.className='nv-modal';
+  d.innerHTML='<div class="nv-box">'
+    + '<div class="nv-h">'+(novo?'Novo item':'Editar item')+'</div>'
+    + '<label class="nv-l">Tipo</label>'
+    + '<select id="ei-t" style="width:100%">'
+    +   '<option value="pneu"'+(it.tipo==='pneu'?' selected':'')+'>Pneu</option>'
+    +   '<option value="oleo"'+(it.tipo==='oleo'?' selected':'')+'>Óleo</option></select>'
+    + '<label class="nv-l" style="margin-top:14px">Descrição</label>'
+    + '<input type="text" id="ei-n" maxlength="80" value="'+esc(it.nome||'')+'" placeholder="Pneu dianteiro / Óleo motor 15W40">'
+    + '<label class="nv-l" style="margin-top:14px">Medida ou especificação</label>'
+    + '<input type="text" id="ei-me" maxlength="60" value="'+esc(it.medida||'')+'" placeholder="275/80R22.5 · 15W40 · balde 20L">'
+    + '<label class="nv-l" style="margin-top:14px">Marca</label>'
+    + '<input type="text" id="ei-ma" maxlength="60" value="'+esc(it.marca||'')+'">'
+    + '<div style="display:flex;gap:11px;margin-top:14px">'
+    +   '<div style="flex:1"><label class="nv-l">Unidade</label>'
+    +     '<input type="text" id="ei-u" maxlength="12" value="'+esc(it.unidade||'un')+'"></div>'
+    +   '<div style="flex:1"><label class="nv-l">Mínimo</label>'
+    +     '<input type="number" id="ei-mi" min="0" step="1" value="'+(num(it.minimo)||0)+'"></div>'
+    +   '<div style="flex:1"><label class="nv-l">Local</label>'
+    +     '<input type="text" id="ei-l" maxlength="20" value="'+esc(it.local||'')+'"></div>'
+    + '</div>'
+    + '<div class="nv-btns">'
+    +   (novo?'':'<button class="btn btn-sm btn-danger" id="ei-del" style="margin-right:auto">Excluir</button>')
+    +   '<button class="btn btn-sm btn-ghost" id="ei-c">Cancelar</button>'
+    +   '<button class="btn btn-sm" id="ei-ok">Salvar</button></div></div>';
+  host.appendChild(d);
+  function fechar(){ d.remove(); }
+  d.querySelector('#ei-c').onclick=fechar;
+  d.onclick=function(e){ if(e.target===d) fechar(); };
+  var del=d.querySelector('#ei-del');
+  if(del) del.onclick=function(){
+    if(!ehAdmin){ alert('Só o administrador exclui item de estoque.'); return; }
+    if(!confirm('Excluir "'+(it.nome||'')+'"?\n\nO histórico de movimentos continua gravado.')) return;
+    deleteDoc(doc(dbC,'frotaEstoque',it.firestoreId))
+      .then(fechar)
+      .catch(function(e){ console.error('estoque/del:',e); alert('Não foi possível excluir: '+(e.code||e.message)); });
+  };
+  d.querySelector('#ei-ok').onclick=function(){
+    var nome=String(d.querySelector('#ei-n').value||'').trim();
+    if(!nome){ alert('Informe a descrição do item.'); return; }
+    var dados={ tipo:d.querySelector('#ei-t').value, nome:nome,
+      medida:String(d.querySelector('#ei-me').value||'').trim(),
+      marca:String(d.querySelector('#ei-ma').value||'').trim(),
+      unidade:String(d.querySelector('#ei-u').value||'un').trim()||'un',
+      minimo:parseInt(d.querySelector('#ei-mi').value,10)||0,
+      local:String(d.querySelector('#ei-l').value||'').trim() };
+    d.querySelector('#ei-ok').disabled=true;
+    var pr = novo ? addDoc(collection(dbC,'frotaEstoque'), dados)
+                  : updateDoc(doc(dbC,'frotaEstoque',it.firestoreId), dados);
+    pr.then(function(){ fechar(); })
+      .catch(function(e){
+        console.error('estoque/item:', e);
+        alert('Não foi possível salvar: '+(e.code||e.message));
+        d.querySelector('#ei-ok').disabled=false;
+      });
+  };
+  setTimeout(function(){ d.querySelector('#ei-n').focus(); },30);
+}
+
+window.novoItemEstoque=function(){ formItemEstoque(null); };
+window.editarItemEstoque=function(id){
+  var i; for(i=0;i<estoque.length;i++) if(estoque[i].firestoreId===id) return formItemEstoque(estoque[i]);
+};
+
+/* ---- histórico ---- */
+window.historicoEstoque=function(id){
+  var it=null, i, m;
+  for(i=0;i<estoque.length;i++) if(estoque[i].firestoreId===id) it=estoque[i];
+  if(!it) return;
+  var lista=estoqueMov.filter(function(x){ return x.itemId===id; });
+  var h='<div class="nv-box" style="max-width:560px">'
+   + '<div class="nv-h">Histórico · '+esc(it.nome||'')+'</div>';
+  if(!lista.length){
+    h+='<div class="nv-p">Sem movimento registrado.</div>';
+  } else {
+    h+='<div class="tw" style="max-height:340px;overflow:auto"><table><thead><tr>'
+     + '<th>Quando</th><th>Mov.</th><th style="text-align:right">Qtd</th><th>Veículo</th><th>Obs</th>'
+     + '</tr></thead><tbody>';
+    for(i=0;i<lista.length;i++){
+      m=lista[i];
+      var v='';
+      if(m.veiculoId){
+        var k; for(k=0;k<veiculos.length;k++) if(veiculos[k].firestoreId===m.veiculoId) v=veiculos[k].placa||'';
+      }
+      h+='<tr><td style="white-space:nowrap">'+esc(dataBR((m.em||'').slice(0,10)))+'</td>'
+       + '<td><span class="es-tag es-'+(m.tipo==='saida'?'saida':'entrada')+'">'
+       +   (m.tipo==='saida'?'saída':'entrada')+'</span></td>'
+       + '<td class="cx-n">'+num(m.qtd)+'</td>'
+       + '<td style="color:var(--muted)">'+esc(v||'—')+'</td>'
+       + '<td style="color:var(--muted);font-size:11.5px">'+esc(m.obs||'—')+'</td></tr>';
+    }
+    h+='</tbody></table></div>';
+  }
+  h+='<div class="nv-btns"><button class="btn btn-sm btn-ghost" id="eh-c">Fechar</button></div></div>';
+  var host=document.getElementById('modal-host')||document.body;
+  var d=document.createElement('div'); d.className='nv-modal'; d.innerHTML=h;
+  host.appendChild(d);
+  function fechar(){ d.remove(); }
+  d.querySelector('#eh-c').onclick=fechar;
+  d.onclick=function(e){ if(e.target===d) fechar(); };
+};
+
+window.exportarEstoque=function(){
+  var itens=esItens(), l=[], i;
+  l.push(cxLinhaCsv(['Tipo','Item','Medida','Marca','Saldo','Unidade','Minimo','Local','Situacao']));
+  for(i=0;i<itens.length;i++){
+    var it=itens[i];
+    l.push(cxLinhaCsv([esRotuloTipo(it.tipo), it.nome||'', it.medida||'', it.marca||'',
+      it.saldo, it.unidade||'un', num(it.minimo)||0, it.local||'',
+      it.status==='zero'?'ZERADO':(it.status==='baixo'?'ABAIXO DO MINIMO':'ok')]));
+  }
+  baixar('estoque-oficina-'+hoje()+'.csv', l);
+};
+
 /* ===== CONVERSÕES SALVAS =====
    Guarda os PDFs já interpretados e a montagem do operador. As caixas são
    recalculadas na abertura a partir do cadastro vigente — se a conversão de
@@ -4132,6 +4508,22 @@ function liberar(d){
   });
   ouvir('frotaDocs', collection(dbC,'frotaDocs'), function(s){
     docs=s.docs.map(function(x){ return Object.assign({ firestoreId:x.id }, x.data()); });
+    render();
+  });
+  ouvir('frotaTelemetria', collection(dbC,'frotaTelemetria'), function(s){
+    telemetria={}; telemetriaMeta=null;
+    s.docs.forEach(function(x){
+      if(x.id==='_meta'){ telemetriaMeta=x.data(); return; }
+      telemetria[x.id]=x.data();
+    });
+    render();
+  });
+  ouvir('frotaEstoque', collection(dbC,'frotaEstoque'), function(s){
+    estoque=s.docs.map(function(x){ return Object.assign({ firestoreId:x.id }, x.data()); });
+    render();
+  });
+  ouvir('frotaEstoqueMov', query(collection(dbC,'frotaEstoqueMov'), orderBy('em','desc'), limit(600)), function(s){
+    estoqueMov=s.docs.map(function(x){ return Object.assign({ firestoreId:x.id }, x.data()); });
     render();
   });
   ouvir('frotaCaixasConv', query(collection(dbC,'frotaCaixasConv'), orderBy('em','desc'), limit(60)), function(s){
