@@ -1830,6 +1830,7 @@ var COLS_VEIC=[
   { k:'ano',    l:'Ano',            r:1,  v:function(x){ return num(x.v.ano)>0?num(x.v.ano):null; } },
   { k:'motorista',l:'Motorista',          v:function(x){ return norm(x.v.motorista); } },
   { k:'km',     l:'Odômetro',       r:1,  v:function(x){ return x.km>0?x.km:null; } },
+  { k:'kmcobli',l:'Km Cobli',       r:1,  v:function(x){ return x.tel?(x.tel.kmPeriodo||null):null; } },
   { k:'oleo',   l:'Óleo em',        r:1,  v:function(x){ return x.po?x.po.faltam:null; } },
   { k:'consumo',l:'km/L',           r:1,  v:function(x){ return x.c.kmL; } },
   { k:'gasto',  l:'Gasto 30d',      r:1,  v:function(x){ return x.g.total||null; } },
@@ -1841,6 +1842,7 @@ function listaVeic(lista){
   var arr=lista.map(function(v){
     var id=v.firestoreId;
     return { v:v, km:kmAtual(id).km, po:proximaOleo(id), c:consumo(id),
+             tel:telemetriaDe(v),
              g:gastoDe(id,desde), km90:kmRodado(id,desde),
              dv:docs.filter(function(d){ return d.veiculoId===id && situacaoDoc(d).st==='vencido'; }).length };
   });
@@ -1860,6 +1862,9 @@ function listaVeic(lista){
       '<td class="r num">'+(num(x.v.ano)>0?num(x.v.ano):'—')+'</td>'+
       '<td>'+esc(x.v.motorista||'—')+'</td>'+
       '<td class="r num">'+(x.km>0?fmtN(x.km,0):'—')+'</td>'+
+      '<td class="r num" style="color:#7FB3D5">'
+        + (x.tel && x.tel.kmPeriodo ? fmtN(x.tel.kmPeriodo,1) : '<span style="color:var(--muted)">—</span>')
+        + '</td>'+
       '<td class="r num" style="'+cor+'">'+oleo+'</td>'+
       '<td class="r num">'+(x.c.kmL?fmtN(x.c.kmL,2):'—')+'</td>'+
       '<td class="r num">'+(x.g.total>0?fmtR$(x.g.total,2):'—')+'</td>'+
