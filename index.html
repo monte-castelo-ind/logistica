@@ -304,6 +304,15 @@ tr.es-baixo td{background:rgba(245,176,19,.06)}
                    padding:7px 0; margin-bottom:10px }
   #cx-print .ptot div{ font-size:11px }
   #cx-print .ptot b{ display:block; font-size:22px; font-family:'JetBrains Mono',monospace; line-height:1.1 }
+  /* Tarja dos produtos acompanhados de perto. Fica logo abaixo dos totais,
+     com moldura, para o conferente achar sem varrer a tabela. */
+  #cx-print .pdest{ display:flex; gap:0; border:2px solid #000; margin-bottom:9px }
+  #cx-print .pdest > div{ flex:1 1 0; padding:5px 8px; border-right:1px solid #000 }
+  #cx-print .pdest > div:last-child{ border-right:none }
+  #cx-print .pdest .pd-cx{ font-size:22px; font-weight:700; line-height:1.1;
+                           font-family:'JetBrains Mono',monospace }
+  #cx-print .pdest .pd-nm{ font-size:10px; line-height:1.35; margin-top:1px }
+  #cx-print .pdest .pd-sb{ font-size:9px; color:#444; margin-top:1px }
   #cx-print table{ width:100%; border-collapse:collapse; font-size:11px }
   #cx-print th{ text-align:left; border-bottom:1.5px solid #000; padding:4px 5px; font-size:9.5px;
                 text-transform:uppercase; letter-spacing:.4px; background:none; position:static }
@@ -4315,6 +4324,36 @@ function renderCaixas(){
 }
 
 /* ---- folha de impressão ---- */
+/* Mesma informação dos cards da tela, na folha. Sem isto, quem confere no
+   papel — que é quem separa — não enxerga o destaque. */
+function cxPrintDestaque(R){
+  if(!CX_DESTAQUE.length) return '';
+  var porCod={}, i;
+  for(i=0;i<R.linhas.length;i++) porCod[cxKey(R.linhas[i].cod)]=R.linhas[i];
+
+  var h='<div class="pdest">';
+  for(i=0;i<CX_DESTAQUE.length;i++){
+    var cod=CX_DESTAQUE[i], L=porCod[cxKey(cod)];
+    var temCad=!!(L && L.pct);
+    var valor, rodape;
+    if(!L){
+      valor='0'; rodape='não veio neste carregamento';
+    }else if(!temCad){
+      valor='—'; rodape='SEM CONVERSÃO · '+L.qtd+' '+L.un.toLowerCase();
+    }else{
+      valor=String(L.qtd?L.cx:0);
+      rodape=L.qtd+' '+L.un.toLowerCase()+' &middot; sobra '+L.sobra
+           + (L.naoVai?' &middot; NÃO VAI':'');
+    }
+    h+='<div>'
+     + '<div class="pd-cx">'+valor+'</div>'
+     + '<div class="pd-nm"><b>'+esc(cod)+'</b> '+esc(L?L.nome:'—')+'</div>'
+     + '<div class="pd-sb">'+rodape+'</div>'
+     + '</div>';
+  }
+  return h+'</div>';
+}
+
 function cxRenderPrint(R){
   var alvo=document.getElementById('cx-print');
   if(!alvo) return;
@@ -4343,6 +4382,8 @@ function cxRenderPrint(R){
   if(R.naoVao.length) h+='<div><b>'+R.naoVao.length+'</b>não vão</div>';
   if(R.faltando) h+='<div><b>'+R.faltando+'</b>sem conversão</div>';
   h+='</div>';
+
+  h+=cxPrintDestaque(R);
 
   var multi = R.docs>1;
   if(R.faltando){
