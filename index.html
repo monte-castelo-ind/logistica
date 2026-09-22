@@ -311,6 +311,9 @@ tr.es-baixo td{background:rgba(245,176,19,.06)}
   #cx-print .pdest > div:last-child{ border-right:none }
   #cx-print .pdest .pd-cx{ font-size:22px; font-weight:700; line-height:1.1;
                            font-family:'JetBrains Mono',monospace }
+  #cx-print .pdest .pd-un{ font-size:11px !important; font-weight:400;
+                           margin-left:4px; color:#333 !important;
+                           font-family:Arial,sans-serif !important }
   #cx-print .pdest .pd-nm{ font-size:10px; line-height:1.35; margin-top:1px }
   #cx-print .pdest .pd-sb{ font-size:9px; color:#444; margin-top:1px }
   #cx-print table{ width:100%; border-collapse:collapse; font-size:11px }
@@ -3195,6 +3198,15 @@ function cxKey(cod){
    esquerda, porque cxKey normaliza os dois jeitos. */
 var CX_DESTAQUE = ['119','120','160'];
 
+/* O número sozinho não diz do que se trata. "—" fica sem unidade: ali o
+   valor é desconhecido, não uma contagem. */
+function cxUnidadeCx(valor){
+  if(valor==='—') return '';
+  return '<span class="pd-un" style="font-size:.42em;font-weight:400;margin-left:4px;'
+       + 'font-family:Archivo,sans-serif;color:var(--muted)">'
+       + (valor==='1'?'caixa':'caixas')+'</span>';
+}
+
 function cxCardsDestaque(R){
   if(!CX_DESTAQUE.length) return '';
   var porCod={}, i;
@@ -3220,7 +3232,7 @@ function cxCardsDestaque(R){
     }
 
     h+='<div class="card">'
-     + '<div class="cxbig" style="color:'+cor+'">'+valor+'</div>'
+     + '<div class="cxbig" style="color:'+cor+'">'+valor+cxUnidadeCx(valor)+'</div>'
      + '<div style="font-size:11px;color:var(--muted);margin-top:5px">'
      +   '<span class="mono">'+esc(cod)+'</span> '+esc(L?L.nome:'—')+'</div>'
      + '<div style="font-size:10.5px;color:var(--muted);margin-top:3px">'+rodape+'</div>'
@@ -4346,7 +4358,7 @@ function cxPrintDestaque(R){
            + (L.naoVai?' &middot; NÃO VAI':'');
     }
     h+='<div>'
-     + '<div class="pd-cx">'+valor+'</div>'
+     + '<div class="pd-cx">'+valor+cxUnidadeCx(valor)+'</div>'
      + '<div class="pd-nm"><b>'+esc(cod)+'</b> '+esc(L?L.nome:'—')+'</div>'
      + '<div class="pd-sb">'+rodape+'</div>'
      + '</div>';
