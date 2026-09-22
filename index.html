@@ -3180,6 +3180,46 @@ function cxKey(cod){
   return isFinite(n) ? String(n) : s;
 }
 
+/* Produtos que a expedição acompanha de perto: ficam num cartão próprio,
+   acima da tabela, para não ter que caçar a linha no meio de 30 itens.
+   Para trocar quais, mexa SÓ nesta lista — aceita com ou sem zero à
+   esquerda, porque cxKey normaliza os dois jeitos. */
+var CX_DESTAQUE = ['119','120','160'];
+
+function cxCardsDestaque(R){
+  if(!CX_DESTAQUE.length) return '';
+  var porCod={}, i;
+  for(i=0;i<R.linhas.length;i++) porCod[cxKey(R.linhas[i].cod)]=R.linhas[i];
+
+  var h='<div class="grid kpis" style="margin-top:13px">';
+  for(i=0;i<CX_DESTAQUE.length;i++){
+    var cod=CX_DESTAQUE[i], L=porCod[cxKey(cod)];
+    var temCad = !!(L && L.pct);
+    var cx = (L && L.qtd && temCad) ? L.cx : 0;
+
+    var valor, cor, rodape;
+    if(!L){
+      valor='0'; cor='var(--muted)';
+      rodape='não veio neste carregamento';
+    }else if(!temCad){
+      valor='—'; cor='var(--amber)';
+      rodape='<b>sem conversão cadastrada</b> · '+L.qtd+' '+L.un.toLowerCase();
+    }else{
+      valor=String(cx); cor=(cx?'var(--primary)':'var(--muted)');
+      rodape=L.qtd+' '+L.un.toLowerCase()+' &middot; sobra '+L.sobra
+           + (L.naoVai?' &middot; <span style="color:var(--red)">não vai</span>':'');
+    }
+
+    h+='<div class="card">'
+     + '<div class="cxbig" style="color:'+cor+'">'+valor+'</div>'
+     + '<div style="font-size:11px;color:var(--muted);margin-top:5px">'
+     +   '<span class="mono">'+esc(cod)+'</span> '+esc(L?L.nome:'—')+'</div>'
+     + '<div style="font-size:10.5px;color:var(--muted);margin-top:3px">'+rodape+'</div>'
+     + '</div>';
+  }
+  return h+'</div>';
+}
+
 /* O cadastro antigo guardava o código como vinha do PDF ("03") enquanto o
    Produlog manda "3". Ao carregar, unifica tudo na forma sem zero à esquerda. */
 function cxMigrarChaves(bruto){
@@ -4129,6 +4169,8 @@ function renderCaixas(){
   h+='<div class="card"><div class="cxbig" style="color:#7FB3D5">'+R.qtdMistas+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">mistas &middot; '+R.autoCx+' automáticas'+(R.manualCx?' + '+R.manualCx+' do operador':'')+'</div></div>';
   h+='<div class="card"><div class="cxbig" style="color:var(--amber)">'+R.soltosFinal+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">pacotes que ficam soltos</div></div>';
   h+='</div>';
+
+  h+=cxCardsDestaque(R);
 
   h+='<div style="font-size:11.5px;color:var(--muted);margin:11px 0">'+esc(cxResumoOrigens())+'</div>';
 
