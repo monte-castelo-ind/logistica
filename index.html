@@ -334,6 +334,14 @@ tr.es-baixo td{background:rgba(245,176,19,.06)}
   #cx-print .pgrupo{ font-size:11px; margin:11px 0 4px; padding:4px 6px; background:#eee; border-left:3px solid #000 }
 }
 .fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+/* dados de cadastro na ficha do veículo: leitura, no mesmo desenho do formulário */
+.vdados{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 14px;
+        background:var(--card-2);border-radius:10px;padding:13px 15px;margin-top:6px}
+.vdados div{min-width:0}
+.vdados span{display:block;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.vdados b{display:block;font-size:13.5px;font-weight:600;margin-top:2px;overflow-wrap:anywhere}
+.vdados b.vazio{color:var(--muted);font-weight:400}
+.vdados .largo{grid-column:1/-1}
 .fgrid label,.fld label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;font-weight:600}
 .fhint{font-size:10.5px;color:var(--muted);margin-top:4px;line-height:1.4}
 .mask{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:150;display:flex;align-items:center;justify-content:center;padding:18px}
@@ -2642,6 +2650,41 @@ window.abrirVeiculo=function(id){
   });
 };
 
+/* Os dados do cadastro, para leitura, na ordem do formulário de edição.
+   Intervalo em branco usa o padrão de Configurações — e a ficha diz isso,
+   em vez de mostrar vazio, para ninguém achar que o veículo está sem controle. */
+function dadosVeiculo(v){
+  function campo(rot, val, largo){
+    var vazio=(val==null || val==='' );
+    return '<div'+(largo?' class="largo"':'')+'><span>'+rot+'</span>'
+         + '<b'+(vazio?' class="vazio"':'')+'>'+(vazio?'—':val)+'</b></div>';
+  }
+  function intervalo(proprio, padrao, un){
+    if(num(proprio)>0) return fmtN(num(proprio),0)+' '+un;
+    if(num(padrao)>0)  return '<span style="display:inline;font-size:13px;color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400">padrão · '+fmtN(num(padrao),0)+' '+un+'</span>';
+    return '';
+  }
+  var carga=num(v.cargaKg)>0 ? fmtN(num(v.cargaKg),0)+' kg <span style="display:inline;font-size:11.5px;color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400">('+fmtN(num(v.cargaKg)/1000,1)+' t)</span>' : '';
+  return '<div class="vdados">'
+    + campo('Placa', esc(v.placa||''))
+    + campo('Apelido', esc(v.apelido||''))
+    + campo('Tipo', esc(v.tipo||''))
+    + campo('Marca', esc(v.marca||''))
+    + campo('Modelo', esc(v.modelo||''))
+    + campo('Ano', num(v.ano)>0?num(v.ano):'')
+    + campo('Motorista', esc(v.motorista||''))
+    + campo('Renavam', esc(v.renavam||''))
+    + campo('Capacidade de carga', carga)
+    + campo('Troca de óleo · km', intervalo(v.oleoKm, cfg.oleoKm, 'km'))
+    + campo('Troca de óleo · meses', intervalo(v.oleoMeses, cfg.oleoMeses, 'meses'))
+    + campo('Revisão · km', intervalo(v.revisaoKm, cfg.revisaoKm, 'km'))
+    + campo('Revisão · meses', intervalo(v.revisaoMeses, cfg.revisaoMeses, 'meses'))
+    + campo('Tanque', num(v.tanqueL)>0?fmtN(num(v.tanqueL),0)+' L':'')
+    + campo('Situação', v.ativo===false?'<span style="display:inline;color:var(--red);font-size:13.5px;text-transform:none;letter-spacing:0">Inativo</span>':'Ativo')
+    + (v.obs?campo('Observação', esc(v.obs).replace(/\n/g,'<br>'), true):'')
+    + '</div>';
+}
+
 window.verVeiculo=function(id){
   var v=veic(id); if(!v) return;
   var ka=kmAtual(id), po=proximaOleo(id), c=consumo(id);
@@ -2654,15 +2697,16 @@ window.verVeiculo=function(id){
     titulo:esc(v.placa||'')+(v.apelido?' · '+esc(v.apelido):''),
     sub:esc([v.marca,v.modelo,v.ano,v.tipo].filter(Boolean).join(' · '))+(v.motorista?' · '+esc(v.motorista):''),
     body:
-      '<div class="fgrid">'+
+      '<div class="klabel">Dados do veículo</div>'+
+      dadosVeiculo(v)+
+      '<div class="klabel" style="margin-top:16px">Uso e custos</div>'+
+      '<div class="fgrid" style="margin-top:6px">'+
         '<div class="card" style="box-shadow:none"><div class="klabel">Odômetro</div><div class="kval" style="font-size:20px">'+fmtN(ka.km,0)+'</div><div class="khint">'+(ka.em?dataBR(ka.em):'sem registro')+'</div></div>'+
         '<div class="card" style="box-shadow:none"><div class="klabel">Próxima troca de óleo</div><div class="kval" style="font-size:20px;color:'+(po&&po.faltam<=0?'var(--red)':(po&&po.faltam<=1000?'var(--amber)':''))+'">'+(po?fmtN(po.alvo,0):'—')+'</div><div class="khint">'+(po?(po.faltam<=0?'vencida há '+fmtN(-po.faltam,0)+' km':'faltam '+fmtN(po.faltam,0)+' km'):'sem base')+'</div></div>'+
         '<div class="card" style="box-shadow:none"><div class="klabel">Consumo</div><div class="kval" style="font-size:20px">'+(c.kmL?fmtN(c.kmL,2):'—')+'</div><div class="khint">'+(c.kmL?'km/L · '+c.pares+' trecho(s)':'faltam abastecimentos com tanque cheio')+'</div></div>'+
         '<div class="card" style="box-shadow:none"><div class="klabel">R$/km · '+JANELA_DIAS+' dias</div><div class="kval" style="font-size:20px">'+(km90>0?fmtR$(g.total/km90,2):'—')+'</div><div class="khint">'+fmtR$k(g.total)+' em '+fmtN(km90,0)+' km</div></div>'+
-        '<div class="card" style="box-shadow:none"><div class="klabel">Capacidade de carga</div>'+
-          '<div class="kval" style="font-size:20px">'+(num(v.cargaKg)>0?fmtN(num(v.cargaKg),0)+' <span style="font-size:13px;color:var(--muted)">kg</span>':'—')+'</div>'+
-          '<div class="khint">'+(num(v.cargaKg)>0?fmtN(num(v.cargaKg)/1000,1)+' t de peso útil':'não informada · edite o veículo')+'</div></div>'+
       '</div>'+
+
       (dv.length?'<div class="klabel" style="margin-top:16px">Documentos</div><div style="margin-top:6px">'+
         dv.map(function(d){
           var s=situacaoDoc(d);
@@ -2691,7 +2735,7 @@ window.verVeiculo=function(id){
       ? '<button class="btn btn-sm btn-ghost" onclick="fecharModal();abrirLanc(\'km\',\''+esc(id)+'\')">Lançar km</button>'+
         '<button class="btn btn-sm btn-ghost" onclick="fecharModal();abrirLanc(\'abastecimento\',\''+esc(id)+'\')">⛽</button>'+
         '<button class="btn btn-sm btn-ghost" onclick="fecharModal();abrirLanc(\'oleo\',\''+esc(id)+'\')">◍</button>'+
-        (podeCadastrar?'<button class="btn btn-sm btn-ghost" onclick="fecharModal();abrirVeiculo(\''+esc(id)+'\')">Editar</button>':'')
+        (podeCadastrar?'<button class="btn btn-sm btn-ghost" onclick="fecharModal();abrirVeiculo(\''+esc(id)+'\')">✎ Editar dados</button>':'')
       : ''
   });
 };
