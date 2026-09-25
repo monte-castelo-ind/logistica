@@ -1946,6 +1946,7 @@ var COLS_VEIC=[
   { k:'tipo',   l:'Tipo',                 v:function(x){ return norm(x.v.tipo); } },
   { k:'modelo', l:'Marca e modelo',       v:function(x){ return norm((x.v.marca||'')+' '+(x.v.modelo||'')); } },
   { k:'ano',    l:'Ano',            r:1,  v:function(x){ return num(x.v.ano)>0?num(x.v.ano):null; } },
+  { k:'carga',  l:'Carga (kg)',     r:1,  v:function(x){ return num(x.v.cargaKg)>0?num(x.v.cargaKg):null; } },
   { k:'motorista',l:'Motorista',          v:function(x){ return norm(x.v.motorista); } },
   { k:'km',     l:'Odômetro',       r:1,  v:function(x){ return x.km>0?x.km:null; } },
   { k:'kmcobli',l:'Km Cobli',       r:1,  v:function(x){ return x.tel?(x.tel.kmPeriodo||null):null; } },
@@ -1978,6 +1979,7 @@ function listaVeic(lista){
       '<td style="color:var(--muted);font-size:11.5px">'+esc(x.v.tipo||'—')+'</td>'+
       '<td>'+esc([x.v.marca,x.v.modelo].filter(Boolean).join(' ')||'—')+'</td>'+
       '<td class="r num">'+(num(x.v.ano)>0?num(x.v.ano):'—')+'</td>'+
+      '<td class="r num">'+(num(x.v.cargaKg)>0?fmtN(num(x.v.cargaKg),0):'<span style="color:var(--muted)">—</span>')+'</td>'+
       '<td>'+esc(x.v.motorista||'—')+'</td>'+
       '<td class="r num">'+(x.km>0?fmtN(x.km,0):'—')+'</td>'+
       '<td class="r num" style="color:#7FB3D5">'
@@ -2579,6 +2581,9 @@ window.abrirVeiculo=function(id){
         '<div><label>Ano</label><input type="number" id="vc-ano" step="1" value="'+(v&&v.ano?esc(v.ano):'')+'" /></div>'+
         '<div><label>Motorista</label><input type="text" id="vc-motorista" value="'+esc(v?v.motorista:'')+'" /></div>'+
         '<div><label>Renavam</label><input type="text" id="vc-renavam" value="'+esc(v?v.renavam:'')+'" /></div>'+
+        '<div><label>Capacidade de carga · kg</label><input type="number" id="vc-cargakg" step="50" min="0" '+
+          'value="'+(v&&num(v.cargaKg)>0?num(v.cargaKg):'')+'" placeholder="Ex: 8000" />'+
+          '<div class="fhint">Peso útil que o veículo pode levar.</div></div>'+
       '</div>'+
       '<div class="klabel" style="margin-top:16px">Intervalos deste veículo</div>'+
       '<div class="fhint" style="margin-bottom:8px">Deixe em branco para usar o padrão de Configurações ('+fmtN(num(cfg.oleoKm),0)+' km para óleo).</div>'+
@@ -2616,6 +2621,7 @@ window.abrirVeiculo=function(id){
         revisaoKm:num(document.getElementById('vc-revkm').value),
         revisaoMeses:num(document.getElementById('vc-revmes').value),
         tanqueL:num(document.getElementById('vc-tanque').value),
+        cargaKg:num(document.getElementById('vc-cargakg').value),
         obs:(document.getElementById('vc-obs').value||'').trim(),
         atualizadoEm:agora(), atualizadoPor:sessaoEmail
       };
@@ -2653,6 +2659,9 @@ window.verVeiculo=function(id){
         '<div class="card" style="box-shadow:none"><div class="klabel">Próxima troca de óleo</div><div class="kval" style="font-size:20px;color:'+(po&&po.faltam<=0?'var(--red)':(po&&po.faltam<=1000?'var(--amber)':''))+'">'+(po?fmtN(po.alvo,0):'—')+'</div><div class="khint">'+(po?(po.faltam<=0?'vencida há '+fmtN(-po.faltam,0)+' km':'faltam '+fmtN(po.faltam,0)+' km'):'sem base')+'</div></div>'+
         '<div class="card" style="box-shadow:none"><div class="klabel">Consumo</div><div class="kval" style="font-size:20px">'+(c.kmL?fmtN(c.kmL,2):'—')+'</div><div class="khint">'+(c.kmL?'km/L · '+c.pares+' trecho(s)':'faltam abastecimentos com tanque cheio')+'</div></div>'+
         '<div class="card" style="box-shadow:none"><div class="klabel">R$/km · '+JANELA_DIAS+' dias</div><div class="kval" style="font-size:20px">'+(km90>0?fmtR$(g.total/km90,2):'—')+'</div><div class="khint">'+fmtR$k(g.total)+' em '+fmtN(km90,0)+' km</div></div>'+
+        '<div class="card" style="box-shadow:none"><div class="klabel">Capacidade de carga</div>'+
+          '<div class="kval" style="font-size:20px">'+(num(v.cargaKg)>0?fmtN(num(v.cargaKg),0)+' <span style="font-size:13px;color:var(--muted)">kg</span>':'—')+'</div>'+
+          '<div class="khint">'+(num(v.cargaKg)>0?fmtN(num(v.cargaKg)/1000,1)+' t de peso útil':'não informada · edite o veículo')+'</div></div>'+
       '</div>'+
       (dv.length?'<div class="klabel" style="margin-top:16px">Documentos</div><div style="margin-top:6px">'+
         dv.map(function(d){
