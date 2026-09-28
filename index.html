@@ -4066,8 +4066,12 @@ window.apagarConversao=function(){
    - O id do carregamento é escolhido ANTES e gravado na conversão primeiro.
      São dois bancos, sem gravação atômica entre eles: se o Produlog falhar,
      o próximo envio cria com o mesmo id — não sai carregamento duplicado.
-   - Carregamento feito à mão no Produlog com o mesmo nome e data: pergunta
-     se troca os produtos dele, em vez de criar um segundo.
+   - Carregamento feito à mão no Produlog com o mesmo nome (aberto ou em
+     conferência): pergunta se troca os produtos dele, em vez de criar outro.
+   - O campo data segue a convenção do Produlog: é o DIA EM QUE O
+     CARREGAMENTO FOI CRIADO, e é nele que o estoque de lá dá a baixa. A data
+     de entrega vai só no nome ("Cavalhada 29/09/2026"). No reenvio, a data
+     original é mantida.
    - O código vai no formato do Produlog. A bipagem dele aceita "03" e "3",
      mas a baixa de estoque compara o código exato — mandado no formato
      errado, o item seria bipado e não baixaria.
@@ -4085,7 +4089,7 @@ function cxConvAtual(){
 }
 function cxSemAcento(s){
   return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-    .replace(/\d{2}\/\d{2}\/\d{4}/g,' ').toLowerCase().replace(/\s+/g,' ').trim();
+    .toLowerCase().replace(/\s+/g,' ').trim();
 }
 function cxTitulo(s){
   var miudas={de:1,da:1,do:1,das:1,dos:1,e:1};
@@ -4139,16 +4143,16 @@ function cxCodigosProdulog(dbP){
     })
     .catch(function(e){ console.warn('produlog/códigos:', e); return {}; });
 }
-/* procura carregamento feito à mão no Produlog, mesmo nome e mesma data */
-function cxProcurarIgual(dbP, nome, data){
+/* procura no Produlog um carregamento com o mesmo nome que ainda não terminou */
+function cxProcurarIgual(dbP, nome){
   var base=cxSemAcento(nome);
-  return getDocs(query(collection(dbP,'carregamentos'), where('data','==',data)))
+  return getDocs(query(collection(dbP,'carregamentos'), where('status','in',['aberto','conferindo'])))
     .then(function(s){
       var achado=null;
       s.docs.forEach(function(d){
         var c=d.data()||{};
         if(!achado && cxSemAcento(c.nome)===base)
-          achado={ id:d.id, nome:c.nome||nome, status:c.status||'aberto' };
+          achado={ id:d.id, nome:c.nome||nome, status:c.status||'aberto', data:c.data||'' };
       });
       if(!achado) return null;
       if(achado.status!=='aberto'){
@@ -4196,12 +4200,11 @@ window.enviarProdulog=function(){
   var sug=cxNomeProdulog(cxDataCarreg());
   if(pl){ nome=pl.nome||sug; }
   else{
-    nome=prompt('Nome do carregamento no Produlog:', sug);
+    nome=prompt('Nome do carregamento no Produlog — confira a data de entrega:', sug);
     if(nome===null) return;
     nome=String(nome).trim() || sug;
   }
-  var md=nome.match(/(\d{2}\/\d{2}\/\d{4})/);
-  data = md ? md[1] : ((pl && pl.data) || cxDataCarreg());
+  data=plHoje();          /* novo: dia do envio. Existente: o de lá, lido abaixo */
   var pacotes=linhas.reduce(function(a,L){ return a+L.qtd; },0);
 
   cxEnviando=true; pintaBotaoProdulog();
@@ -4215,10 +4218,10 @@ window.enviarProdulog=function(){
           +(st==='concluido'?'concluído':'em conferência')+' no Produlog.\n\n'
           +'O que chegou depois entra pelo ✏️ Editar do próprio carregamento no Produlog — '
           +'assim a bipagem que já começou não é mexida.'};
-        nome=c.nome||nome; ehNovo=false;               /* renomeado lá: fica o nome de lá */
+        nome=c.nome||nome; data=c.data||data; ehNovo=false;   /* fica o nome e a data de lá */
       })
-    : cxProcurarIgual(dbP, nome, data).then(function(achado){
-        if(achado){ alvoId=achado.id; nome=achado.nome; ehNovo=false; }
+    : cxProcurarIgual(dbP, nome).then(function(achado){
+        if(achado){ alvoId=achado.id; nome=achado.nome; data=achado.data||data; ehNovo=false; }
         else{ alvoId=doc(collection(dbP,'carregamentos')).id; ehNovo=true; }
       });
 
@@ -4240,9 +4243,10 @@ window.enviarProdulog=function(){
         return { codigo: mapa[cxKey(L.cod)] || String(L.cod), nome:String(L.nome||''),
                  qtdSolicitada:L.qtd, qtdBipada:0 };
       });
-      var dados={ nome:nome, data:data, status:'aberto', itens:itens,
+      var dados={ nome:nome, status:'aberto', itens:itens,
                   atualizadoEm:plAgora(), origemLogistica:cxOrigemLogistica(convId) };
       if(ehNovo){
+        dados.data=data;
         dados.criadoPor='Logística · '+(sessaoNome||sessaoEmail);
         dados.criadoEm=plHoje(); dados.timestamp=Date.now();
         return setDoc(doc(dbP,'carregamentos',alvoId), dados).then(function(){ return convId; });
