@@ -713,6 +713,7 @@ html[data-pal="vinho"][data-theme="light"]{
         <button class="btn btn-sm btn-ghost" onclick="imprimirCaixas()">⎙ Imprimir</button>
         <button class="btn btn-sm btn-ghost" onclick="exportarCaixas()">⤓ CSV</button>
         <button class="btn btn-sm btn-ghost" id="cx-salvar" onclick="salvarConversao()">💾 Salvar</button>
+        <button class="btn btn-sm btn-ghost" id="cx-produlog" onclick="enviarProdulog()">📦 Enviar ao Produlog</button>
         <select id="cx-salvas" onchange="abrirConversao(this.value)" style="min-width:190px">
           <option value="">Conversões salvas…</option>
         </select>
@@ -839,7 +840,7 @@ html[data-pal="vinho"][data-theme="light"]{
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, collection, onSnapshot, doc, setDoc, addDoc, updateDoc, deleteDoc, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, onSnapshot, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, getDocs, query, where, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const cfgFB = { apiKey:"AIzaSyCH_t074MvkJn-qVMvCtLfEMaQHf_e_d7M", authDomain:"manutencao-comodato.firebaseapp.com", projectId:"manutencao-comodato", storageBucket:"manutencao-comodato.firebasestorage.app", messagingSenderId:"89709396101", appId:"1:89709396101:web:22ee225ffa806e07a269ec" };
@@ -4050,6 +4051,225 @@ window.apagarConversao=function(){
     });
 };
 
+/* ===== Enviar ao Produlog =====
+   A conversão vira carregamento no Produlog (projeto montecastelo-a0764),
+   pronto para a bipagem: mesmos produtos e quantidades, já sem o que "não
+   vai". Regra combinada: tudo que sobe no caminhão entra por aqui —
+   carregamento do ERP e pedidos avulsos, inclusive o de última hora.
+   "Pedidos por fora" do Produlog fica só para o que não passa pela bipagem.
+   - O vínculo fica gravado na conversão (campo produlog). Reenviar atualiza
+     o MESMO carregamento, e só enquanto ele está Aberto: depois que a
+     bipagem começou, o acréscimo é pelo Editar do próprio Produlog.
+   - Enviar também grava a conversão aberta como está na tela (ou cria uma,
+     se nada estiver aberto): o que foi para o Produlog e o que está salvo
+     aqui não podem divergir.
+   - O id do carregamento é escolhido ANTES e gravado na conversão primeiro.
+     São dois bancos, sem gravação atômica entre eles: se o Produlog falhar,
+     o próximo envio cria com o mesmo id — não sai carregamento duplicado.
+   - Carregamento feito à mão no Produlog com o mesmo nome e data: pergunta
+     se troca os produtos dele, em vez de criar um segundo.
+   - O código vai no formato do Produlog. A bipagem dele aceita "03" e "3",
+     mas a baixa de estoque compara o código exato — mandado no formato
+     errado, o item seria bipado e não baixaria.
+   - Números dos pedidos e carregamentos do ERP vão em origemLogistica, para
+     o Produlog poder avisar quando o mesmo pedido cair em Pedidos por fora
+     (segunda etapa, do lado do Produlog).
+   Pendência conhecida: o banco do Produlog aceita gravação sem login. Quando
+   isso for fechado, este envio vai precisar de login no projeto de lá. */
+var cxEnviando=false;
+
+function cxConvAtual(){
+  if(!cxConvAberta) return null;
+  for(var i=0;i<cxSalvas.length;i++) if(cxSalvas[i].firestoreId===cxConvAberta) return cxSalvas[i];
+  return null;
+}
+function cxSemAcento(s){
+  return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/\d{2}\/\d{2}\/\d{4}/g,' ').toLowerCase().replace(/\s+/g,' ').trim();
+}
+function cxTitulo(s){
+  var miudas={de:1,da:1,do:1,das:1,dos:1,e:1};
+  return String(s||'').toLowerCase().split(/\s+/).filter(Boolean).map(function(w,i){
+    return (i>0 && miudas[w]) ? w : w.charAt(0).toUpperCase()+w.slice(1);
+  }).join(' ');
+}
+/* datas no formato do Produlog: "28/09/2026" e "28/09/2026 14:05" */
+function plHoje(){ return new Date().toLocaleDateString('pt-BR'); }
+function plAgora(){ var d=new Date();
+  return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); }
+function cxDataCarreg(){
+  for(var i=0;i<cxDocs.length;i++)
+    if(cxDocs[i].tipo!=='pedido' && /^\d{2}\/\d{2}\/\d{4}$/.test(cxDocs[i].data||'')) return cxDocs[i].data;
+  return plHoje();
+}
+function cxNomeProdulog(data){
+  var rotas=[], i, r;
+  for(i=0;i<cxDocs.length;i++){
+    if(cxDocs[i].tipo==='pedido') continue;
+    r=cxTitulo(String(cxDocs[i].rota||'').replace(/^\d{1,2}[A-Z]\s+/,''));
+    if(r && rotas.indexOf(r)<0) rotas.push(r);
+  }
+  return (rotas.length?rotas.join(' + '):'Pedidos avulsos')+' '+data;
+}
+function cxOrigemLogistica(convId){
+  var carregs=[], pedidos=[];
+  cxDocs.forEach(function(d){
+    if(d.tipo==='pedido')
+      pedidos.push({ numero:String(d.numero||''), cliente:String(d.cliente||''), entrega:String(d.entrega||'') });
+    else if(d.numero && carregs.indexOf(String(d.numero))<0) carregs.push(String(d.numero));
+  });
+  return { convId:convId, carregamentos:carregs, pedidos:pedidos,
+           enviadoPor:sessaoEmail, enviadoNome:sessaoNome||sessaoEmail, enviadoEm:plAgora() };
+}
+function cxResumo(R){
+  return { total:R.total, autoCx:R.autoCx, manualCx:R.manualCx,
+           totalGeral:R.totalGeral, soltos:R.soltosFinal, produtos:R.linhas.length };
+}
+/* código normalizado (sem zero à frente) -> código como o Produlog guarda.
+   O estoque do Produlog tem a palavra final, porque é ele que dá a baixa. */
+function cxCodigosProdulog(dbP){
+  return Promise.all([ getDocs(collection(dbP,'produtosConfeitaria')),
+                       getDocs(collection(dbP,'estoqueCtrlProdutos')) ])
+    .then(function(res){
+      var mapa={};
+      res[0].docs.forEach(function(d){ var p=d.data()||{};
+        if(p.cod!=null && String(p.cod).trim()!=='') mapa[cxKey(p.cod)]=String(p.cod).trim(); });
+      res[1].docs.forEach(function(d){ mapa[cxKey(d.id)]=d.id; });
+      return mapa;
+    })
+    .catch(function(e){ console.warn('produlog/códigos:', e); return {}; });
+}
+/* procura carregamento feito à mão no Produlog, mesmo nome e mesma data */
+function cxProcurarIgual(dbP, nome, data){
+  var base=cxSemAcento(nome);
+  return getDocs(query(collection(dbP,'carregamentos'), where('data','==',data)))
+    .then(function(s){
+      var achado=null;
+      s.docs.forEach(function(d){
+        var c=d.data()||{};
+        if(!achado && cxSemAcento(c.nome)===base)
+          achado={ id:d.id, nome:c.nome||nome, status:c.status||'aberto' };
+      });
+      if(!achado) return null;
+      if(achado.status!=='aberto'){
+        if(confirm('Já existe no Produlog "'+achado.nome+'", e ele já está '
+            +(achado.status==='concluido'?'concluído':'em conferência')+'.\n\n'
+            +'Criar outro carregamento, separado, com esta conversão?')) return null;
+        throw {cancelado:true};
+      }
+      if(confirm('Já existe no Produlog o carregamento "'+achado.nome+'", ainda aberto.\n\n'
+          +'OK: trocar os produtos dele pelos desta conversão.\n'
+          +'Cancelar: ver outra opção.')) return achado;
+      if(confirm('Criar um carregamento NOVO, separado do "'+achado.nome+'"?')) return null;
+      throw {cancelado:true};
+    });
+}
+
+function pintaBotaoProdulog(){
+  var b=document.getElementById('cx-produlog'); if(!b) return;
+  var conv=cxConvAtual(), pl=conv && conv.produlog;
+  b.disabled = cxEnviando || !cxDocs.length;
+  b.textContent = cxEnviando ? 'Enviando ao Produlog…'
+                : (pl ? '📦 Reenviar ao Produlog' : '📦 Enviar ao Produlog');
+  b.title = !podeLancar ? 'Sem permissão para enviar — peça a flag frotaLanc'
+          : pl ? 'Já enviado como "'+(pl.nome||'')+'"'+(pl.enviadoEm?' em '+dataBR(pl.enviadoEm):'')
+                 + '. Reenviar atualiza o mesmo carregamento, enquanto ele estiver aberto.'
+          : 'Cria o carregamento no Produlog, pronto para a bipagem';
+  b.style.opacity = podeLancar ? '' : '.45';
+}
+
+window.enviarProdulog=function(){
+  if(!podeLancar){
+    alert('Você pode converter e imprimir, mas não enviar ao Produlog.\n\n'
+        + 'Para enviar, peça a permissão de lançamento (frotaLanc) à diretoria.');
+    return;
+  }
+  if(cxEnviando) return;
+  if(!cxDocs.length){ alert('Carregue ao menos um PDF antes de enviar.'); return; }
+  var R=cxCalcular();
+  var linhas=R.linhas.filter(function(L){ return L.qtd>0; });
+  if(!linhas.length){ alert('Nada para enviar: todos os produtos estão marcados como "não vai".'); return; }
+
+  var conv=cxConvAtual(), pl=(conv && conv.produlog) || null;
+  var dbP=dbProdulog();
+  var nome, data, alvoId=pl?pl.id:'', ehNovo=!pl;
+  var sug=cxNomeProdulog(cxDataCarreg());
+  if(pl){ nome=pl.nome||sug; }
+  else{
+    nome=prompt('Nome do carregamento no Produlog:', sug);
+    if(nome===null) return;
+    nome=String(nome).trim() || sug;
+  }
+  var md=nome.match(/(\d{2}\/\d{2}\/\d{4})/);
+  data = md ? md[1] : ((pl && pl.data) || cxDataCarreg());
+  var pacotes=linhas.reduce(function(a,L){ return a+L.qtd; },0);
+
+  cxEnviando=true; pintaBotaoProdulog();
+
+  /* 1. decide o destino: o mesmo de antes, um feito à mão, ou um novo */
+  var passo = pl
+    ? getDoc(doc(dbP,'carregamentos',pl.id)).then(function(s){
+        if(!s.exists()){ ehNovo=true; return; }      /* apagaram lá: recria com o mesmo id */
+        var c=s.data()||{}, st=c.status||'aberto';
+        if(st!=='aberto') throw {msg:'O carregamento "'+(c.nome||nome)+'" já está '
+          +(st==='concluido'?'concluído':'em conferência')+' no Produlog.\n\n'
+          +'O que chegou depois entra pelo ✏️ Editar do próprio carregamento no Produlog — '
+          +'assim a bipagem que já começou não é mexida.'};
+        nome=c.nome||nome; ehNovo=false;               /* renomeado lá: fica o nome de lá */
+      })
+    : cxProcurarIgual(dbP, nome, data).then(function(achado){
+        if(achado){ alvoId=achado.id; nome=achado.nome; ehNovo=false; }
+        else{ alvoId=doc(collection(dbP,'carregamentos')).id; ehNovo=true; }
+      });
+
+  passo
+  /* 2. grava a conversão com o vínculo, antes de tocar no Produlog */
+  .then(function(){
+    var dados={ docs:cxDocs, manual:cxManual, naoVai:cxNaoVai, resumo:cxResumo(R),
+      produlog:{ id:alvoId, nome:nome, data:data, status:'enviando',
+                 enviadoPor:sessaoEmail, enviadoEm:agora() } };
+    if(cxConvAberta)
+      return updateDoc(doc(dbC,'frotaCaixasConv',cxConvAberta), dados).then(function(){ return cxConvAberta; });
+    dados.nome=nome; dados.em=agora(); dados.por=sessaoEmail;
+    return addDoc(collection(dbC,'frotaCaixasConv'), dados).then(function(r){ cxConvAberta=r.id; return r.id; });
+  })
+  /* 3. cria ou atualiza o carregamento no Produlog */
+  .then(function(convId){
+    return cxCodigosProdulog(dbP).then(function(mapa){
+      var itens=linhas.map(function(L){
+        return { codigo: mapa[cxKey(L.cod)] || String(L.cod), nome:String(L.nome||''),
+                 qtdSolicitada:L.qtd, qtdBipada:0 };
+      });
+      var dados={ nome:nome, data:data, status:'aberto', itens:itens,
+                  atualizadoEm:plAgora(), origemLogistica:cxOrigemLogistica(convId) };
+      if(ehNovo){
+        dados.criadoPor='Logística · '+(sessaoNome||sessaoEmail);
+        dados.criadoEm=plHoje(); dados.timestamp=Date.now();
+        return setDoc(doc(dbP,'carregamentos',alvoId), dados).then(function(){ return convId; });
+      }
+      return updateDoc(doc(dbP,'carregamentos',alvoId), dados).then(function(){ return convId; });
+    });
+  })
+  /* 4. confirma na conversão */
+  .then(function(convId){
+    return updateDoc(doc(dbC,'frotaCaixasConv',convId), { 'produlog.status':'enviado', 'produlog.enviadoEm':agora() })
+      .catch(function(e){ console.warn('caixas/produlog confirma:', e); });
+  })
+  .then(function(){
+    cxEnviando=false; render();
+    alert((ehNovo?'Carregamento criado':'Carregamento atualizado')+' no Produlog:\n\n'
+        + nome+'\n'+linhas.length+(linhas.length===1?' produto · ':' produtos · ')+pacotes+' pacotes');
+  })
+  .catch(function(e){
+    cxEnviando=false; render();
+    if(e && e.cancelado) return;
+    if(e && e.msg){ alert(e.msg); return; }
+    console.error('caixas/enviarProdulog:', e);
+    alert('Não foi possível enviar ao Produlog: '+((e && (e.code||e.message))||e)
+        + '\n\nNada foi duplicado: pode tentar de novo.');
+  });
+};
+
 function pintarSalvas(){
   var sel=document.getElementById('cx-salvas');
   if(!sel) return;
@@ -4057,7 +4277,8 @@ function pintarSalvas(){
   for(i=0;i<cxSalvas.length;i++){
     c=cxSalvas[i];
     h+='<option value="'+esc(c.firestoreId)+'">'+esc(dataBR((c.em||'').slice(0,10))+' · '+(c.nome||'sem nome'))
-     + (c.resumo?' ('+c.resumo.totalGeral+' cx)':'')+'</option>';
+     + (c.resumo?' ('+c.resumo.totalGeral+' cx)':'')
+     + (c.produlog && c.produlog.status==='enviado'?' · ✓ Produlog':'')+'</option>';
   }
   sel.innerHTML=h;
 }
@@ -4200,6 +4421,7 @@ function renderCaixas(){
   pintarSalvas();
   var bap=document.getElementById('cx-apagar');
   if(bap) bap.style.display = (cxConvAberta && ehAdmin) ? '' : 'none';
+  pintaBotaoProdulog();
   var bsv=document.getElementById('cx-salvar');
   if(bsv){
     bsv.style.opacity = podeLancar ? '' : '.45';
