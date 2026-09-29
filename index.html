@@ -479,9 +479,9 @@ html[data-pal="vinho"][data-theme="light"]{
 /* ===== Rotas ===== */
 .rt-mapa{height:min(62vh,620px);min-height:320px;border-radius:13px;overflow:hidden;border:1px solid var(--border);
   background:var(--card-2);margin:4px 0 6px;position:relative;z-index:0}
-/* tema escuro: o mapa claro do OpenStreetMap vira escuro, sem mexer nas linhas e marcadores */
-html[data-theme="dark"] .rt-mapa .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.88)}
-.rt-mapa .leaflet-container{background:var(--card-2);font-family:inherit}
+/* mapa sempre no visual claro do OpenStreetMap, mesmo no tema escuro — invertido
+   para escuro ficava marrom e difícil de ler (decisão do João) */
+.rt-mapa .leaflet-container{background:#f2efe9;font-family:inherit}
 .rt-pino{width:22px;height:22px;border-radius:50%;color:#fff;font:700 11px/22px 'JetBrains Mono',monospace;text-align:center;
   border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45)}
 .rt-pino.base{border-radius:6px}
