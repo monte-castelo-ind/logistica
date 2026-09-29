@@ -475,6 +475,23 @@ html[data-pal="vinho"][data-theme="light"]{
   --primary:#A8413C; --amber:#BC8828; --green:#3F8659; --red:#C24B46; --blue:#4F7399; --purple:#7F639E;
 }
 
+
+/* ===== Rotas ===== */
+.rt-mapa{height:min(62vh,620px);min-height:320px;border-radius:13px;overflow:hidden;border:1px solid var(--border);
+  background:var(--card-2);margin:4px 0 6px;position:relative;z-index:0}
+/* tema escuro: o mapa claro do OpenStreetMap vira escuro, sem mexer nas linhas e marcadores */
+html[data-theme="dark"] .rt-mapa .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.88)}
+.rt-mapa .leaflet-container{background:var(--card-2);font-family:inherit}
+.rt-pino{width:22px;height:22px;border-radius:50%;color:#fff;font:700 11px/22px 'JetBrains Mono',monospace;text-align:center;
+  border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45)}
+.rt-pino.base{border-radius:6px}
+.rt-cor{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+#rt-tab tr.off td{opacity:.45}
+#rt-tab input[type=checkbox]{width:auto;accent-color:var(--primary);vertical-align:-2px}
+.rt-pop{font:13px/1.45 Archivo,system-ui,sans-serif;min-width:170px}
+.rt-pop b{font-size:13.5px}
+.rt-pop a{color:#2a7bd6}
+@media(max-width:600px){ .rt-mapa{height:52vh;min-height:280px} }
 </style>
 </head>
 <body>
@@ -517,6 +534,7 @@ html[data-pal="vinho"][data-theme="light"]{
     <button class="navbtn" data-p="caixas" onclick="nav('caixas')"><span class="side-ico">▤</span><span class="lbl">Caixas</span></button>
     <button class="navbtn" data-p="estoque" onclick="nav('estoque')"><span class="side-ico">◉</span><span class="lbl">Pneus e óleos</span></button>
     <button class="navbtn gestao-only" data-p="custos" onclick="nav('custos')"><span class="side-ico">◷</span><span class="lbl">Custos e consumo</span></button>
+    <button class="navbtn gestao-only" data-p="rotas" onclick="nav('rotas')"><span class="side-ico">⌖</span><span class="lbl">Rotas</span></button>
     <button class="navbtn config-only" data-p="config" onclick="nav('config')"><span class="side-ico">⚙</span><span class="lbl">Configurações</span></button>
     <div class="side-foot">
       <div class="uline">
@@ -760,6 +778,27 @@ html[data-pal="vinho"][data-theme="light"]{
       </div>
     </div>
 
+    <!-- ROTAS: o dia de cada veículo, lido do Cobli pelo robô -->
+    <div class="page" id="page-rotas">
+      <div class="tools">
+        <button class="btn btn-sm btn-ghost" onclick="rotasDia(-1)" title="Dia anterior">‹</button>
+        <input type="date" id="rt-data" onchange="rotasCarregar()" style="width:auto;min-width:0">
+        <button class="btn btn-sm btn-ghost" onclick="rotasDia(1)" title="Dia seguinte">›</button>
+        <button class="btn btn-sm btn-ghost" onclick="rotasTodos(true)">Mostrar todos</button>
+        <button class="btn btn-sm btn-ghost" onclick="rotasTodos(false)">Esconder todos</button>
+        <span id="rt-info" style="margin-left:auto;font-size:11.5px;color:var(--muted)"></span>
+      </div>
+      <div class="grid kpis" id="rt-kpis"></div>
+      <div class="rt-mapa" id="rt-mapa"></div>
+      <div class="sect">Veículos no dia</div>
+      <div class="tw"><div class="tscroll" id="rt-tab"></div></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:9px;line-height:1.6">
+        <strong>Saída</strong> e <strong>volta</strong> = primeiro e último movimento do dia. <strong>Paradas</strong> = a partir de 3 minutos no mesmo lugar
+        (menos que isso é trânsito). A linha do mapa liga as paradas em ordem — o Cobli não manda o caminho pelas ruas —,
+        mas os <strong>km</strong> são os rodados de verdade. O dia de hoje vai sendo completado a cada rodada do robô.
+      </div>
+    </div>
+
     <!-- CONFIG -->
     <div class="page" id="page-config">
       <div class="card caixas-only" style="max-width:860px;margin-bottom:14px">
@@ -857,7 +896,7 @@ var pagina='painel', sessaoEmail='', sessaoUid='', sessaoNome='', ehAdmin=false,
 var podeCadastrar=false, podeCaixas=false, podeConfig=false;
 /* Painel e Custos são telas de gestão: quem só lança manutenção não precisa
    ver o gasto da frota inteira. */
-var PAGINAS_GESTAO=['painel','custos'];
+var PAGINAS_GESTAO=['painel','custos','rotas'];
 /* Janela dos números da aba Veículos e do detalhe do veículo. Estava 90 em
    seis lugares diferentes; agora sai de um só. */
 var JANELA_DIAS=30;
@@ -886,6 +925,7 @@ const TITLES={
   caixas:['Conversão de caixas','O PDF do carregamento vira número de caixas'],
   estoque:['Pneus e óleos','Estoque da oficina — o que tem em casa'],
   custos:['Custos e consumo','R$/km, R$/litro e km/L por veículo'],
+  rotas:['Rotas','O dia de cada veículo: saída, paradas e volta, pelo Cobli'],
   config:['Configurações','Intervalos e tipos']
 };
 const TIPOS_MOV={
@@ -1338,6 +1378,162 @@ document.addEventListener('click', function(e){
 });
 
 /* ============ RENDER ============ */
+/* ===== ROTAS =====
+   Lê frotaRotas (um documento por veículo por dia, gravado pelo robô do
+   Cobli) e desenha todas as rotas do dia no mesmo mapa, uma cor por veículo.
+   Busca o dia escolhido com getDocs — não fica escutando: rota de dia
+   fechado não muda, e o de hoje o robô atualiza uma vez por rodada.
+   Mapa: Leaflet + OpenStreetMap (gratuitos), carregados só ao abrir a tela. */
+var rtDados=[], rtVis={}, rtMapa=null, rtGrupo=null, rtCarregado='', rtErro='', rtBuscando=false;
+var RT_CORES=['#e6194b','#2f9e44','#4363d8','#f58231','#911eb4','#0fa3b1','#d6336c','#8f9a00','#9a6324','#5c7cfa','#e8590c','#495057'];
+
+function rtHojeISO(d){ d=d||new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function rtPlaca(p){ return String(p||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function rtVeicDaPlaca(p){
+  var n=rtPlaca(p), lista=veiculos||[];
+  for(var i=0;i<lista.length;i++) if(rtPlaca(lista[i].placa)===n) return lista[i];
+  return null;
+}
+function rtNome(r){ var v=rtVeicDaPlaca(r.placa); return (v&&v.placa?v.placa:r.placa)+(v&&v.apelido?' · '+v.apelido:''); }
+function rtHM(min){ if(min==null||!isFinite(min)) return '—'; min=Math.round(min); return Math.floor(min/60)+'h'+String(min%60).padStart(2,'0'); }
+function rtNum(v,c){ return (v==null||!isFinite(v))?'—':Number(v).toLocaleString('pt-BR',{minimumFractionDigits:c||0,maximumFractionDigits:c||0}); }
+
+function rtCarregarLeaflet(){
+  return new Promise(function(ok, falhou){
+    if(window.L && window.L.map){ ok(window.L); return; }
+    var V='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
+    if(!document.getElementById('rt-leaflet-css')){
+      var c=document.createElement('link'); c.id='rt-leaflet-css'; c.rel='stylesheet'; c.href=V+'leaflet.min.css'; document.head.appendChild(c);
+    }
+    var s=document.createElement('script'); s.src=V+'leaflet.min.js';
+    s.onload=function(){ window.L ? ok(window.L) : falhou(new Error('o mapa não carregou')); };
+    s.onerror=function(){ falhou(new Error('sem conexão com o servidor do mapa')); };
+    document.head.appendChild(s);
+  });
+}
+
+window.rotasCarregar=function(){
+  var d=document.getElementById('rt-data').value; if(!d) return;
+  rtCarregado=d; rtErro=''; rtBuscando=true; rtDados=[];
+  renderRotas();
+  getDocs(query(collection(dbC,'frotaRotas'), where('data','==',d)))
+    .then(function(snap){
+      if(rtCarregado!==d) return;                  /* trocaram de dia no meio */
+      rtDados=snap.docs.map(function(x){ return Object.assign({ firestoreId:x.id }, x.data()); })
+        .sort(function(a,b){ return String(a.saida||'').localeCompare(String(b.saida||'')); });
+      rtVis={}; rtDados.forEach(function(r){ rtVis[r.firestoreId]=true; });
+      rtBuscando=false; renderRotas(); rtDesenhar(true);
+    })
+    .catch(function(e){
+      console.error('frotaRotas:', e);
+      rtBuscando=false; rtErro=(e.code==='permission-denied')
+        ? 'Sem permissão para ver as rotas (é da gestão da frota) — ou a regra do Firestore ainda não foi publicada.'
+        : 'Não foi possível carregar as rotas: '+(e.code||e.message);
+      renderRotas();
+    });
+};
+window.rotasDia=function(n){
+  var el=document.getElementById('rt-data'), p=(el.value||rtHojeISO()).split('-');
+  var d=new Date(+p[0], +p[1]-1, +p[2]+n);
+  if(rtHojeISO(d)>rtHojeISO()) return;
+  el.value=rtHojeISO(d); rotasCarregar();
+};
+window.rotasTodos=function(on){ rtDados.forEach(function(r){ rtVis[r.firestoreId]=on; }); renderRotas(); rtDesenhar(true); };
+window.rotasVer=function(id, on){ rtVis[id]=on; renderRotas(); rtDesenhar(false); };
+window.rotasFocar=function(id){
+  if(!rtMapa || !rtGrupo) return;
+  rtVis[id]=true; renderRotas(); rtDesenhar(false);
+  var r=rtDados.filter(function(x){ return x.firestoreId===id; })[0]; if(!r) return;
+  var pts=rtPontos(r); if(pts.length) rtMapa.fitBounds(pts, { padding:[30,30], maxZoom:15 });
+  document.getElementById('rt-mapa').scrollIntoView({ behavior:'smooth', block:'nearest' });
+};
+function rtPontos(r){
+  var l=r.linha||[], pts=[];
+  for(var i=0;i+1<l.length;i+=2) pts.push([l[i], l[i+1]]);
+  (r.paradas||[]).forEach(function(p){ if(p.lat!=null && p.lng!=null) pts.push([p.lat,p.lng]); });
+  return pts;
+}
+
+function renderRotas(){
+  var el=document.getElementById('rt-data');
+  if(!el.value){ var o=new Date(); o.setDate(o.getDate()-1); el.value=rtHojeISO(o); el.max=rtHojeISO(); }
+  if(rtCarregado!==el.value){ rotasCarregar(); return; }
+  var info=document.getElementById('rt-info'), kp=document.getElementById('rt-kpis'), tb=document.getElementById('rt-tab');
+  var lido=rtDados.length?new Date(rtDados.reduce(function(m,r){ return String(r.lidoEm||'')>m?String(r.lidoEm):m; },'')):null;
+  info.textContent=rtBuscando?'Carregando…':(lido&&!isNaN(lido)?'Lido do Cobli em '+lido.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'');
+  if(rtMapa) setTimeout(function(){ rtMapa.invalidateSize(); }, 60);
+  if(rtErro){ kp.innerHTML=''; tb.innerHTML='<div class="empty" style="color:var(--red)">'+esc(rtErro)+'</div>'; return; }
+  if(rtBuscando){ kp.innerHTML=''; tb.innerHTML='<div class="empty">Carregando…</div>'; return; }
+  if(!rtDados.length){
+    kp.innerHTML='';
+    tb.innerHTML='<div class="empty">Nenhuma rota registrada neste dia.'
+      +'<br><span style="font-size:11.5px">As rotas passam a ser gravadas a partir da primeira rodada do robô novo. Dias anteriores só aparecem com uma carga manual.</span></div>';
+    rtDesenhar(true); return;
+  }
+  var km=0, maior=null, somaDur=0, nDur=0;
+  rtDados.forEach(function(r){ km+=Number(r.km)||0; if(r.duracaoMin!=null){ somaDur+=r.duracaoMin; nDur++; if(!maior||r.duracaoMin>maior.duracaoMin) maior=r; } });
+  kp.innerHTML=
+      '<div class="card"><div class="klabel">Veículos que rodaram</div><div class="kval num">'+rtDados.length+'</div><div class="khint">no dia</div></div>'
+    + '<div class="card"><div class="klabel">Km no dia</div><div class="kval num">'+rtNum(km,0)+'</div><div class="khint">somando todos</div></div>'
+    + '<div class="card"><div class="klabel">Jornada média</div><div class="kval num">'+rtHM(nDur?somaDur/nDur:null)+'</div><div class="khint">da saída à volta</div></div>'
+    + '<div class="card"><div class="klabel">Jornada mais longa</div><div class="kval num">'+rtHM(maior&&maior.duracaoMin)+'</div><div class="khint">'+(maior?esc(rtNome(maior)):'—')+'</div></div>';
+  tb.innerHTML='<table><thead><tr><th></th><th>Veículo</th><th>Saída</th><th>Volta</th><th class="r">Jornada</th><th class="r">Km</th>'
+    + '<th class="r">Rodando</th><th class="r">Paradas</th><th class="r">Parado</th><th></th></tr></thead><tbody>'
+    + rtDados.map(function(r,i){
+        var id=r.firestoreId, on=rtVis[id]!==false;
+        return '<tr class="'+(on?'':'off')+'">'
+          + '<td><input type="checkbox" '+(on?'checked':'')+' onchange="rotasVer(\''+esc(id)+'\',this.checked)" title="Mostrar no mapa"></td>'
+          + '<td><span class="rt-cor" style="background:'+RT_CORES[i%RT_CORES.length]+'"></span><b>'+esc(rtNome(r))+'</b>'+(r.grupo?' <span style="color:var(--muted);font-size:11px">'+esc(r.grupo)+'</span>':'')+'</td>'
+          + '<td class="num">'+esc(r.saida||'—')+'</td><td class="num">'+esc(r.volta||'—')+'</td>'
+          + '<td class="r num">'+rtHM(r.duracaoMin)+'</td><td class="r num">'+rtNum(r.km,1)+'</td>'
+          + '<td class="r num">'+rtHM((Number(r.horasRodando)||0)*60)+'</td><td class="r num">'+((r.paradas||[]).length)+'</td>'
+          + '<td class="r num">'+rtHM((Number(r.horasParado)||0)*60)+'</td>'
+          + '<td class="r"><button class="btn btn-sm btn-ghost" onclick="rotasFocar(\''+esc(id)+'\')">Ver no mapa</button></td></tr>';
+      }).join('')+'</tbody></table>';
+}
+
+/* desenha (ou redesenha) as camadas; enquadrar=true ajusta o zoom a tudo que está visível */
+function rtDesenhar(enquadrar){
+  if(pagina!=='rotas') return;
+  rtCarregarLeaflet().then(function(L){
+    var box=document.getElementById('rt-mapa');
+    if(!rtMapa){
+      rtMapa=L.map(box, { zoomControl:true, attributionControl:true }).setView([-30.03,-51.2], 11);   /* Porto Alegre */
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19,
+        attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' }).addTo(rtMapa);
+      rtGrupo=L.featureGroup().addTo(rtMapa);
+    }
+    setTimeout(function(){ rtMapa.invalidateSize(); }, 60);    /* a tela estava escondida quando o mapa nasceu */
+    rtGrupo.clearLayers();
+    var todos=[];
+    rtDados.forEach(function(r,i){
+      if(rtVis[r.firestoreId]===false) return;
+      var cor=RT_CORES[i%RT_CORES.length], nome=rtNome(r), l=r.linha||[], pts=[];
+      for(var k=0;k+1<l.length;k+=2) pts.push([l[k], l[k+1]]);
+      if(pts.length>1) L.polyline(pts, { color:cor, weight:3.5, opacity:.85 }).bindTooltip(esc(nome), { sticky:true }).addTo(rtGrupo);
+      if(pts.length){
+        L.marker(pts[0], { icon:L.divIcon({ className:'', html:'<div class="rt-pino base" style="background:'+cor+'">S</div>', iconSize:[22,22], iconAnchor:[11,11] }) })
+          .bindPopup('<div class="rt-pop"><b>'+esc(nome)+'</b><br>Saída '+esc(r.saida||'—')+' · volta '+esc(r.volta||'—')
+            +'<br>'+rtNum(r.km,1)+' km · jornada '+rtHM(r.duracaoMin)+'</div>').addTo(rtGrupo);
+        todos=todos.concat(pts);
+      }
+      (r.paradas||[]).forEach(function(p,n){
+        if(p.lat==null || p.lng==null) return;
+        todos.push([p.lat,p.lng]);
+        L.marker([p.lat,p.lng], { icon:L.divIcon({ className:'', html:'<div class="rt-pino" style="background:'+cor+'">'+(n+1)+'</div>', iconSize:[22,22], iconAnchor:[11,11] }) })
+          .bindPopup('<div class="rt-pop"><b>'+esc(nome)+' · parada '+(n+1)+'</b>'
+            +(p.cerca?'<br>'+esc(p.cerca):'')
+            +'<br>'+esc(p.chegada||'—')+' às '+esc(p.partida||'—')+' · '+rtHM(p.min)
+            +'<br><a href="https://www.google.com/maps?q='+p.lat+','+p.lng+'" target="_blank" rel="noopener">Abrir no Google Maps ↗</a></div>')
+          .addTo(rtGrupo);
+      });
+    });
+    if(enquadrar && todos.length) rtMapa.fitBounds(todos, { padding:[30,30], maxZoom:14 });
+  }).catch(function(e){
+    document.getElementById('rt-mapa').innerHTML='<div class="empty" style="padding:40px 16px">'+esc(e.message||String(e))+'</div>';
+  });
+}
+
 function render(){
   if(!veiculos && !movs) return;
   if(ultimaCarga) document.getElementById('freshness').textContent='Dados de '+ultimaCarga;
@@ -1361,6 +1557,7 @@ function render(){
   else if(pagina==='caixas') renderCaixas();
   else if(pagina==='estoque') renderEstoque();
   else if(pagina==='custos') renderCustos();
+  else if(pagina==='rotas') renderRotas();
   else if(pagina==='config'){ renderConfig(); renderConfigCaixas(); }
 }
 window.render=render;
