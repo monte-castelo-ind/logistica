@@ -492,6 +492,44 @@ html[data-pal="vinho"][data-theme="light"]{
 .rt-pop b{font-size:13.5px}
 .rt-pop a{color:#2a7bd6}
 @media(max-width:600px){ .rt-mapa{height:52vh;min-height:280px} }
+
+/* ===== Roteirizar ===== */
+.rz-wrap{display:grid;grid-template-columns:minmax(330px,400px) 1fr;gap:14px;align-items:start}
+.rz-painel{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:14px;box-shadow:var(--shadow);
+  max-height:calc(100vh - 150px);overflow:auto}
+.rz-mapa.rt-mapa{height:calc(100vh - 150px);min-height:420px;margin:0;position:sticky;top:14px}
+.rz-linha{display:flex;gap:7px;margin-bottom:10px}
+.rz-linha input,.rz-linha select{flex:1;min-width:0}
+.rz-dias{display:flex;gap:5px;flex-wrap:wrap}
+.rz-dia{background:var(--card-2);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:6px 9px;font:600 12px inherit;cursor:pointer;font-family:inherit}
+.rz-dia.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.rz-base{font-size:12.5px;line-height:1.5;margin:4px 0 8px;background:var(--card-2);border-radius:9px;padding:9px 11px}
+.rz-base .btn{padding:3px 9px;margin-left:4px}
+.rz-chk{display:flex;gap:8px;align-items:center;font-size:12.5px;margin:0 0 10px;cursor:pointer;color:var(--text)}
+.rz-chk input{width:auto;accent-color:var(--primary)}
+.rz-param{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.rz-param .fld{margin-bottom:10px}
+.rz-resumo{font-size:13px;margin:4px 0 10px;padding:9px 11px;border-radius:9px;background:var(--card-2)}
+.rz-acoes{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.rz-msg{font-size:12px;color:var(--primary);min-height:16px;margin-bottom:6px}
+.rz-item{display:flex;gap:9px;align-items:flex-start;padding:9px 4px;border-top:1px solid var(--border)}
+.rz-item.erro .rz-num{background:var(--red)}
+.rz-item.pos{background:var(--card-2);border-radius:9px}
+.rz-num{flex:0 0 24px;height:24px;border-radius:50%;background:var(--primary);color:#fff;font:700 11px/24px 'JetBrains Mono',monospace;text-align:center}
+.rz-info{flex:1;min-width:0}
+.rz-t{font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.rz-s{font-size:11.5px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+.rz-st.st-erro{color:var(--red);font-weight:600}
+.rz-st.st-aprox{color:#e67700;font-weight:600}
+.rz-st.st-ok,.rz-st.st-manual{color:var(--green)}
+.rz-bts{display:flex;gap:2px;flex:0 0 auto}
+.rz-bts button{background:none;border:1px solid transparent;color:var(--muted);border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:13px;padding:0}
+.rz-bts button:hover{border-color:var(--border);color:var(--text);background:var(--card-2)}
+@media(max-width:900px){
+  .rz-wrap{grid-template-columns:1fr}
+  .rz-mapa.rt-mapa{order:-1;position:relative;top:0;height:46vh;min-height:280px}
+  .rz-painel{max-height:none}
+}
 </style>
 </head>
 <body>
@@ -535,6 +573,7 @@ html[data-pal="vinho"][data-theme="light"]{
     <button class="navbtn" data-p="estoque" onclick="nav('estoque')"><span class="side-ico">◉</span><span class="lbl">Pneus e óleos</span></button>
     <button class="navbtn gestao-only" data-p="custos" onclick="nav('custos')"><span class="side-ico">◷</span><span class="lbl">Custos e consumo</span></button>
     <button class="navbtn gestao-only" data-p="rotas" onclick="nav('rotas')"><span class="side-ico">⌖</span><span class="lbl">Rotas</span></button>
+    <button class="navbtn gestao-only" data-p="roteirizar" onclick="nav('roteirizar')"><span class="side-ico">⤳</span><span class="lbl">Roteirizar</span></button>
     <button class="navbtn config-only" data-p="config" onclick="nav('config')"><span class="side-ico">⚙</span><span class="lbl">Configurações</span></button>
     <div class="side-foot">
       <div class="uline">
@@ -799,6 +838,46 @@ html[data-pal="vinho"][data-theme="light"]{
       </div>
     </div>
 
+    <!-- ROTEIRIZAR: montar rota por endereço -->
+    <div class="page" id="page-roteirizar">
+      <div class="rz-wrap">
+        <div class="rz-painel">
+          <div class="rz-linha">
+            <select id="rz-salvas" onchange="rzAbrir(this.value)"><option value="">Rotas salvas…</option></select>
+            <button class="btn btn-sm btn-ghost" onclick="rzNova()">+ Nova</button>
+          </div>
+          <div class="fld"><label>Nome da rota</label><input id="rz-nome" placeholder="Ex.: Missões — seg/qua/sex" oninput="rzMarcarSujoCampo()"></div>
+          <div class="fld"><label>Dias da semana (rota fixa) — deixe vazio para rota avulsa</label><div class="rz-dias" id="rz-dias"></div></div>
+          <div class="rz-base" id="rz-base"></div>
+          <label class="rz-chk"><input type="checkbox" id="rz-volta" checked onchange="rzParametros()"> Volta para o ponto de partida no fim</label>
+          <div class="rz-param">
+            <div class="fld"><label>Saída às</label><input type="time" id="rz-saida" value="06:00" onchange="rzParametros()"></div>
+            <div class="fld"><label>Min por parada</label><input type="number" id="rz-par" value="10" min="0" onchange="rzParametros()"></div>
+            <div class="fld"><label>Km/h médio</label><input type="number" id="rz-vel" value="28" min="5" onchange="rzParametros()"></div>
+          </div>
+          <div class="rz-linha">
+            <input id="rz-end" placeholder="Endereço (ou Nome ; Endereço)" onkeydown="if(event.key==='Enter'){ event.preventDefault(); rzAdicionar(); }">
+            <button class="btn btn-sm" onclick="rzAdicionar()">+ Ponto</button>
+          </div>
+          <div class="rz-linha"><button class="btn btn-sm btn-ghost" onclick="rzColar()" style="flex:1">📋 Colar lista de endereços</button></div>
+          <div class="rz-resumo" id="rz-resumo"></div>
+          <div class="rz-acoes">
+            <button class="btn btn-sm" onclick="rzOtimizar()">⚡ Otimizar ordem</button>
+            <button class="btn btn-sm btn-ghost" onclick="rzGoogle()">Google Maps ↗</button>
+            <button class="btn btn-sm btn-ghost" id="rz-salvar" onclick="rzSalvar()">💾 Salvar</button>
+            <button class="btn btn-sm btn-ghost" onclick="rzApagar()" title="Apagar a rota salva">🗑</button>
+          </div>
+          <div id="rz-msg" class="rz-msg"></div>
+          <div id="rz-lista"></div>
+        </div>
+        <div class="rz-mapa rt-mapa" id="rz-mapa"></div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:9px;line-height:1.6">
+        Os km são estimados em linha reta com acréscimo de 30% para as ruas; o tempo usa a velocidade média e os minutos por parada.
+        Para o caminho exato pelas ruas, use o botão <strong>Google Maps</strong>. Pino laranja = endereço aproximado: arraste até o lugar certo.
+      </div>
+    </div>
+
     <!-- CONFIG -->
     <div class="page" id="page-config">
       <div class="card caixas-only" style="max-width:860px;margin-bottom:14px">
@@ -896,7 +975,7 @@ var pagina='painel', sessaoEmail='', sessaoUid='', sessaoNome='', ehAdmin=false,
 var podeCadastrar=false, podeCaixas=false, podeConfig=false;
 /* Painel e Custos são telas de gestão: quem só lança manutenção não precisa
    ver o gasto da frota inteira. */
-var PAGINAS_GESTAO=['painel','custos','rotas'];
+var PAGINAS_GESTAO=['painel','custos','rotas','roteirizar'];
 /* Janela dos números da aba Veículos e do detalhe do veículo. Estava 90 em
    seis lugares diferentes; agora sai de um só. */
 var JANELA_DIAS=30;
@@ -926,6 +1005,7 @@ const TITLES={
   estoque:['Pneus e óleos','Estoque da oficina — o que tem em casa'],
   custos:['Custos e consumo','R$/km, R$/litro e km/L por veículo'],
   rotas:['Rotas','O dia de cada veículo: saída, paradas e volta, pelo Cobli'],
+  roteirizar:['Roteirizar','Monte a rota pelos endereços: melhor ordem, km, tempo e horário em cada parada'],
   config:['Configurações','Intervalos e tipos']
 };
 const TIPOS_MOV={
@@ -1534,6 +1614,379 @@ function rtDesenhar(enquadrar){
   });
 }
 
+/* ===== ROTEIRIZAR =====
+   Monta rota por endereço: digita (ou cola) os endereços, o app acha cada
+   um no mapa, calcula a melhor ordem e estima km, tempo e horário em cada
+   parada. Rotas salvas em frotaRoteiros; ponto de partida (a fábrica) em
+   frotaConfig/app.baseRota.
+   - Endereço → coordenada: Nominatim, a busca do OpenStreetMap (gratuita).
+     Regra de uso deles: no máximo 1 busca por segundo — a fila respeita.
+     A coordenada fica guardada no ponto: reabrir a rota não busca de novo.
+   - Distância: linha reta × 1,3 (fator de ruas da cidade). Não é o caminho
+     real pelas ruas — para isso, o botão abre a rota no Google Maps.
+   - Otimizar: vizinho mais próximo + troca de trechos (2-opt). Ordem boa,
+     não garantidamente a melhor; dá para ajustar à mão com ↑↓. */
+var rzPontos=[], rzMapa=null, rzCamada=null, rzSalvas=[], rzAberta='', rzSujo=false, rzFila=[], rzBuscandoFila=false;
+var rzPosicionando='', rzDias=[], rzListou=false;
+var RZ_FATOR=1.3, RZ_DIAS=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+function rzId(){ return 'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function rzBase(){ return cfg.baseRota && cfg.baseRota.lat!=null ? cfg.baseRota : null; }
+function rzVal(id){ var e=document.getElementById(id); return e?String(e.value||'').trim():''; }
+function rzNumCampo(id, pad){ var v=parseFloat(String(rzVal(id)).replace(',','.')); return isFinite(v)&&v>0?v:pad; }
+function rzHav(a,b){
+  var R=6371, r=Math.PI/180, dLa=(b.lat-a.lat)*r, dLo=(b.lng-a.lng)*r;
+  var x=Math.sin(dLa/2)*Math.sin(dLa/2)+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLo/2)*Math.sin(dLo/2);
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(x)));
+}
+function rzKm(a,b){ return rzHav(a,b)*RZ_FATOR; }
+function rzHora(min){ min=Math.round(min); var h=Math.floor(min/60)%24, m=((min%60)+60)%60; return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'); }
+function rzDur(min){ min=Math.round(min); return Math.floor(min/60)+'h'+String(min%60).padStart(2,'0'); }
+function rzMarcarSujo(){ rzSujo=true; var b=document.getElementById('rz-salvar'); if(b) b.textContent='💾 Salvar *'; }
+
+/* ---------- busca de endereço (fila de 1 por segundo) ---------- */
+function rzBuscar(p){ p.status='fila'; rzFila.push(p.id); rzPintar(); rzRodarFila(); }
+function rzRodarFila(){
+  if(rzBuscandoFila) return;
+  var id=rzFila.shift(); if(!id) return;
+  var p=rzPontos.filter(function(x){ return x.id===id; })[0];
+  if(!p){ rzRodarFila(); return; }
+  rzBuscandoFila=true; p.status='buscando'; rzPintar();
+  var q=p.endereco;
+  if(!/\bRS\b|rio grande do sul|brasil/i.test(q)) q+=', RS, Brasil';
+  var url='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&accept-language=pt-BR'
+        +'&viewbox=-57.7,-27.0,-49.6,-33.8&q='+encodeURIComponent(q);
+  fetch(url, { headers:{ 'Accept':'application/json' } })
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(function(res){
+      var a=res&&res[0];
+      if(!a){ p.status='erro'; return; }
+      p.lat=+(+a.lat).toFixed(6); p.lng=+(+a.lon).toFixed(6);
+      var t=String(a.addresstype||a.type||'');
+      p.status=/^(house|building|amenity|shop|office|industrial|commercial|retail|house_number)$/.test(t)?'ok':'aprox';
+      rzMarcarSujo();
+    })
+    .catch(function(e){ console.warn('nominatim:',e); p.status='erro'; })
+    .then(function(){
+      rzPintar(); rzDesenhar(false);
+      setTimeout(function(){ rzBuscandoFila=false; rzRodarFila(); }, 1100);   /* regra de uso: 1 por segundo */
+    });
+}
+
+/* ---------- pontos ---------- */
+window.rzAdicionar=function(){
+  var el=document.getElementById('rz-end'), t=String(el.value||'').trim();
+  if(!t){ el.focus(); return; }
+  rzNovoPonto(t); el.value=''; el.focus();
+};
+function rzNovoPonto(linha){
+  var nome='', end=linha, m=linha.split(/\t|;/);
+  if(m.length>=2 && m[0].trim() && m.slice(1).join(' ').trim()){ nome=m[0].trim(); end=m.slice(1).join(' ').trim(); }
+  var p={ id:rzId(), nome:nome, endereco:end, lat:null, lng:null, status:'fila' };
+  rzPontos.push(p); rzMarcarSujo(); rzBuscar(p);
+}
+window.rzColar=function(){
+  modal({ titulo:'Colar lista de endereços',
+    body:'<div class="fld"><label>Um ponto por linha. Com nome do cliente: <b>Nome ; Endereço</b> (ou colado de planilha, nome e endereço em colunas)</label>'
+      +'<textarea id="rz-cola" rows="10" placeholder="Mercado Bom Preço ; Av. Assis Brasil, 2000, Porto Alegre\nRua Voluntários da Pátria, 500, Porto Alegre"></textarea></div>'
+      +'<div style="font-size:11.5px;color:var(--muted)">Os endereços são procurados um por segundo (regra do serviço de mapas) — uma lista de 30 leva uns 30 segundos.</div>',
+    ok:'Adicionar', onOk:function(){
+      var ls=String((document.getElementById('rz-cola')||{}).value||'').split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
+      if(!ls.length){ alert('Cole pelo menos um endereço.'); return false; }
+      ls.forEach(rzNovoPonto);
+      fecharModal();
+    } });
+};
+window.rzRemover=function(id){ rzPontos=rzPontos.filter(function(x){ return x.id!==id; }); rzFila=rzFila.filter(function(x){ return x!==id; }); rzMarcarSujo(); rzPintar(); rzDesenhar(false); };
+window.rzMover=function(id, d){
+  var i=rzPontos.findIndex(function(x){ return x.id===id; }), j=i+d;
+  if(i<0||j<0||j>=rzPontos.length) return;
+  var t=rzPontos[i]; rzPontos[i]=rzPontos[j]; rzPontos[j]=t; rzMarcarSujo(); rzPintar(); rzDesenhar(false);
+};
+window.rzEditar=function(id){
+  var p=rzPontos.filter(function(x){ return x.id===id; })[0]; if(!p) return;
+  modal({ titulo:'Editar ponto',
+    body:'<div class="fld"><label>Nome (opcional)</label><input id="rz-e-nome" value="'+esc(p.nome||'')+'"></div>'
+      +'<div class="fld"><label>Endereço</label><input id="rz-e-end" value="'+esc(p.endereco||'')+'"></div>'
+      +'<div class="fld"><label>Tempo nesta parada (min) — vazio usa o padrão</label><input id="rz-e-min" type="number" min="0" value="'+(p.paradaMin!=null?p.paradaMin:'')+'"></div>',
+    ok:'Salvar', onOk:function(){
+      var e=String(document.getElementById('rz-e-end').value||'').trim();
+      if(!e){ alert('Informe o endereço.'); return false; }
+      var mudou=e!==p.endereco;
+      p.nome=String(document.getElementById('rz-e-nome').value||'').trim(); p.endereco=e;
+      var mm=document.getElementById('rz-e-min').value; p.paradaMin=mm===''?null:Math.max(0,+mm);
+      rzMarcarSujo();
+      fecharModal();
+      if(mudou){ p.lat=p.lng=null; rzBuscar(p); } else { rzPintar(); rzDesenhar(false); }
+    } });
+};
+window.rzPosicionar=function(id){
+  rzPosicionando=(rzPosicionando===id)?'':id; rzPintar();
+  if(rzPosicionando) document.getElementById('rz-mapa').scrollIntoView({ behavior:'smooth', block:'nearest' });
+};
+
+/* ---------- otimizar ---------- */
+window.rzOtimizar=function(){
+  var base=rzBase(), com=rzPontos.filter(function(p){ return p.lat!=null; }), sem=rzPontos.filter(function(p){ return p.lat==null; });
+  if(com.length<2){ alert('Precisa de pelo menos 2 pontos localizados no mapa.'); return; }
+  var volta=document.getElementById('rz-volta').checked && !!base;
+  var inicio=base||com[0];
+  /* vizinho mais próximo */
+  var rest=com.slice(), ord=[], atual=inicio;
+  if(!base){ ord.push(rest.shift()); atual=ord[0]; }
+  while(rest.length){
+    var mi=0, md=1e9;
+    for(var i=0;i<rest.length;i++){ var d=rzHav(atual,rest[i]); if(d<md){ md=d; mi=i; } }
+    atual=rest.splice(mi,1)[0]; ord.push(atual);
+  }
+  /* 2-opt: desfaz cruzamentos */
+  function custo(o){ var c=0, a=base||o[0], k0=base?0:1; for(var k=k0;k<o.length;k++){ c+=rzHav(a,o[k]); a=o[k]; } if(volta) c+=rzHav(a,base); return c; }
+  var melhor=custo(ord), melhorou=true, voltas=0, ini2=base?0:1;
+  while(melhorou && voltas<60){
+    melhorou=false; voltas++;
+    for(var i2=ini2;i2<ord.length-1;i2++) for(var j2=i2+1;j2<ord.length;j2++){
+      var nova=ord.slice(0,i2).concat(ord.slice(i2,j2+1).reverse(), ord.slice(j2+1));
+      var c=custo(nova); if(c<melhor-1e-9){ ord=nova; melhor=c; melhorou=true; }
+    }
+  }
+  var antes=rzTotais().km;
+  rzPontos=ord.concat(sem); rzMarcarSujo(); rzPintar(); rzDesenhar(true);
+  var depois=rzTotais().km;
+  var inf=document.getElementById('rz-msg');
+  if(inf) inf.textContent=antes>depois+0.05?('Ordem otimizada: '+antes.toFixed(1).replace('.',',')+' → '+depois.toFixed(1).replace('.',',')+' km estimados.'):'A ordem já estava boa.';
+};
+
+/* ---------- estimativas ---------- */
+function rzTotais(){
+  var base=rzBase(), vel=rzNumCampo('rz-vel',28), par=rzNumCampo('rz-par',10);
+  var s=rzVal('rz-saida')||'06:00', hs=s.split(':'), t=(+hs[0]||0)*60+(+hs[1]||0), t0=t;
+  var km=0, ant=base, lin=[];
+  rzPontos.forEach(function(p){
+    var perna=null;
+    if(p.lat!=null && ant){ perna=rzKm(ant,p); km+=perna; t+=perna/vel*60; }
+    lin.push({ id:p.id, chegada:(p.lat!=null&&(ant||!base))?t:null, perna:perna });
+    if(p.lat!=null){ t+=(p.paradaMin!=null?p.paradaMin:par); ant=p; }
+  });
+  var volta=document.getElementById('rz-volta'), kmV=0;
+  if(volta && volta.checked && base && ant && ant!==base){ kmV=rzKm(ant,base); km+=kmV; t+=kmV/vel*60; }
+  return { km:km, min:t-t0, fim:t, lin:lin, kmVolta:kmV };
+}
+
+/* ---------- desenho ---------- */
+var RZ_ST={ ok:['✓','Localizado'], aprox:['≈','Aproximado — confira no mapa'], manual:['✎','Posicionado à mão'],
+            fila:['…','Na fila'], buscando:['…','Procurando'], erro:['!','Não encontrado — use 📍 para posicionar no mapa'] };
+function rzPintar(){
+  var el=document.getElementById('rz-lista'); if(!el) return;
+  var T=rzTotais(), base=rzBase();
+  document.getElementById('rz-base').innerHTML=base
+    ? '<b>Saída:</b> '+esc(base.nome||'Fábrica')+' <span style="color:var(--muted)">· '+esc(base.endereco||'')+'</span> <button class="btn btn-sm btn-ghost" onclick="rzDefinirBase()">Alterar</button>'
+    : '<span style="color:var(--amber)">⚠ Defina o ponto de partida (a fábrica) para calcular a rota a partir dela.</span> <button class="btn btn-sm" onclick="rzDefinirBase()">Definir</button>';
+  var n=rzPontos.length, loc=rzPontos.filter(function(p){ return p.lat!=null; }).length;
+  document.getElementById('rz-resumo').innerHTML=n
+    ? '<b>'+n+'</b> ponto'+(n===1?'':'s')+(loc<n?' ('+(n-loc)+' sem local)':'')+' · <b>'+T.km.toFixed(1).replace('.',',')+' km</b> · <b>'+rzDur(T.min)+'</b>'
+      +' · volta ~'+rzHora(T.fim)
+    : 'Adicione endereços para montar a rota.';
+  el.innerHTML=rzPontos.map(function(p,i){
+    var L=T.lin[i]||{}, st=RZ_ST[p.status]||RZ_ST.ok;
+    return '<div class="rz-item'+(p.status==='erro'?' erro':'')+(rzPosicionando===p.id?' pos':'')+'">'
+      + '<div class="rz-num">'+(i+1)+'</div>'
+      + '<div class="rz-info"><div class="rz-t">'+esc(p.nome||p.endereco)+'</div>'
+      +   (p.nome?'<div class="rz-s">'+esc(p.endereco)+'</div>':'')
+      +   '<div class="rz-s"><span class="rz-st st-'+p.status+'" title="'+esc(st[1])+'">'+st[0]+' '+esc(st[1].split(' — ')[0])+'</span>'
+      +   (L.chegada!=null?' · chega ~'+rzHora(L.chegada):'')+(L.perna!=null?' · '+L.perna.toFixed(1).replace('.',',')+' km':'')+'</div>'
+      +   (rzPosicionando===p.id?'<div class="rz-s" style="color:var(--primary)">👉 Clique no mapa onde fica este ponto</div>':'')+'</div>'
+      + '<div class="rz-bts">'
+      +   '<button title="Subir" onclick="rzMover(\''+p.id+'\',-1)">↑</button><button title="Descer" onclick="rzMover(\''+p.id+'\',1)">↓</button>'
+      +   '<button title="Posicionar no mapa" onclick="rzPosicionar(\''+p.id+'\')">📍</button>'
+      +   '<button title="Editar" onclick="rzEditar(\''+p.id+'\')">✎</button>'
+      +   '<button title="Tirar da rota" onclick="rzRemover(\''+p.id+'\')">×</button></div>'
+      + '</div>';
+  }).join('');
+}
+function rzIcone(L, txt, cor, cls){
+  return L.divIcon({ className:'', html:'<div class="rt-pino '+(cls||'')+'" style="background:'+cor+'">'+txt+'</div>', iconSize:[24,24], iconAnchor:[12,12] });
+}
+function rzDesenhar(enquadrar){
+  if(pagina!=='roteirizar') return;
+  rtCarregarLeaflet().then(function(L){
+    if(!rzMapa){
+      rzMapa=L.map(document.getElementById('rz-mapa')).setView([-30.03,-51.2], 11);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19,
+        attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · busca de endereços: Nominatim' }).addTo(rzMapa);
+      rzCamada=L.featureGroup().addTo(rzMapa);
+      rzMapa.on('click', function(e){
+        if(!rzPosicionando) return;
+        var p=rzPontos.filter(function(x){ return x.id===rzPosicionando; })[0];
+        if(p){ p.lat=+e.latlng.lat.toFixed(6); p.lng=+e.latlng.lng.toFixed(6); p.status='manual'; rzMarcarSujo(); }
+        rzPosicionando=''; rzPintar(); rzDesenhar(false);
+      });
+    }
+    setTimeout(function(){ rzMapa.invalidateSize(); }, 60);
+    rzCamada.clearLayers();
+    var base=rzBase(), pts=[], cor=getComputedStyle(document.documentElement).getPropertyValue('--primary').trim()||'#2fae7d';
+    if(base){
+      pts.push([base.lat,base.lng]);
+      L.marker([base.lat,base.lng], { icon:rzIcone(L,'F','#343a40','base'), title:'Saída: '+(base.nome||'Fábrica'), draggable:!!podeConfig })
+        .on('dragend', function(ev){
+          var ll=ev.target.getLatLng();
+          if(confirm('Mover o ponto de partida ('+(base.nome||'Fábrica')+') para cá?'))
+            rzSalvarBase(Object.assign({}, base, { lat:+ll.lat.toFixed(6), lng:+ll.lng.toFixed(6) }), false);
+          else rzDesenhar(false);
+        })
+        .bindPopup('<div class="rt-pop"><b>'+esc(base.nome||'Fábrica')+'</b><br>'+esc(base.endereco||'')+'</div>').addTo(rzCamada);
+    }
+    var linha=base?[[base.lat,base.lng]]:[];
+    rzPontos.forEach(function(p,i){
+      if(p.lat==null) return;
+      pts.push([p.lat,p.lng]); linha.push([p.lat,p.lng]);
+      var c=p.status==='aprox'?'#e67700':cor;
+      L.marker([p.lat,p.lng], { icon:rzIcone(L,String(i+1),c), draggable:true, title:p.nome||p.endereco })
+        .on('dragend', function(ev){ var ll=ev.target.getLatLng(); p.lat=+ll.lat.toFixed(6); p.lng=+ll.lng.toFixed(6); p.status='manual'; rzMarcarSujo(); rzPintar(); rzDesenhar(false); })
+        .bindPopup('<div class="rt-pop"><b>'+(i+1)+'. '+esc(p.nome||p.endereco)+'</b>'+(p.nome?'<br>'+esc(p.endereco):'')
+          +(p.status==='aprox'?'<br><span style="color:#e67700">≈ posição aproximada — arraste o pino se precisar</span>':'')+'</div>')
+        .addTo(rzCamada);
+    });
+    var v=document.getElementById('rz-volta');
+    if(v && v.checked && base && linha.length>1) linha.push([base.lat,base.lng]);
+    if(linha.length>1) L.polyline(linha, { color:cor, weight:3.5, opacity:.8, dashArray:'6 6' }).addTo(rzCamada);
+    if(enquadrar && pts.length) rzMapa.fitBounds(pts, { padding:[30,30], maxZoom:15 });
+  }).catch(function(e){ document.getElementById('rz-mapa').innerHTML='<div class="empty" style="padding:40px 16px">'+esc(e.message||String(e))+'</div>'; });
+}
+
+/* ---------- ponto de partida ---------- */
+window.rzDefinirBase=function(){
+  if(!podeConfig){ alert('Só quem configura a frota define o ponto de partida.'); return; }
+  var b=cfg.baseRota||{};
+  modal({ titulo:'Ponto de partida', sub:'De onde os veículos saem — normalmente a fábrica',
+    body:'<div class="fld"><label>Nome</label><input id="rz-b-nome" value="'+esc(b.nome||'Fábrica Monte Castelo')+'"></div>'
+      +'<div class="fld"><label>Endereço</label><input id="rz-b-end" value="'+esc(b.endereco||'')+'" placeholder="Rua, número, cidade"></div>'
+      +'<div style="font-size:11.5px;color:var(--muted)">Depois de salvo, dá para arrastar o pino "F" no mapa para acertar a posição.</div>',
+    ok:'Procurar e salvar', onOk:function(){
+      var nome=String(document.getElementById('rz-b-nome').value||'').trim()||'Fábrica', end=String(document.getElementById('rz-b-end').value||'').trim();
+      if(!end){ alert('Informe o endereço.'); return false; }
+      var q=end+(/\bRS\b|rio grande do sul/i.test(end)?'':', RS, Brasil');
+      fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&accept-language=pt-BR&q='+encodeURIComponent(q))
+        .then(function(r){ return r.json(); })
+        .then(function(res){
+          var a=res&&res[0];
+          if(!a){ alert('Não encontrei esse endereço. Tente escrever de outro jeito (rua, número, cidade).'); return; }
+          fecharModal();
+          rzSalvarBase({ nome:nome, endereco:end, lat:+(+a.lat).toFixed(6), lng:+(+a.lon).toFixed(6) }, true);
+        })
+        .catch(function(e){ alert('Não foi possível procurar o endereço: '+(e.message||e)); });
+    } });
+};
+function rzSalvarBase(b, enquadrar){
+  cfg.baseRota=b;
+  setDoc(doc(dbC,'frotaConfig','app'), { baseRota:b, atualizadoEm:agora(), atualizadoPor:sessaoEmail }, { merge:true })
+    .catch(function(e){ console.error('baseRota:',e); alert('Não foi possível salvar o ponto de partida: '+(e.code||e.message)); });
+  rzPintar(); rzDesenhar(!!enquadrar);
+}
+
+/* ---------- Google Maps ---------- */
+window.rzGoogle=function(){
+  var base=rzBase(), ps=rzPontos.filter(function(p){ return p.lat!=null; });
+  if(!ps.length){ alert('Nenhum ponto localizado ainda.'); return; }
+  var volta=document.getElementById('rz-volta').checked && base;
+  var seq=(base?[base]:[]).concat(ps).concat(volta?[base]:[]);
+  var c=function(p){ return p.lat+','+p.lng; }, partes=[], MAX=9;
+  for(var i=0;i<seq.length-1;){
+    var fim=Math.min(i+MAX+1, seq.length-1);
+    var trecho=seq.slice(i, fim+1);
+    partes.push({ de:i, ate:fim, url:'https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+c(trecho[0])
+      +'&destination='+c(trecho[trecho.length-1])
+      +(trecho.length>2?'&waypoints='+encodeURIComponent(trecho.slice(1,-1).map(c).join('|')):'') });
+    i=fim;
+  }
+  if(partes.length===1){ window.open(partes[0].url,'_blank','noopener'); return; }
+  var nome=function(k){ var p=seq[k]; if(base && p===base) return k===0?'saída':'volta'; return 'parada '+(ps.indexOf(p)+1); };
+  modal({ titulo:'Abrir no Google Maps', sub:'O Google aceita até 9 paradas por vez — a rota foi dividida',
+    body:partes.map(function(pt,k){ return '<a class="btn btn-sm" style="display:block;margin-bottom:8px;text-align:center" target="_blank" rel="noopener" href="'+esc(pt.url)+'">Parte '+(k+1)+': '+nome(pt.de)+' → '+nome(pt.ate)+' ↗</a>'; }).join('') });
+};
+
+/* ---------- salvar / abrir ---------- */
+function rzListar(){
+  rzListou=true;
+  getDocs(collection(dbC,'frotaRoteiros')).then(function(s){
+    rzSalvas=s.docs.map(function(x){ return Object.assign({ firestoreId:x.id }, x.data()); })
+      .sort(function(a,b){ return String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR'); });
+    var sel=document.getElementById('rz-salvas');
+    sel.innerHTML='<option value="">Rotas salvas ('+rzSalvas.length+')…</option>'+rzSalvas.map(function(r){
+      return '<option value="'+esc(r.firestoreId)+'"'+(r.firestoreId===rzAberta?' selected':'')+'>'+esc(r.nome||'(sem nome)')
+        +((r.dias||[]).length?' · '+r.dias.map(function(d){ return RZ_DIAS[d]; }).join('/'):'')+' · '+(r.pontos||[]).length+' pontos</option>';
+    }).join('');
+  }).catch(function(e){
+    console.error('frotaRoteiros:',e);
+    var inf=document.getElementById('rz-msg'); if(inf) inf.textContent='Não foi possível ler as rotas salvas: '+(e.code||e.message);
+  });
+}
+function rzPintarDias(){
+  document.getElementById('rz-dias').innerHTML=[1,2,3,4,5,6,0].map(function(d){
+    return '<button class="rz-dia'+(rzDias.indexOf(d)>=0?' on':'')+'" onclick="rzDia('+d+')">'+RZ_DIAS[d]+'</button>';
+  }).join('');
+}
+window.rzDia=function(d){ var i=rzDias.indexOf(d); if(i>=0) rzDias.splice(i,1); else rzDias.push(d); rzMarcarSujo(); rzPintarDias(); };
+window.rzNova=function(){
+  if(rzSujo && rzPontos.length && !confirm('A rota aberta tem mudanças não salvas. Descartar?')) { rzListar(); return; }
+  rzAberta=''; rzPontos=[]; rzDias=[]; rzFila=[];
+  document.getElementById('rz-nome').value='';
+  document.getElementById('rz-salvas').value='';
+  rzSujo=false; document.getElementById('rz-salvar').textContent='💾 Salvar';
+  document.getElementById('rz-msg').textContent='';
+  rzPintarDias(); rzPintar(); rzDesenhar(true);
+};
+window.rzAbrir=function(id){
+  if(!id){ return; }
+  if(rzSujo && rzPontos.length && !confirm('A rota aberta tem mudanças não salvas. Descartar?')){ document.getElementById('rz-salvas').value=rzAberta; return; }
+  var r=rzSalvas.filter(function(x){ return x.firestoreId===id; })[0]; if(!r) return;
+  rzAberta=id; rzPontos=(r.pontos||[]).map(function(p){ return Object.assign({}, p); }); rzDias=(r.dias||[]).slice(); rzFila=[];
+  document.getElementById('rz-nome').value=r.nome||'';
+  if(r.saida) document.getElementById('rz-saida').value=r.saida;
+  if(r.paradaMin) document.getElementById('rz-par').value=r.paradaMin;
+  if(r.velKmh) document.getElementById('rz-vel').value=r.velKmh;
+  document.getElementById('rz-volta').checked=r.volta!==false;
+  rzSujo=false; document.getElementById('rz-salvar').textContent='💾 Salvar';
+  document.getElementById('rz-msg').textContent='';
+  rzPintarDias(); rzPintar(); rzDesenhar(true);
+  rzPontos.filter(function(p){ return p.lat==null && p.status!=='erro'; }).forEach(rzBuscar);
+};
+window.rzSalvar=function(){
+  var nome=rzVal('rz-nome');
+  if(!nome){ alert('Dê um nome para a rota (ex.: "Missões — seg/qua/sex").'); document.getElementById('rz-nome').focus(); return; }
+  if(!rzPontos.length){ alert('A rota não tem pontos.'); return; }
+  if(rzFila.length || rzBuscandoFila){ alert('Ainda estou procurando alguns endereços. Espere terminar e salve de novo.'); return; }
+  var T=rzTotais();
+  var dados={ nome:nome, dias:rzDias.slice().sort(), volta:document.getElementById('rz-volta').checked,
+    saida:rzVal('rz-saida')||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28),
+    pontos:rzPontos.map(function(p){ return { id:p.id, nome:p.nome||'', endereco:p.endereco, lat:p.lat, lng:p.lng,
+      status:(p.status==='fila'||p.status==='buscando')?'erro':p.status, paradaMin:p.paradaMin!=null?p.paradaMin:null }; }),
+    kmEstimado:+T.km.toFixed(1), minEstimado:Math.round(T.min),
+    atualizadoEm:agora(), atualizadoPor:sessaoEmail };
+  var b=document.getElementById('rz-salvar'); b.disabled=true; b.textContent='Salvando…';
+  var pr;
+  if(rzAberta) pr=updateDoc(doc(dbC,'frotaRoteiros',rzAberta), dados).then(function(){ return rzAberta; });
+  else { dados.criadoEm=dados.atualizadoEm; dados.criadoPor=sessaoEmail; pr=addDoc(collection(dbC,'frotaRoteiros'), dados).then(function(r){ return r.id; }); }
+  pr.then(function(id){ rzAberta=id; rzSujo=false; b.textContent='💾 Salvar'; document.getElementById('rz-msg').textContent='Rota salva.'; rzListar(); })
+    .catch(function(e){ console.error('frotaRoteiros/salvar:',e); alert('Não foi possível salvar: '+(e.code||e.message)); b.textContent='💾 Salvar *'; })
+    .then(function(){ b.disabled=false; });
+};
+window.rzApagar=function(){
+  if(!rzAberta){ rzNova(); return; }
+  var r=rzSalvas.filter(function(x){ return x.firestoreId===rzAberta; })[0];
+  if(!confirm('Apagar a rota "'+((r&&r.nome)||'')+'"? Isso não se desfaz.')) return;
+  deleteDoc(doc(dbC,'frotaRoteiros',rzAberta))
+    .then(function(){ rzSujo=false; rzNova(); rzListar(); })
+    .catch(function(e){ alert('Não foi possível apagar: '+(e.code||e.message)); });
+};
+window.rzParametros=function(){ rzMarcarSujo(); rzPintar(); rzDesenhar(false); };
+
+function renderRoteirizar(){
+  if(!rzListou){ rzListar(); rzPintarDias(); }
+  rzPintar(); rzDesenhar(!rzMapa);
+}
+
+window.rzMarcarSujoCampo=function(){ rzMarcarSujo(); };
+
 function render(){
   if(!veiculos && !movs) return;
   if(ultimaCarga) document.getElementById('freshness').textContent='Dados de '+ultimaCarga;
@@ -1558,6 +2011,7 @@ function render(){
   else if(pagina==='estoque') renderEstoque();
   else if(pagina==='custos') renderCustos();
   else if(pagina==='rotas') renderRotas();
+  else if(pagina==='roteirizar') renderRoteirizar();
   else if(pagina==='config'){ renderConfig(); renderConfigCaixas(); }
 }
 window.render=render;
@@ -5245,6 +5699,7 @@ function liberar(d){
       var dd=s.data();
       ['oleoKm','oleoMeses','revisaoKm','revisaoMeses','diasAviso','kmParadoDias','desvioPct'].forEach(function(k){ if(dd[k]!=null) cfg[k]=num(dd[k]); });
       if(Array.isArray(dd.tipos)) cfg.tipos=dd.tipos;
+      if(dd.baseRota && dd.baseRota.lat!=null) cfg.baseRota=dd.baseRota;
     }
     render();
   });
