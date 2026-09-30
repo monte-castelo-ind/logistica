@@ -879,7 +879,7 @@ html[data-pal="vinho"][data-theme="light"]{
       <div style="font-size:11px;color:var(--muted);margin-top:9px;line-height:1.6">
         Sem o traçado pelas ruas, os km são estimados em linha reta com acréscimo de 30% e o tempo usa a velocidade média.
         Com o Google ativo, <strong>🛣 Traçar pelas ruas</strong> troca a estimativa pelo km e tempo reais (sem trânsito) — o horário de cada parada soma os minutos por parada.
-        Pino laranja = endereço aproximado: arraste até o lugar certo.
+        Pino laranja = endereço aproximado: arraste até o lugar certo. <strong style="color:#1a73e8">Traço azul</strong> = último trecho (a volta).
       </div>
     </div>
 
@@ -1853,7 +1853,9 @@ function rzOtimizarLocal(){
   var inf=document.getElementById('rz-msg');
   if(inf){ inf.style.color='';
     inf.textContent=(antes>depois+0.05?('Ordem otimizada: '+antes.toFixed(1).replace('.',',')+' → '+depois.toFixed(1).replace('.',',')+' km estimados.'):'A ordem já estava boa.')
-      +(rzGAtivo()?' Clique em 🛣 Traçar pelas ruas para ver o caminho e o km reais.':''); }
+      +(rzGAtivo()?' Traçando pelas ruas…':''); }
+  /* com o Google, otimizar já traça pelas ruas — um clique só */
+  if(rzGAtivo()) setTimeout(rzTracar, 50);
 }
 
 /* ---------- estimativas ---------- */
@@ -1980,7 +1982,8 @@ function rzDesenharLeaflet(enquadrar){
     });
     var v=document.getElementById('rz-volta');
     if(v && v.checked && base && linha.length>1) linha.push([base.lat,base.lng]);
-    if(linha.length>1) L.polyline(linha, { color:cor, weight:3.5, opacity:.8, dashArray:'6 6' }).addTo(rzCamada);
+    if(linha.length>2) L.polyline(linha.slice(0,-1), { color:cor, weight:3.5, opacity:.8, dashArray:'6 6' }).addTo(rzCamada);
+    if(linha.length>1) L.polyline(linha.slice(-2), { color:'#1a73e8', weight:3.5, opacity:.85, dashArray:'6 6' }).addTo(rzCamada);   /* último trecho (volta) em azul */
     if(enquadrar && pts.length) rzMapa.fitBounds(pts, { padding:[30,30], maxZoom:15 });
   }).catch(function(e){ document.getElementById('rz-mapa').innerHTML='<div class="empty" style="padding:40px 16px">'+esc(e.message||String(e))+'</div>'; });
 }
@@ -2199,7 +2202,7 @@ function rzGChamar(seq, otimizar){
   return fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
     method:'POST',
     headers:{ 'Content-Type':'application/json', 'X-Goog-Api-Key':rzGChave(),
-      'X-Goog-FieldMask':'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.distanceMeters,routes.legs.duration,routes.optimizedIntermediateWaypointIndex' },
+      'X-Goog-FieldMask':'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.distanceMeters,routes.legs.duration,routes.legs.polyline.encodedPolyline,routes.optimizedIntermediateWaypointIndex' },
     body:JSON.stringify(corpo)
   }).then(function(r){
     return r.json().then(function(d){
@@ -2222,7 +2225,7 @@ window.rzTracar=function(){
   rzMsg('Traçando pelas ruas…');
   blocos.reduce(function(pr,b){
     return pr.then(function(){ return rzGChamar(b,false).then(function(rt){
-      (rt.legs||[]).forEach(function(l){ legs.push({ m:l.distanceMeters||0, s:rzGSeg(l.duration) }); });
+      (rt.legs||[]).forEach(function(l){ legs.push({ m:l.distanceMeters||0, s:rzGSeg(l.duration), p:(l.polyline&&l.polyline.encodedPolyline)||'' }); });
       if(rt.polyline && rt.polyline.encodedPolyline) polys.push(rt.polyline.encodedPolyline);
     }); });
   }, Promise.resolve()).then(function(){
@@ -2243,7 +2246,7 @@ function rzGOtimizar(){
     var idx=rt.optimizedIntermediateWaypointIndex||ps.map(function(_,i){ return i; });
     var antes=rzTotais().km;
     rzPontos=idx.map(function(i){ return ps[i]; }).concat(sem);
-    var legs=(rt.legs||[]).map(function(l){ return { m:l.distanceMeters||0, s:rzGSeg(l.duration) }; });
+    var legs=(rt.legs||[]).map(function(l){ return { m:l.distanceMeters||0, s:rzGSeg(l.duration), p:(l.polyline&&l.polyline.encodedPolyline)||'' }; });
     rzG.rota={ sig:rzSig(), legs:legs, polys:rt.polyline&&rt.polyline.encodedPolyline?[rt.polyline.encodedPolyline]:[],
       km:(rt.distanceMeters||0)/1000, min:rzGSeg(rt.duration)/60 };
     rzMarcarSujo(); rzPintar(); rzDesenhar(true);
@@ -2297,7 +2300,19 @@ function rzGDesenhar(enquadrar){
   });
   var v=document.getElementById('rz-volta');
   if(v && v.checked && base && reta.length>1) reta.push({ lat:base.lat, lng:base.lng });
-  if(rzGRotaValida()){
+  /* o ÚLTIMO trecho sai em azul: é a volta (último cliente → fábrica, ou
+     penúltimo → último ponto sem volta). Assim ida e volta não se confundem. */
+  var AZUL='#1a73e8';
+  var porTrecho=rzGRotaValida() && rzG.rota.legs.length && rzG.rota.legs.every(function(l){ return !!l.p; });
+  if(porTrecho){
+    var nL=rzG.rota.legs.length;
+    rzG.rota.legs.forEach(function(l,k){
+      var caminho=google.maps.geometry.encoding.decodePath(l.p), ult=(k===nL-1);
+      rzG.objs.push(new google.maps.Polyline({ path:caminho, map:rzG.mapa, strokeColor:ult?AZUL:cor, strokeOpacity:.9, strokeWeight:5, zIndex:ult?2:1 }));
+      caminho.forEach(function(ll){ bounds.extend(ll); });
+    });
+  } else if(rzGRotaValida()){
+    /* rota traçada antes desta versão: sem o desenho por trecho — sai toda numa cor; traçar de novo separa a volta */
     rzG.rota.polys.forEach(function(enc){
       var caminho=google.maps.geometry.encoding.decodePath(enc);
       rzG.objs.push(new google.maps.Polyline({ path:caminho, map:rzG.mapa, strokeColor:cor, strokeOpacity:.9, strokeWeight:5 }));
@@ -2305,8 +2320,10 @@ function rzGDesenhar(enquadrar){
     });
   } else if(reta.length>1){
     /* ainda não traçada pelas ruas: linha reta tracejada, só para ver a ordem */
-    rzG.objs.push(new google.maps.Polyline({ path:reta, map:rzG.mapa, strokeOpacity:0,
-      icons:[{ icon:{ path:'M 0,-1 0,1', strokeOpacity:.8, strokeColor:cor, scale:3 }, offset:'0', repeat:'14px' }] }));
+    var tracejado=function(path,c){ return new google.maps.Polyline({ path:path, map:rzG.mapa, strokeOpacity:0,
+      icons:[{ icon:{ path:'M 0,-1 0,1', strokeOpacity:.85, strokeColor:c, scale:3 }, offset:'0', repeat:'14px' }] }); };
+    if(reta.length>2) rzG.objs.push(tracejado(reta.slice(0,-1), cor));
+    rzG.objs.push(tracejado(reta.slice(-2), AZUL));
   }
   if(enquadrar && tem) rzG.mapa.fitBounds(bounds, 40);
 }
