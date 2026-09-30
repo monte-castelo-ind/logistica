@@ -505,6 +505,8 @@ html[data-pal="vinho"][data-theme="light"]{
 .rz-dia.on{background:var(--primary);border-color:var(--primary);color:#fff}
 .rz-base{font-size:12.5px;line-height:1.5;margin:4px 0 8px;background:var(--card-2);border-radius:9px;padding:9px 11px}
 .rz-base .btn{padding:3px 9px;margin-left:4px}
+.rz-g{font-size:11.5px;color:var(--muted);margin:-2px 0 10px}
+.rz-g .btn{padding:2px 8px;margin-left:4px;font-size:11px}
 .rz-chk{display:flex;gap:8px;align-items:center;font-size:12.5px;margin:0 0 10px;cursor:pointer;color:var(--text)}
 .rz-chk input{width:auto;accent-color:var(--primary)}
 .rz-param{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
@@ -849,6 +851,7 @@ html[data-pal="vinho"][data-theme="light"]{
           <div class="fld"><label>Nome da rota</label><input id="rz-nome" placeholder="Ex.: Missões — seg/qua/sex" oninput="rzMarcarSujoCampo()"></div>
           <div class="fld"><label>Dias da semana (rota fixa) — deixe vazio para rota avulsa</label><div class="rz-dias" id="rz-dias"></div></div>
           <div class="rz-base" id="rz-base"></div>
+          <div class="rz-g" id="rz-gstatus"></div>
           <label class="rz-chk"><input type="checkbox" id="rz-volta" checked onchange="rzParametros()"> Volta para o ponto de partida no fim</label>
           <div class="rz-param">
             <div class="fld"><label>Saída às</label><input type="time" id="rz-saida" value="06:00" onchange="rzParametros()"></div>
@@ -863,6 +866,7 @@ html[data-pal="vinho"][data-theme="light"]{
           <div class="rz-resumo" id="rz-resumo"></div>
           <div class="rz-acoes">
             <button class="btn btn-sm" onclick="rzOtimizar()">⚡ Otimizar ordem</button>
+            <button class="btn btn-sm" id="rz-tracar" onclick="rzTracar()" style="display:none">🛣 Traçar pelas ruas</button>
             <button class="btn btn-sm btn-ghost" onclick="rzGoogle()">Google Maps ↗</button>
             <button class="btn btn-sm btn-ghost" id="rz-salvar" onclick="rzSalvar()">💾 Salvar</button>
             <button class="btn btn-sm btn-ghost" onclick="rzApagar()" title="Apagar a rota salva">🗑</button>
@@ -873,8 +877,9 @@ html[data-pal="vinho"][data-theme="light"]{
         <div class="rz-mapa rt-mapa" id="rz-mapa"></div>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-top:9px;line-height:1.6">
-        Os km são estimados em linha reta com acréscimo de 30% para as ruas; o tempo usa a velocidade média e os minutos por parada.
-        Para o caminho exato pelas ruas, use o botão <strong>Google Maps</strong>. Pino laranja = endereço aproximado: arraste até o lugar certo.
+        Sem o traçado pelas ruas, os km são estimados em linha reta com acréscimo de 30% e o tempo usa a velocidade média.
+        Com o Google ativo, <strong>🛣 Traçar pelas ruas</strong> troca a estimativa pelo km e tempo reais (sem trânsito) — o horário de cada parada soma os minutos por parada.
+        Pino laranja = endereço aproximado: arraste até o lugar certo.
       </div>
     </div>
 
@@ -1654,6 +1659,13 @@ function rzRodarFila(){
   rzBuscandoFila=true; p.status='buscando'; rzPintar();
   var q=p.endereco;
   if(!/\bRS\b|rio grande do sul|brasil/i.test(q)) q+=', RS, Brasil';
+  if(rzGAtivo()){
+    rzGGeocode(p, q).then(function(){
+      rzPintar(); rzDesenhar(false);
+      setTimeout(function(){ rzBuscandoFila=false; rzRodarFila(); }, 250);
+    });
+    return;
+  }
   var url='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&accept-language=pt-BR'
         +'&viewbox=-57.7,-27.0,-49.6,-33.8&q='+encodeURIComponent(q);
   fetch(url, { headers:{ 'Accept':'application/json' } })
@@ -1727,6 +1739,10 @@ window.rzPosicionar=function(id){
 
 /* ---------- otimizar ---------- */
 window.rzOtimizar=function(){
+  if(rzGAtivo() && rzGOtimizar()) return;
+  rzOtimizarLocal();
+};
+function rzOtimizarLocal(){
   var base=rzBase(), com=rzPontos.filter(function(p){ return p.lat!=null; }), sem=rzPontos.filter(function(p){ return p.lat==null; });
   if(com.length<2){ alert('Precisa de pelo menos 2 pontos localizados no mapa.'); return; }
   var volta=document.getElementById('rz-volta').checked && !!base;
@@ -1753,13 +1769,28 @@ window.rzOtimizar=function(){
   rzPontos=ord.concat(sem); rzMarcarSujo(); rzPintar(); rzDesenhar(true);
   var depois=rzTotais().km;
   var inf=document.getElementById('rz-msg');
-  if(inf) inf.textContent=antes>depois+0.05?('Ordem otimizada: '+antes.toFixed(1).replace('.',',')+' → '+depois.toFixed(1).replace('.',',')+' km estimados.'):'A ordem já estava boa.';
-};
+  if(inf){ inf.style.color='';
+    inf.textContent=(antes>depois+0.05?('Ordem otimizada: '+antes.toFixed(1).replace('.',',')+' → '+depois.toFixed(1).replace('.',',')+' km estimados.'):'A ordem já estava boa.')
+      +(rzGAtivo()?' Clique em 🛣 Traçar pelas ruas para ver o caminho e o km reais.':''); }
+}
 
 /* ---------- estimativas ---------- */
 function rzTotais(){
   var base=rzBase(), vel=rzNumCampo('rz-vel',28), par=rzNumCampo('rz-par',10);
   var s=rzVal('rz-saida')||'06:00', hs=s.split(':'), t=(+hs[0]||0)*60+(+hs[1]||0), t0=t;
+  if(typeof rzGRotaValida==='function' && rzGRotaValida()){
+    /* trecho k = seq[k] → seq[k+1], com seq = [fábrica] + pontos localizados + [fábrica se volta] */
+    var L=rzG.rota.legs, k=base?0:-1, kmR=0, linR=[];
+    rzPontos.forEach(function(p){
+      if(p.lat==null){ linR.push({ id:p.id, chegada:null, perna:null }); return; }
+      var perna=null;
+      if(k>=0 && L[k]){ perna=L[k].m/1000; kmR+=perna; t+=L[k].s/60; }
+      linR.push({ id:p.id, chegada:t, perna:perna });
+      t+=(p.paradaMin!=null?p.paradaMin:par); k++;
+    });
+    var kv=0; if(L[k]){ kv=L[k].m/1000; kmR+=kv; t+=L[k].s/60; }
+    return { km:kmR, min:t-t0, fim:t, lin:linR, kmVolta:kv, ruas:true };
+  }
   var km=0, ant=base, lin=[];
   rzPontos.forEach(function(p){
     var perna=null;
@@ -1785,7 +1816,15 @@ function rzPintar(){
   document.getElementById('rz-resumo').innerHTML=n
     ? '<b>'+n+'</b> ponto'+(n===1?'':'s')+(loc<n?' ('+(n-loc)+' sem local)':'')+' · <b>'+T.km.toFixed(1).replace('.',',')+' km</b> · <b>'+rzDur(T.min)+'</b>'
       +' · volta ~'+rzHora(T.fim)
+      +'<div style="font-size:11px;margin-top:3px;color:'+(T.ruas?'var(--green)':'var(--muted)')+'">'
+      +(T.ruas?'✓ km e horários pelas ruas (Google)':(rzGAtivo()?'Estimativa em linha reta — clique em 🛣 Traçar pelas ruas':'Estimativa em linha reta'))+'</div>'
     : 'Adicione endereços para montar a rota.';
+  var bt=document.getElementById('rz-tracar'); if(bt) bt.style.display=rzGAtivo()?'':'none';
+  var gs=document.getElementById('rz-gstatus');
+  if(gs) gs.innerHTML=rzGChave()
+      ? (rzG.estado==='falhou'?'<span style="color:var(--red)">Google: '+esc(rzG.erro)+'</span>':(rzGAtivo()?'<span style="color:var(--green)">Google Maps ativo</span>':'Google: carregando…'))
+        +(podeConfig?' <button class="btn btn-sm btn-ghost" onclick="rzConfigGoogle()">Chave</button>':'')
+      : (podeConfig?'Mapa gratuito (OpenStreetMap). <button class="btn btn-sm btn-ghost" onclick="rzConfigGoogle()">Usar Google Maps</button>':'');
   el.innerHTML=rzPontos.map(function(p,i){
     var L=T.lin[i]||{}, st=RZ_ST[p.status]||RZ_ST.ok;
     return '<div class="rz-item'+(p.status==='erro'?' erro':'')+(rzPosicionando===p.id?' pos':'')+'">'
@@ -1808,6 +1847,17 @@ function rzIcone(L, txt, cor, cls){
 }
 function rzDesenhar(enquadrar){
   if(pagina!=='roteirizar') return;
+  if(rzGChave() && rzG.estado!=='falhou'){
+    rzGCarregar().then(function(){
+      if(rzMapa){ rzMapa.remove(); rzMapa=null; rzCamada=null; }
+      if(!rzG._pintou){ rzG._pintou=true; rzPintar(); }
+      rzGDesenhar(enquadrar);
+    }).catch(function(){ rzDesenharLeaflet(enquadrar); });
+    return;
+  }
+  rzDesenharLeaflet(enquadrar);
+}
+function rzDesenharLeaflet(enquadrar){
   rtCarregarLeaflet().then(function(L){
     if(!rzMapa){
       rzMapa=L.map(document.getElementById('rz-mapa')).setView([-30.03,-51.2], 11);
@@ -1928,7 +1978,7 @@ function rzPintarDias(){
 window.rzDia=function(d){ var i=rzDias.indexOf(d); if(i>=0) rzDias.splice(i,1); else rzDias.push(d); rzMarcarSujo(); rzPintarDias(); };
 window.rzNova=function(){
   if(rzSujo && rzPontos.length && !confirm('A rota aberta tem mudanças não salvas. Descartar?')) { rzListar(); return; }
-  rzAberta=''; rzPontos=[]; rzDias=[]; rzFila=[];
+  rzAberta=''; rzPontos=[]; rzDias=[]; rzFila=[]; rzG.rota=null;
   document.getElementById('rz-nome').value='';
   document.getElementById('rz-salvas').value='';
   rzSujo=false; document.getElementById('rz-salvar').textContent='💾 Salvar';
@@ -1940,6 +1990,7 @@ window.rzAbrir=function(id){
   if(rzSujo && rzPontos.length && !confirm('A rota aberta tem mudanças não salvas. Descartar?')){ document.getElementById('rz-salvas').value=rzAberta; return; }
   var r=rzSalvas.filter(function(x){ return x.firestoreId===id; })[0]; if(!r) return;
   rzAberta=id; rzPontos=(r.pontos||[]).map(function(p){ return Object.assign({}, p); }); rzDias=(r.dias||[]).slice(); rzFila=[];
+  rzG.rota=r.rotaRuas||null;
   document.getElementById('rz-nome').value=r.nome||'';
   if(r.saida) document.getElementById('rz-saida').value=r.saida;
   if(r.paradaMin) document.getElementById('rz-par').value=r.paradaMin;
@@ -1960,7 +2011,8 @@ window.rzSalvar=function(){
     saida:rzVal('rz-saida')||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28),
     pontos:rzPontos.map(function(p){ return { id:p.id, nome:p.nome||'', endereco:p.endereco, lat:p.lat, lng:p.lng,
       status:(p.status==='fila'||p.status==='buscando')?'erro':p.status, paradaMin:p.paradaMin!=null?p.paradaMin:null }; }),
-    kmEstimado:+T.km.toFixed(1), minEstimado:Math.round(T.min),
+    kmEstimado:+T.km.toFixed(1), minEstimado:Math.round(T.min), kmPelasRuas:!!T.ruas,
+    rotaRuas:rzGRotaValida()?rzG.rota:null,
     atualizadoEm:agora(), atualizadoPor:sessaoEmail };
   var b=document.getElementById('rz-salvar'); b.disabled=true; b.textContent='Salvando…';
   var pr;
@@ -1979,6 +2031,219 @@ window.rzApagar=function(){
     .catch(function(e){ alert('Não foi possível apagar: '+(e.code||e.message)); });
 };
 window.rzParametros=function(){ rzMarcarSujo(); rzPintar(); rzDesenhar(false); };
+
+/* ===== ROTEIRIZAR — motor Google =====
+   Liga quando existe a chave em frotaConfig/app.googleMapsKey. Sem ela (ou
+   se o Google recusar a chave), a aba continua no OpenStreetMap de antes.
+   Regra do Google: conteúdo dos serviços dele só aparece num mapa DELE —
+   por isso, com a chave, o mapa desta aba inteiro vira Google Maps.
+   Custo sob controle:
+   - traçar pelas ruas e otimizar pelo Google só rodam no clique;
+   - o traçado fica guardado na rota salva (não recalcula ao reabrir);
+   - busca de endereço só para ponto novo ou endereço alterado.
+   Serviços usados: Maps JavaScript API (mapa e busca de endereço, via
+   Geocoder) e Routes API (computeRoutes). */
+var rzG={ estado:'', erro:'', mapa:null, objs:[], info:null, rota:null };
+/* rota = { sig, legs:[{m,s}], polys:[texto], km, min } — vale só enquanto sig bater */
+
+function rzGChave(){ return String((cfg && cfg.googleMapsKey) || '').trim(); }
+function rzGAtivo(){ return rzG.estado==='ok' && window.google && google.maps; }
+
+function rzGCarregar(){
+  var k=rzGChave();
+  if(!k) return Promise.reject(new Error('sem chave'));
+  if(rzG.estado==='ok') return Promise.resolve();
+  if(rzG.estado==='falhou') return Promise.reject(new Error(rzG.erro));
+  if(rzG._p) return rzG._p;
+  rzG.estado='carregando';
+  rzG._p=new Promise(function(ok, falhou){
+    window.__rzGPronto=function(){ rzG.estado='ok'; ok(); };
+    /* o Google chama esta função quando a chave é recusada (domínio, API desligada, cobrança) */
+    window.gm_authFailure=function(){
+      rzG.estado='falhou'; rzG.erro='O Google recusou a chave (confira: APIs ativadas, restrição de site e cobrança).';
+      falhou(new Error(rzG.erro)); rzMsg(rzG.erro, true); rzTrocarMotor();
+    };
+    var s=document.createElement('script');
+    s.src='https://maps.googleapis.com/maps/api/js?key='+encodeURIComponent(k)
+         +'&libraries=geometry&language=pt-BR&region=BR&loading=async&callback=__rzGPronto';
+    s.async=true;
+    s.onerror=function(){ rzG.estado='falhou'; rzG.erro='Não foi possível carregar o Google Maps (sem conexão?).'; falhou(new Error(rzG.erro)); };
+    document.head.appendChild(s);
+  });
+  return rzG._p;
+}
+function rzMsg(t, erro){ var e=document.getElementById('rz-msg'); if(e){ e.textContent=t||''; e.style.color=erro?'var(--red)':''; } }
+/* troca o conteúdo do quadro do mapa entre Leaflet e Google */
+function rzTrocarMotor(){
+  var box=document.getElementById('rz-mapa');
+  if(rzGAtivo()){ if(rzMapa){ rzMapa.remove(); rzMapa=null; rzCamada=null; } }
+  else if(rzG.mapa){ rzG.mapa=null; rzG.objs=[]; box.innerHTML=''; }
+  rzPintar(); rzDesenhar(true);
+}
+
+/* assinatura da sequência: mudou ponto, ordem, base ou volta → traçado antigo não vale */
+function rzSig(){
+  var b=rzBase(), v=document.getElementById('rz-volta');
+  return [(b?b.lat+','+b.lng:'-'), (v&&v.checked?'V':'-')].concat(rzPontos.filter(function(p){ return p.lat!=null; })
+    .map(function(p){ return p.lat+','+p.lng; })).join('|');
+}
+function rzGRotaValida(){ return !!(rzG.rota && rzG.rota.sig===rzSig()); }
+
+/* ---- busca de endereço ---- */
+function rzGGeocode(p, q){
+  return new Promise(function(ok){
+    new google.maps.Geocoder().geocode({ address:q, region:'br', componentRestrictions:{ country:'BR' } }, function(res, st){
+      if(st!=='OK' || !res || !res[0]){ p.status='erro'; ok(); return; }
+      var g=res[0].geometry, t=g.location_type;
+      p.lat=+g.location.lat().toFixed(6); p.lng=+g.location.lng().toFixed(6);
+      p.status=(t==='ROOFTOP'||t==='RANGE_INTERPOLATED')?'ok':'aprox';
+      if(res[0].formatted_address) p.enderecoGoogle=res[0].formatted_address;
+      rzMarcarSujo(); ok();
+    });
+  });
+}
+
+/* ---- rotas pelas ruas (Routes API) ---- */
+function rzGLL(p){ return { location:{ latLng:{ latitude:p.lat, longitude:p.lng } } }; }
+function rzGSeq(){
+  var base=rzBase(), ps=rzPontos.filter(function(p){ return p.lat!=null; }), v=document.getElementById('rz-volta');
+  return (base?[base]:[]).concat(ps).concat(base && v && v.checked ? [base] : []);
+}
+function rzGChamar(seq, otimizar){
+  var corpo={ origin:rzGLL(seq[0]), destination:rzGLL(seq[seq.length-1]),
+    intermediates:seq.slice(1,-1).map(rzGLL), travelMode:'DRIVE', routingPreference:'TRAFFIC_UNAWARE',
+    languageCode:'pt-BR', units:'METRIC' };
+  if(otimizar) corpo.optimizeWaypointOrder=true;
+  return fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'X-Goog-Api-Key':rzGChave(),
+      'X-Goog-FieldMask':'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.distanceMeters,routes.legs.duration,routes.optimizedIntermediateWaypointIndex' },
+    body:JSON.stringify(corpo)
+  }).then(function(r){
+    return r.json().then(function(d){
+      if(!r.ok) throw new Error((d && d.error && d.error.message) || ('HTTP '+r.status));
+      if(!d.routes || !d.routes[0]) throw new Error('o Google não achou caminho entre estes pontos');
+      return d.routes[0];
+    });
+  });
+}
+function rzGSeg(s){ return parseInt(String(s||'0').replace('s',''),10)||0; }
+/* traça a sequência atual, em blocos de até 25 paradas no meio (limite do Google) */
+window.rzTracar=function(){
+  if(!rzGAtivo()){ alert('O Google ainda não está ativo nesta aba.'); return; }
+  var seq=rzGSeq();
+  if(seq.length<2){ alert('Precisa de pelo menos 2 pontos localizados (ou a fábrica e 1 ponto).'); return; }
+  if(rzFila.length || rzBuscandoFila){ alert('Ainda estou procurando alguns endereços. Espere terminar.'); return; }
+  var MAX=25, blocos=[];
+  for(var i=0;i<seq.length-1;){ var f=Math.min(i+MAX+1, seq.length-1); blocos.push(seq.slice(i,f+1)); i=f; }
+  var sig=rzSig(), legs=[], polys=[];
+  rzMsg('Traçando pelas ruas…');
+  blocos.reduce(function(pr,b){
+    return pr.then(function(){ return rzGChamar(b,false).then(function(rt){
+      (rt.legs||[]).forEach(function(l){ legs.push({ m:l.distanceMeters||0, s:rzGSeg(l.duration) }); });
+      if(rt.polyline && rt.polyline.encodedPolyline) polys.push(rt.polyline.encodedPolyline);
+    }); });
+  }, Promise.resolve()).then(function(){
+    rzG.rota={ sig:sig, legs:legs, polys:polys,
+      km:legs.reduce(function(a,l){ return a+l.m; },0)/1000, min:legs.reduce(function(a,l){ return a+l.s; },0)/60 };
+    rzMarcarSujo(); rzMsg('Rota traçada pelas ruas: '+rzG.rota.km.toFixed(1).replace('.',',')+' km.');
+    rzPintar(); rzDesenhar(true);
+  }).catch(function(e){ console.error('routes:',e); rzMsg('Não foi possível traçar pelas ruas: '+(e.message||e), true); });
+};
+/* otimiza pelas ruas (até 25 paradas no meio, com a fábrica como início e fim) */
+function rzGOtimizar(){
+  var base=rzBase(), v=document.getElementById('rz-volta'), ps=rzPontos.filter(function(p){ return p.lat!=null; });
+  if(!base){ rzMsg('Para otimizar pelas ruas, defina o ponto de partida (a fábrica).', true); return false; }
+  if(ps.length>25 || !(v && v.checked)) return false;       /* fora do que o Google otimiza: usa o cálculo local */
+  var sem=rzPontos.filter(function(p){ return p.lat==null; }), seq=[base].concat(ps).concat([base]);
+  rzMsg('Otimizando pelas ruas…');
+  rzGChamar(seq,true).then(function(rt){
+    var idx=rt.optimizedIntermediateWaypointIndex||ps.map(function(_,i){ return i; });
+    var antes=rzTotais().km;
+    rzPontos=idx.map(function(i){ return ps[i]; }).concat(sem);
+    var legs=(rt.legs||[]).map(function(l){ return { m:l.distanceMeters||0, s:rzGSeg(l.duration) }; });
+    rzG.rota={ sig:rzSig(), legs:legs, polys:rt.polyline&&rt.polyline.encodedPolyline?[rt.polyline.encodedPolyline]:[],
+      km:(rt.distanceMeters||0)/1000, min:rzGSeg(rt.duration)/60 };
+    rzMarcarSujo(); rzPintar(); rzDesenhar(true);
+    rzMsg('Ordem otimizada pelas ruas: '+rzG.rota.km.toFixed(1).replace('.',',')+' km'+(antes?' (a estimativa anterior era '+antes.toFixed(1).replace('.',',')+' km)':'')+'.');
+  }).catch(function(e){ console.error('routes/otimizar:',e); rzMsg('O Google não otimizou ('+(e.message||e)+') — usei o cálculo local.', true); rzOtimizarLocal(); });
+  return true;
+}
+
+/* ---- mapa ---- */
+function rzGSimbolo(cor){ return { path:google.maps.SymbolPath.CIRCLE, scale:12, fillColor:cor, fillOpacity:1, strokeColor:'#fff', strokeWeight:2 }; }
+function rzGDesenhar(enquadrar){
+  var box=document.getElementById('rz-mapa');
+  if(!rzG.mapa){
+    box.innerHTML='';
+    rzG.mapa=new google.maps.Map(box, { center:{ lat:-30.03, lng:-51.2 }, zoom:11, gestureHandling:'greedy',
+      mapTypeControl:true, streetViewControl:false, fullscreenControl:true, clickableIcons:false });
+    rzG.info=new google.maps.InfoWindow();
+    rzG.mapa.addListener('click', function(e){
+      if(!rzPosicionando) return;
+      var p=rzPontos.filter(function(x){ return x.id===rzPosicionando; })[0];
+      if(p){ p.lat=+e.latLng.lat().toFixed(6); p.lng=+e.latLng.lng().toFixed(6); p.status='manual'; rzMarcarSujo(); }
+      rzPosicionando=''; rzPintar(); rzDesenhar(false);
+    });
+  }
+  rzG.objs.forEach(function(o){ o.setMap(null); }); rzG.objs=[];
+  var cor=getComputedStyle(document.documentElement).getPropertyValue('--primary').trim()||'#2fae7d';
+  var bounds=new google.maps.LatLngBounds(), tem=false, base=rzBase();
+  function pop(m, html){ m.addListener('click', function(){ rzG.info.setContent('<div class="rt-pop">'+html+'</div>'); rzG.info.open({ map:rzG.mapa, anchor:m }); }); }
+  if(base){
+    var mb=new google.maps.Marker({ position:{ lat:base.lat, lng:base.lng }, map:rzG.mapa, draggable:!!podeConfig, zIndex:900,
+      icon:{ path:'M -11,-11 11,-11 11,11 -11,11 z', fillColor:'#343a40', fillOpacity:1, strokeColor:'#fff', strokeWeight:2, scale:1 },
+      label:{ text:'F', color:'#fff', fontWeight:'700', fontSize:'12px' }, title:'Saída: '+(base.nome||'Fábrica') });
+    mb.addListener('dragend', function(ev){
+      if(confirm('Mover o ponto de partida ('+(base.nome||'Fábrica')+') para cá?'))
+        rzSalvarBase(Object.assign({}, base, { lat:+ev.latLng.lat().toFixed(6), lng:+ev.latLng.lng().toFixed(6) }), false);
+      else rzDesenhar(false);
+    });
+    pop(mb, '<b>'+esc(base.nome||'Fábrica')+'</b><br>'+esc(base.endereco||''));
+    rzG.objs.push(mb); bounds.extend(mb.getPosition()); tem=true;
+  }
+  var reta=base?[{ lat:base.lat, lng:base.lng }]:[];
+  rzPontos.forEach(function(p,i){
+    if(p.lat==null) return;
+    var m=new google.maps.Marker({ position:{ lat:p.lat, lng:p.lng }, map:rzG.mapa, draggable:true, zIndex:1000+i,
+      icon:rzGSimbolo(p.status==='aprox'?'#e67700':cor), label:{ text:String(i+1), color:'#fff', fontWeight:'700', fontSize:'11px' },
+      title:(i+1)+'. '+(p.nome||p.endereco) });
+    m.addListener('dragend', function(ev){ p.lat=+ev.latLng.lat().toFixed(6); p.lng=+ev.latLng.lng().toFixed(6); p.status='manual'; rzMarcarSujo(); rzPintar(); rzDesenhar(false); });
+    pop(m, '<b>'+(i+1)+'. '+esc(p.nome||p.endereco)+'</b>'+(p.nome?'<br>'+esc(p.endereco):'')
+      +(p.status==='aprox'?'<br><span style="color:#e67700">≈ posição aproximada — arraste o pino se precisar</span>':''));
+    rzG.objs.push(m); bounds.extend(m.getPosition()); tem=true; reta.push({ lat:p.lat, lng:p.lng });
+  });
+  var v=document.getElementById('rz-volta');
+  if(v && v.checked && base && reta.length>1) reta.push({ lat:base.lat, lng:base.lng });
+  if(rzGRotaValida()){
+    rzG.rota.polys.forEach(function(enc){
+      var caminho=google.maps.geometry.encoding.decodePath(enc);
+      rzG.objs.push(new google.maps.Polyline({ path:caminho, map:rzG.mapa, strokeColor:cor, strokeOpacity:.9, strokeWeight:5 }));
+      caminho.forEach(function(ll){ bounds.extend(ll); });
+    });
+  } else if(reta.length>1){
+    /* ainda não traçada pelas ruas: linha reta tracejada, só para ver a ordem */
+    rzG.objs.push(new google.maps.Polyline({ path:reta, map:rzG.mapa, strokeOpacity:0,
+      icons:[{ icon:{ path:'M 0,-1 0,1', strokeOpacity:.8, strokeColor:cor, scale:3 }, offset:'0', repeat:'14px' }] }));
+  }
+  if(enquadrar && tem) rzG.mapa.fitBounds(bounds, 40);
+}
+
+/* ---- chave ---- */
+window.rzConfigGoogle=function(){
+  if(!podeConfig){ alert('Só quem configura a frota pode mexer nisso.'); return; }
+  var k=rzGChave();
+  modal({ titulo:'Google Maps', sub:'Chave da conta Google Cloud da empresa',
+    body:'<div class="fld"><label>Chave (API key)</label><input id="rz-g-key" value="'+esc(k)+'" placeholder="AIza…" autocomplete="off"></div>'
+      +'<div style="font-size:11.5px;color:var(--muted);line-height:1.55">A chave fica visível para quem usa o app — por isso ela precisa estar <b>restrita ao site monte-castelo-ind.github.io</b> '
+      +'e às APIs usadas (Maps JavaScript, Routes e Geocoding) no Google Cloud. Deixe vazio e salve para voltar ao mapa gratuito.</div>',
+    ok:'Salvar', onOk:function(){
+      var nova=String(document.getElementById('rz-g-key').value||'').trim();
+      setDoc(doc(dbC,'frotaConfig','app'), { googleMapsKey:nova, atualizadoEm:agora(), atualizadoPor:sessaoEmail }, { merge:true })
+        .then(function(){ fecharModal(); cfg.googleMapsKey=nova; alert('Salvo. A página vai recarregar para ativar.'); location.reload(); })
+        .catch(function(e){ alert('Não foi possível salvar: '+(e.code||e.message)); });
+    } });
+};
 
 function renderRoteirizar(){
   if(!rzListou){ rzListar(); rzPintarDias(); }
@@ -5700,6 +5965,7 @@ function liberar(d){
       ['oleoKm','oleoMeses','revisaoKm','revisaoMeses','diasAviso','kmParadoDias','desvioPct'].forEach(function(k){ if(dd[k]!=null) cfg[k]=num(dd[k]); });
       if(Array.isArray(dd.tipos)) cfg.tipos=dd.tipos;
       if(dd.baseRota && dd.baseRota.lat!=null) cfg.baseRota=dd.baseRota;
+      if(typeof dd.googleMapsKey==='string') cfg.googleMapsKey=dd.googleMapsKey;
     }
     render();
   });
