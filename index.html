@@ -1651,38 +1651,109 @@ function rzMarcarSujo(){ rzSujo=true; var b=document.getElementById('rz-salvar')
 
 /* ---------- busca de endereço (fila de 1 por segundo) ---------- */
 function rzBuscar(p){ p.status='fila'; rzFila.push(p.id); rzPintar(); rzRodarFila(); }
+/* ---------- entender o que foi colado ----------
+   Link do Google Maps (como o Cobli manda) ou "lat, lng" solto: a coordenada
+   já é exata — só se busca o endereço do ponto, para o nome ficar legível.
+   Endereço no formato do Google ("Rua X, 123 - Bairro, Cidade - RS, CEP,
+   Brasil"): o Google entende direto; o serviço gratuito tenta em etapas,
+   do mais completo ao só-cidade, e marca como aproximado quando cai no CEP
+   ou na cidade. */
+function rzCoordsDoTexto(t){
+  var s=String(t||''); try{ s=decodeURIComponent(s); }catch(e){}
+  var m=s.match(/(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})/);
+  if(!m) return null;
+  var la=+m[1], lo=+m[2];
+  if(la<-34.5||la>5.5||lo<-74||lo>-28) return null;          /* fora do Brasil: não é coordenada de cliente */
+  return { lat:+la.toFixed(6), lng:+lo.toFixed(6) };
+}
+function rzEhLinkCurto(t){ return /maps\.app\.goo\.gl|goo\.gl\/maps/i.test(String(t||'')); }
+function rzVariantes(end){
+  var s=String(end||'').replace(/\s+/g,' ').trim();
+  var cep=s.match(/\b(\d{5})-?(\d{3})\b/), cepTxt=cep?cep[1]+'-'+cep[2]:'';
+  var limpo=s.replace(/,?\s*brasil\s*$/i,'').replace(/\b\d{5}-?\d{3}\b/,'')
+             .replace(/\s+-\s+/g,', ').replace(/(\s*,\s*)+/g,', ').replace(/^,\s*|\s*,\s*$/g,'').trim();
+  var partes=limpo.split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+  var iUF=-1; partes.forEach(function(x,i){ if(/^(rs|rio grande do sul)$/i.test(x)) iUF=i; });
+  var cidade=iUF>0?partes[iUF-1]:(partes.length>1?partes[partes.length-1]:'');
+  var rua=partes[0]||'', num=(partes[1] && /^\d+[a-z]?$/i.test(partes[1]))?partes[1]:'';
+  var v=[{ q:limpo+(iUF<0?', RS':'')+', Brasil', aprox:false }];
+  if(rua && cidade && rua!==cidade) v.push({ q:rua+(num?', '+num:'')+', '+cidade+', RS, Brasil', aprox:false });
+  if(cepTxt) v.push({ cep:cepTxt, aprox:true });
+  if(cidade) v.push({ q:cidade+', RS, Brasil', aprox:true });
+  var vistos={}; return v.filter(function(x){ var k=x.q||('cep'+x.cep); if(vistos[k]) return false; vistos[k]=1; return true; });
+}
+function rzNomeReverso(a){
+  if(!a) return '';
+  var rua=[a.road||a.pedestrian||a.highway||'', a.house_number||''].filter(Boolean).join(', ');
+  return [rua, a.suburb||a.neighbourhood||a.hamlet||'', a.city||a.town||a.village||a.municipality||''].filter(Boolean).join(' - ');
+}
+function rzFimBusca(espera){
+  rzPintar(); rzDesenhar(false);
+  setTimeout(function(){ rzBuscandoFila=false; rzRodarFila(); }, espera);
+}
 function rzRodarFila(){
   if(rzBuscandoFila) return;
+  /* há chave do Google e ele ainda está carregando: espera, senão a busca iria para o serviço gratuito */
+  if(rzGChave() && rzG.estado!=='ok' && rzG.estado!=='falhou'){
+    if(!rzG._esperando){ rzG._esperando=true; rzGCarregar().catch(function(){}).then(function(){ rzG._esperando=false; rzRodarFila(); }); }
+    return;
+  }
   var id=rzFila.shift(); if(!id) return;
   var p=rzPontos.filter(function(x){ return x.id===id; })[0];
   if(!p){ rzRodarFila(); return; }
   rzBuscandoFila=true; p.status='buscando'; rzPintar();
-  var q=p.endereco;
-  if(!/\bRS\b|rio grande do sul|brasil/i.test(q)) q+=', RS, Brasil';
-  if(rzGAtivo()){
-    rzGGeocode(p, q).then(function(){
-      rzPintar(); rzDesenhar(false);
-      setTimeout(function(){ rzBuscandoFila=false; rzRodarFila(); }, 250);
-    });
+
+  /* ponto que veio com coordenada: só o nome do lugar */
+  if(p.modo==='reverso'){
+    p.modo=null; p.status='ok';
+    if(rzGAtivo()){
+      new google.maps.Geocoder().geocode({ location:{ lat:p.lat, lng:p.lng } }, function(res, st){
+        if(st==='OK' && res && res[0]) p.endereco=res[0].formatted_address.replace(/,\s*Brasil$/i,'');
+        rzFimBusca(250);
+      });
+      return;
+    }
+    fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=pt-BR&lat='+p.lat+'&lon='+p.lng)
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(d){ var n=d&&rzNomeReverso(d.address); if(n) p.endereco=n; })
+      .catch(function(){})
+      .then(function(){ rzFimBusca(1100); });
     return;
   }
-  var url='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&accept-language=pt-BR'
-        +'&viewbox=-57.7,-27.0,-49.6,-33.8&q='+encodeURIComponent(q);
-  fetch(url, { headers:{ 'Accept':'application/json' } })
-    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-    .then(function(res){
-      var a=res&&res[0];
-      if(!a){ p.status='erro'; return; }
-      p.lat=+(+a.lat).toFixed(6); p.lng=+(+a.lon).toFixed(6);
-      var t=String(a.addresstype||a.type||'');
-      p.status=/^(house|building|amenity|shop|office|industrial|commercial|retail|house_number)$/.test(t)?'ok':'aprox';
-      rzMarcarSujo();
-    })
-    .catch(function(e){ console.warn('nominatim:',e); p.status='erro'; })
-    .then(function(){
-      rzPintar(); rzDesenhar(false);
-      setTimeout(function(){ rzBuscandoFila=false; rzRodarFila(); }, 1100);   /* regra de uso: 1 por segundo */
-    });
+
+  var vs=rzVariantes(p.endereco);
+  if(rzGAtivo()){
+    /* Google: o endereço como veio; se não achar, a cidade (aproximado) */
+    var gc=new google.maps.Geocoder(), tentativas=[{ q:p.endereco, aprox:false }].concat(vs.filter(function(v){ return v.q && v.aprox; }));
+    (function tenta(i){
+      if(i>=tentativas.length){ p.status='erro'; rzFimBusca(250); return; }
+      gc.geocode({ address:tentativas[i].q, region:'br', componentRestrictions:{ country:'BR' } }, function(res, st){
+        if(st!=='OK' || !res || !res[0]){ tenta(i+1); return; }
+        var g=res[0].geometry, t=g.location_type;
+        p.lat=+g.location.lat().toFixed(6); p.lng=+g.location.lng().toFixed(6);
+        p.status=(!tentativas[i].aprox && (t==='ROOFTOP'||t==='RANGE_INTERPOLATED'))?'ok':'aprox';
+        rzMarcarSujo(); rzFimBusca(250);
+      });
+    })(0);
+    return;
+  }
+  /* serviço gratuito: uma tentativa por segundo (regra de uso), da mais completa à só-cidade */
+  (function tenta(i){
+    if(i>=vs.length){ p.status='erro'; rzFimBusca(1100); return; }
+    var v=vs[i], base='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&accept-language=pt-BR&viewbox=-57.7,-27.0,-49.6,-33.8';
+    var url=v.cep?base+'&postalcode='+encodeURIComponent(v.cep):base+'&q='+encodeURIComponent(v.q);
+    fetch(url, { headers:{ 'Accept':'application/json' } })
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(function(res){
+        var a=res&&res[0];
+        if(!a){ setTimeout(function(){ tenta(i+1); }, 1100); return; }
+        p.lat=+(+a.lat).toFixed(6); p.lng=+(+a.lon).toFixed(6);
+        var t=String(a.addresstype||a.type||'');
+        p.status=(!v.aprox && /^(house|building|amenity|shop|office|industrial|commercial|retail|house_number)$/.test(t))?'ok':'aprox';
+        rzMarcarSujo(); rzFimBusca(1100);
+      })
+      .catch(function(e){ console.warn('nominatim:',e); p.status='erro'; rzFimBusca(1100); });
+  })(0);
 }
 
 /* ---------- pontos ---------- */
@@ -1695,12 +1766,23 @@ function rzNovoPonto(linha){
   var nome='', end=linha, m=linha.split(/\t|;/);
   if(m.length>=2 && m[0].trim() && m.slice(1).join(' ').trim()){ nome=m[0].trim(); end=m.slice(1).join(' ').trim(); }
   var p={ id:rzId(), nome:nome, endereco:end, lat:null, lng:null, status:'fila' };
+  var c=rzCoordsDoTexto(end);
+  if(c){
+    p.lat=c.lat; p.lng=c.lng; p.modo='reverso';
+    p.endereco='Ponto '+String(c.lat).replace('.',',')+' / '+String(c.lng).replace('.',',');
+  }else if(rzEhLinkCurto(end)){
+    /* link encurtado (maps.app.goo.gl) não dá para abrir daqui: não traz a coordenada no texto */
+    p.status='erro'; p.endereco=end;
+    p.nome=p.nome||'Link curto do Google — abra, copie o link completo e cole de novo';
+    rzPontos.push(p); rzMarcarSujo(); rzPintar(); return;
+  }
   rzPontos.push(p); rzMarcarSujo(); rzBuscar(p);
 }
 window.rzColar=function(){
   modal({ titulo:'Colar lista de endereços',
-    body:'<div class="fld"><label>Um ponto por linha. Com nome do cliente: <b>Nome ; Endereço</b> (ou colado de planilha, nome e endereço em colunas)</label>'
-      +'<textarea id="rz-cola" rows="10" placeholder="Mercado Bom Preço ; Av. Assis Brasil, 2000, Porto Alegre\nRua Voluntários da Pátria, 500, Porto Alegre"></textarea></div>'
+    body:'<div class="fld"><label>Um ponto por linha: <b>endereço</b>, <b>link do Google Maps</b> (como o Cobli manda) ou <b>coordenada</b>. '
+      +'Com nome do cliente: <b>Nome ; Endereço</b> (ou colado de planilha, nome e endereço em colunas)</label>'
+      +'<textarea id="rz-cola" rows="10" placeholder="Mercado Bom Preço ; Av. Assis Brasil, 2000, Porto Alegre\nRua Olavo Bilac, 1445 - Centro, Montenegro - RS, 92510-305, Brasil\nhttps://www.google.com/maps/search/?api=1&amp;query=-29.66983%2c-51.45477"></textarea></div>'
       +'<div style="font-size:11.5px;color:var(--muted)">Os endereços são procurados um por segundo (regra do serviço de mapas) — uma lista de 30 leva uns 30 segundos.</div>',
     ok:'Adicionar', onOk:function(){
       var ls=String((document.getElementById('rz-cola')||{}).value||'').split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
