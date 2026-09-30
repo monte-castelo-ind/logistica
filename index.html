@@ -488,9 +488,12 @@ html[data-pal="vinho"][data-theme="light"]{
 .rt-cor{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:6px}
 #rt-tab tr.off td{opacity:.45}
 #rt-tab input[type=checkbox]{width:auto;accent-color:var(--primary);vertical-align:-2px}
-.rt-pop{font:13px/1.45 Archivo,system-ui,sans-serif;min-width:170px}
-.rt-pop b{font-size:13.5px}
-.rt-pop a{color:#2a7bd6}
+.rt-pop{font:14px/1.5 Archivo,system-ui,sans-serif;min-width:190px;max-width:300px;color:#202124}
+.rt-pop b{font-size:14.5px;color:#111;font-weight:700}
+.rt-pop a{color:#1a73e8;font-weight:600}
+.gm-style .gm-style-iw-c{padding:12px 14px!important}
+.rz-num{cursor:pointer}
+.rz-num:hover{outline:2px solid var(--text);outline-offset:1px}
 @media(max-width:600px){ .rt-mapa{height:52vh;min-height:280px} }
 
 /* ===== Roteirizar ===== */
@@ -1834,6 +1837,27 @@ window.rzEditar=function(id){
       if(mudou){ p.lat=p.lng=null; rzBuscar(p); } else { rzPintar(); rzDesenhar(false); }
     } });
 };
+/* clique no número da lista: leva o mapa até o ponto e abre o balão dele */
+var rzLMk={};
+window.rzFocar=function(id){
+  var p=rzPontos.filter(function(x){ return x.id===id; })[0]; if(!p) return;
+  if(p.lat==null){ rzMsg('Este ponto ainda não está no mapa — use 📍 para posicionar.', true); return; }
+  var chave=rzEhSede(p)?'base':id;
+  var box=document.getElementById('rz-mapa');
+  if(window.innerWidth<900) box.scrollIntoView({ behavior:'smooth', block:'start' });
+  if(rzGAtivo() && rzG.mapa){
+    var k=rzG.mk && rzG.mk[chave];
+    rzG.mapa.panTo(k?k.m.getPosition():{ lat:p.lat, lng:p.lng });
+    if(rzG.mapa.getZoom()<15) rzG.mapa.setZoom(15);
+    if(k) k.abrir();
+    return;
+  }
+  if(rzMapa){
+    var mk=rzLMk[chave];
+    rzMapa.setView(mk?mk.getLatLng():[p.lat,p.lng], Math.max(rzMapa.getZoom(),15));
+    if(mk) mk.openPopup();
+  }
+};
 window.rzPosicionar=function(id){
   rzPosicionando=(rzPosicionando===id)?'':id; rzPintar();
   if(rzPosicionando) document.getElementById('rz-mapa').scrollIntoView({ behavior:'smooth', block:'nearest' });
@@ -1938,7 +1962,7 @@ function rzPintar(){
     var L=T.lin[i]||{}, st=RZ_ST[p.status]||RZ_ST.ok, sede=rzEhSede(p);
     if(sede) st=['⌂','É a sede — início/fim da rota, não conta como parada'];
     return '<div class="rz-item'+(p.status==='erro'?' erro':'')+(sede?' sede':'')+(rzPosicionando===p.id?' pos':'')+'">'
-      + '<div class="rz-num">'+(sede?'⌂':(NUM[p.id]||'?'))+'</div>'
+      + '<div class="rz-num" onclick="rzFocar(\''+p.id+'\')" title="Ver no mapa">'+(sede?'⌂':(NUM[p.id]||'?'))+'</div>'
       + '<div class="rz-info"><div class="rz-t">'+esc(p.nome||p.endereco)+'</div>'
       +   (p.nome?'<div class="rz-s">'+esc(p.endereco)+'</div>':'')
       +   '<div class="rz-s"><span class="rz-st st-'+p.status+'" title="'+esc(st[1])+'">'+st[0]+' '+esc(st[1].split(' — ')[0])+'</span>'
@@ -1982,7 +2006,7 @@ function rzDesenharLeaflet(enquadrar){
       });
     }
     setTimeout(function(){ rzMapa.invalidateSize(); }, 60);
-    rzCamada.clearLayers();
+    rzCamada.clearLayers(); rzLMk={};
     var base=rzBaseRota(), pts=[], cor=getComputedStyle(document.documentElement).getPropertyValue('--primary').trim()||'#2fae7d', NUM=rzNumeros();
     if(base){
       pts.push([base.lat,base.lng]);
@@ -1994,6 +2018,7 @@ function rzDesenharLeaflet(enquadrar){
           else rzDesenhar(false);
         })
         .bindPopup('<div class="rt-pop"><b>'+esc(base.nome||'Fábrica')+'</b><br>'+esc(base.endereco||'')+'</div>').addTo(rzCamada);
+      rzLMk.base=rzCamada.getLayers()[rzCamada.getLayers().length-1];
     }
     var linha=base?[[base.lat,base.lng]]:[];
     rzPontos.forEach(function(p,i){
@@ -2004,8 +2029,9 @@ function rzDesenharLeaflet(enquadrar){
       L.marker([p.lat,p.lng], { icon:rzIcone(L,String(nn),c), draggable:true, title:p.nome||p.endereco })
         .on('dragend', function(ev){ var ll=ev.target.getLatLng(); p.lat=+ll.lat.toFixed(6); p.lng=+ll.lng.toFixed(6); p.status='manual'; rzMarcarSujo(); rzPintar(); rzDesenhar(false); })
         .bindPopup('<div class="rt-pop"><b>'+nn+'. '+esc(p.nome||p.endereco)+'</b>'+(p.nome?'<br>'+esc(p.endereco):'')
-          +(p.status==='aprox'?'<br><span style="color:#e67700">≈ posição aproximada — arraste o pino se precisar</span>':'')+'</div>')
+          +(p.status==='aprox'?'<br><span style="color:#b35c00">≈ posição aproximada — arraste o pino se precisar</span>':'')+'</div>')
         .addTo(rzCamada);
+      rzLMk[p.id]=rzCamada.getLayers()[rzCamada.getLayers().length-1];
     });
     if(rzVolta() && linha.length>1) linha.push([base.lat,base.lng]);
     if(linha.length>2) L.polyline(linha.slice(0,-1), { color:cor, weight:3.5, opacity:.8, dashArray:'6 6' }).addTo(rzCamada);
@@ -2298,10 +2324,14 @@ function rzGDesenhar(enquadrar){
       rzPosicionando=''; rzPintar(); rzDesenhar(false);
     });
   }
-  rzG.objs.forEach(function(o){ o.setMap(null); }); rzG.objs=[];
+  rzG.objs.forEach(function(o){ o.setMap(null); }); rzG.objs=[]; rzG.mk={};
   var cor=getComputedStyle(document.documentElement).getPropertyValue('--primary').trim()||'#2fae7d';
   var bounds=new google.maps.LatLngBounds(), tem=false, base=rzBaseRota(), NUM=rzNumeros();
-  function pop(m, html){ m.addListener('click', function(){ rzG.info.setContent('<div class="rt-pop">'+html+'</div>'); rzG.info.open({ map:rzG.mapa, anchor:m }); }); }
+  function pop(m, html, chave){
+    var abrir=function(){ rzG.info.setContent('<div class="rt-pop">'+html+'</div>'); rzG.info.open({ map:rzG.mapa, anchor:m }); };
+    m.addListener('click', abrir);
+    if(chave) rzG.mk[chave]={ m:m, abrir:abrir };
+  }
   if(base){
     var mb=new google.maps.Marker({ position:{ lat:base.lat, lng:base.lng }, map:rzG.mapa, draggable:!!podeConfig, zIndex:900,
       icon:{ path:'M -11,-11 11,-11 11,11 -11,11 z', fillColor:'#343a40', fillOpacity:1, strokeColor:'#fff', strokeWeight:2, scale:1 },
@@ -2311,7 +2341,7 @@ function rzGDesenhar(enquadrar){
         rzSalvarBase(Object.assign({}, base, { lat:+ev.latLng.lat().toFixed(6), lng:+ev.latLng.lng().toFixed(6) }), false);
       else rzDesenhar(false);
     });
-    pop(mb, '<b>'+esc(base.nome||'Fábrica')+'</b><br>'+esc(base.endereco||''));
+    pop(mb, '<b>'+esc(base.nome||'Fábrica')+'</b><br>'+esc(base.endereco||''), 'base');
     rzG.objs.push(mb); bounds.extend(mb.getPosition()); tem=true;
   }
   var reta=base?[{ lat:base.lat, lng:base.lng }]:[];
@@ -2323,18 +2353,21 @@ function rzGDesenhar(enquadrar){
       title:nn+'. '+(p.nome||p.endereco) });
     m.addListener('dragend', function(ev){ p.lat=+ev.latLng.lat().toFixed(6); p.lng=+ev.latLng.lng().toFixed(6); p.status='manual'; rzMarcarSujo(); rzPintar(); rzDesenhar(false); });
     pop(m, '<b>'+nn+'. '+esc(p.nome||p.endereco)+'</b>'+(p.nome?'<br>'+esc(p.endereco):'')
-      +(p.status==='aprox'?'<br><span style="color:#e67700">≈ posição aproximada — arraste o pino se precisar</span>':''));
+      +(p.status==='aprox'?'<br><span style="color:#b35c00">≈ posição aproximada — arraste o pino se precisar</span>':''), p.id);
     rzG.objs.push(m); bounds.extend(m.getPosition()); tem=true; reta.push({ lat:p.lat, lng:p.lng });
   });
   if(rzVolta() && reta.length>1) reta.push({ lat:base.lat, lng:base.lng });
   /* o ÚLTIMO trecho sai em azul: é a volta (último cliente → fábrica, ou
      penúltimo → último ponto sem volta). Assim ida e volta não se confundem. */
   var AZUL='#1a73e8';
-  var porTrecho=rzGRotaValida() && rzG.rota.legs.length && rzG.rota.legs.every(function(l){ return !!l.p; });
+  /* trecho de zero km (ponto repetido, ou a sede na lista) vem sem desenho: é pulado,
+     e o azul vai para o último trecho que tem caminho de verdade */
+  var porTrecho=rzGRotaValida() && rzG.rota.legs.some(function(l){ return !!l.p; });
   if(porTrecho){
-    var nL=rzG.rota.legs.length;
+    var ultK=-1; rzG.rota.legs.forEach(function(l,k){ if(l.p) ultK=k; });
     rzG.rota.legs.forEach(function(l,k){
-      var caminho=google.maps.geometry.encoding.decodePath(l.p), ult=(k===nL-1);
+      if(!l.p) return;
+      var caminho=google.maps.geometry.encoding.decodePath(l.p), ult=(k===ultK);
       rzG.objs.push(new google.maps.Polyline({ path:caminho, map:rzG.mapa, strokeColor:ult?AZUL:cor, strokeOpacity:.9, strokeWeight:5, zIndex:ult?2:1 }));
       caminho.forEach(function(ll){ bounds.extend(ll); });
     });
@@ -5046,16 +5079,16 @@ window.salvarConversao=function(){
     nome: nome,
     em: agora(),
     por: sessaoEmail,
-    docs: cxDocs,
-    manual: cxManual,
-    naoVai: cxNaoVai,
+    docs: cxLimpo(cxDocs),
+    manual: cxLimpo(cxManualParaGravar()),
+    naoVai: cxLimpo(cxNaoVai),
     resumo: { total:R.total, autoCx:R.autoCx, manualCx:R.manualCx,
               totalGeral:R.totalGeral, soltos:R.soltosFinal, produtos:R.linhas.length }
   })
   .then(function(){ alert('Conversão salva.'); })
   .catch(function(e){
     console.error('caixas/salvarConversao:', e);
-    alert('Não foi possível salvar: '+(e.code||e.message));
+    alert('Não foi possível salvar: '+(e.code||'')+(e.message?'\n\n'+e.message:''));
   });
 };
 
@@ -5070,7 +5103,7 @@ window.abrirConversao=function(id){
   cxConvAberta=id;
   cxDocs=(c.docs||[]).map(function(d){ return d; });
   cxSeq=cxDocs.reduce(function(a,d){ return Math.max(a, d.id||0); },0);
-  cxManual=(c.manual && c.manual.caixas) ? c.manual : {caixas:[], atual:[]};
+  cxManual=cxManualDeGravado(c.manual);
   cxNaoVai=c.naoVai || {};
   cxMsg='';
   var j;
@@ -5270,7 +5303,7 @@ window.enviarProdulog=function(){
   passo
   /* 2. grava a conversão com o vínculo, antes de tocar no Produlog */
   .then(function(){
-    var dados={ docs:cxDocs, manual:cxManual, naoVai:cxNaoVai, resumo:cxResumo(R),
+    var dados={ docs:cxLimpo(cxDocs), manual:cxLimpo(cxManualParaGravar()), naoVai:cxLimpo(cxNaoVai), resumo:cxLimpo(cxResumo(R)),
       produlog:{ id:alvoId, nome:nome, data:data, status:'enviando',
                  enviadoPor:sessaoEmail, enviadoEm:agora() } };
     if(cxConvAberta)
@@ -5291,9 +5324,9 @@ window.enviarProdulog=function(){
         dados.data=data;
         dados.criadoPor='Logística · '+(sessaoNome||sessaoEmail);
         dados.criadoEm=plHoje(); dados.timestamp=Date.now();
-        return setDoc(doc(dbP,'carregamentos',alvoId), dados).then(function(){ return convId; });
+        return setDoc(doc(dbP,'carregamentos',alvoId), cxLimpo(dados)).then(function(){ return convId; });
       }
-      return updateDoc(doc(dbP,'carregamentos',alvoId), dados).then(function(){ return convId; });
+      return updateDoc(doc(dbP,'carregamentos',alvoId), cxLimpo(dados)).then(function(){ return convId; });
     });
   })
   /* 4. confirma na conversão */
@@ -5311,7 +5344,7 @@ window.enviarProdulog=function(){
     if(e && e.cancelado) return;
     if(e && e.msg){ alert(e.msg); return; }
     console.error('caixas/enviarProdulog:', e);
-    alert('Não foi possível enviar ao Produlog: '+((e && (e.code||e.message))||e)
+    alert('Não foi possível enviar ao Produlog: '+((e && e.code)||'')+((e && e.message)?'\n\n'+e.message:(e&&!e.code?String(e):''))
         + '\n\nNada foi duplicado: pode tentar de novo.');
   });
 };
@@ -5345,6 +5378,28 @@ var MIX_NUNCA = [40];
 
 /* caixas que o operador monta com o resto. Só na memória da sessão. */
 var cxManual = { caixas: [], atual: [] };
+/* O Firestore NÃO aceita lista dentro de lista — e cada caixa montada é uma
+   lista de produtos dentro da lista de caixas. Gravado assim, a gravação
+   inteira era recusada (invalid-argument): salvar ou enviar ao Produlog
+   falhava sempre que houvesse caixa montada à mão. Ao gravar, cada caixa
+   vira { itens:[...] }; ao abrir, volta ao formato da tela. */
+function cxManualParaGravar(){
+  return { caixas:(cxManual.caixas||[]).map(function(c){ return { itens:(c||[]).slice() }; }),
+           atual:(cxManual.atual||[]).slice() };
+}
+function cxManualDeGravado(m){
+  if(!m || !m.caixas) return { caixas:[], atual:[] };
+  return { caixas:m.caixas.map(function(c){ return Array.isArray(c) ? c : ((c && c.itens) || []); }),
+           atual:(m.atual||[]).slice() };
+}
+/* tira o que o Firestore recusa: campo indefinido vira null e número inválido vira 0 */
+function cxLimpo(v){
+  return JSON.parse(JSON.stringify(v, function(k,x){
+    if(x===undefined) return null;
+    if(typeof x==='number' && !isFinite(x)) return 0;
+    return x;
+  }));
+}
 function cxZerarMontagem(){ cxManual = { caixas: [], atual: [] }; }
 
 function cxSomaItens(lista){
