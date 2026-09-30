@@ -1584,7 +1584,7 @@ function rtDesenhar(enquadrar){
     var box=document.getElementById('rt-mapa');
     if(!rtMapa){
       rtMapa=L.map(box, { zoomControl:true, attributionControl:true }).setView([-30.03,-51.2], 11);   /* Porto Alegre */
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19,
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, referrerPolicy:'strict-origin-when-cross-origin',
         attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' }).addTo(rtMapa);
       rtGrupo=L.featureGroup().addTo(rtMapa);
     }
@@ -1861,7 +1861,7 @@ function rzDesenharLeaflet(enquadrar){
   rtCarregarLeaflet().then(function(L){
     if(!rzMapa){
       rzMapa=L.map(document.getElementById('rz-mapa')).setView([-30.03,-51.2], 11);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19,
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, referrerPolicy:'strict-origin-when-cross-origin',
         attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · busca de endereços: Nominatim' }).addTo(rzMapa);
       rzCamada=L.featureGroup().addTo(rzMapa);
       rzMapa.on('click', function(e){
