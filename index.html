@@ -883,6 +883,7 @@ html[data-pal="vinho"][data-theme="light"]{
           </div>
           <div class="rz-linha"><button class="btn btn-sm btn-ghost" id="rz-ver-bt" onclick="rzVerAbrir()" style="flex:1">🗺 Ver várias rotas</button></div>
           <div class="rz-ver" id="rz-ver" style="display:none"></div>
+          <label class="rz-chk" style="margin:-2px 0 10px"><input type="checkbox" id="rz-tracos" onchange="rzTracosAlternar(this.checked)"> 〰 Mostrar os traços das rotas</label>
           <div class="fld"><label>Nome da rota</label><input id="rz-nome" placeholder="Ex.: Missões — seg/qua/sex" oninput="rzMarcarSujoCampo()"></div>
           <div class="fld"><label>Dias da semana (rota fixa) — deixe vazio para rota avulsa</label><div class="rz-dias" id="rz-dias"></div></div>
           <div class="rz-base" id="rz-base"></div>
@@ -2117,6 +2118,7 @@ function rzDesenharLeaflet(enquadrar){
     if(linha.length>2) L.polyline(linha.slice(0,-1), { color:cor, weight:3.5, opacity:.8, dashArray:'6 6' }).addTo(rzCamada);
     if(linha.length>1) L.polyline(linha.slice(-2), { color:'#1a73e8', weight:3.5, opacity:.85, dashArray:'6 6' }).addTo(rzCamada);   /* último trecho (volta) em azul */
     rzVerDesenharL(L, pts);                    /* rotas salvas marcadas em "Ver várias rotas" */
+    rzAplicarTracos();
     if(enquadrar && pts.length) rzMapa.fitBounds(pts, { padding:[30,30], maxZoom:15 });
   }).catch(function(e){ document.getElementById('rz-mapa').innerHTML='<div class="empty" style="padding:40px 16px">'+esc(e.message||String(e))+'</div>'; });
 }
@@ -2472,6 +2474,7 @@ function rzGDesenhar(enquadrar){
     rzG.objs.push(tracejado(reta.slice(-2), AZUL));
   }
   if(rzVerDesenharG(bounds)) tem=true;       /* rotas salvas marcadas em "Ver várias rotas" */
+  rzAplicarTracos();
   if(enquadrar && tem) rzG.mapa.fitBounds(bounds, 40);
 }
 
@@ -3040,8 +3043,26 @@ function rzCobliSalvarMarcadas(){
   });
 }
 
+/* ---- mostrar ou esconder os traços (só os pontos no mapa) ----
+   Preferência de quem está usando, guardada no navegador. Esconder não apaga
+   nada nem consulta o Google: os traços voltam ao marcar de novo. */
+var rzTracos=true;
+try{ rzTracos=localStorage.getItem('mc_rz_tracos')!=='0'; }catch(e){}
+window.rzTracosAlternar=function(on){
+  rzTracos=!!on;
+  try{ localStorage.setItem('mc_rz_tracos', on?'1':'0'); }catch(e){}
+  rzDesenhar(false);
+};
+function rzAplicarTracos(){
+  var cx=document.getElementById('rz-tracos'); if(cx) cx.checked=rzTracos;
+  if(rzTracos) return;
+  if(rzG.mapa && window.google && google.maps) rzG.objs.forEach(function(o){ if(o instanceof google.maps.Polyline) o.setMap(null); });
+  if(rzCamada && window.L) rzCamada.eachLayer(function(l){ if(l instanceof L.Polyline) rzCamada.removeLayer(l); });
+}
+
 function renderRoteirizar(){
   rzCliCarregar();
+  var cxT=document.getElementById('rz-tracos'); if(cxT) cxT.checked=rzTracos;
   if(!rzListou){ rzListar(); rzPintarDias(); }
   rzPintar(); rzDesenhar(!rzMapa);
 }
