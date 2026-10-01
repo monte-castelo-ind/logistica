@@ -550,6 +550,16 @@ html[data-pal="vinho"][data-theme="light"]{
 .rz-av.atr{color:var(--red);font-weight:600}
 .rz-s.rz-obs{color:var(--text);font-style:italic}
 .rz-ficha{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+
+.rz-ver{background:var(--card-2);border-radius:10px;padding:10px;margin:-2px 0 10px;max-height:340px;overflow:auto}
+.rz-ver-top{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:var(--muted);margin-bottom:6px}
+.rz-ver .rz-dia small{font-size:9.5px;opacity:.75;margin-left:1px}
+.rz-ver-it{display:flex;align-items:flex-start;gap:8px;padding:7px 4px;border-top:1px solid var(--border);cursor:pointer;margin:0;font-size:12.5px;color:var(--text);font-weight:500}
+.rz-ver-it input{width:auto;margin-top:2px;accent-color:var(--primary)}
+.rz-ver-cor{flex:0 0 14px;height:14px;border-radius:4px;border:1px solid var(--border);margin-top:1px}
+.rz-ver-n{flex:1;min-width:0;overflow-wrap:anywhere}
+.rz-ver-n:hover{text-decoration:underline}
+.rz-ver-n small{display:block;color:var(--muted);font-size:11px;font-weight:400;margin-top:1px}
 </style>
 </head>
 <body>
@@ -866,6 +876,8 @@ html[data-pal="vinho"][data-theme="light"]{
             <select id="rz-salvas" onchange="rzAbrir(this.value)"><option value="">Rotas salvas…</option></select>
             <button class="btn btn-sm btn-ghost" onclick="rzNova()">+ Nova</button>
           </div>
+          <div class="rz-linha"><button class="btn btn-sm btn-ghost" id="rz-ver-bt" onclick="rzVerAbrir()" style="flex:1">🗺 Ver várias rotas</button></div>
+          <div class="rz-ver" id="rz-ver" style="display:none"></div>
           <div class="fld"><label>Nome da rota</label><input id="rz-nome" placeholder="Ex.: Missões — seg/qua/sex" oninput="rzMarcarSujoCampo()"></div>
           <div class="fld"><label>Dias da semana (rota fixa) — deixe vazio para rota avulsa</label><div class="rz-dias" id="rz-dias"></div></div>
           <div class="rz-base" id="rz-base"></div>
@@ -1510,8 +1522,14 @@ function rtNome(r){ var v=rtVeicDaPlaca(r.placa); return (v&&v.placa?v.placa:r.p
 function rtHM(min){ if(min==null||!isFinite(min)) return '—'; min=Math.round(min); return Math.floor(min/60)+'h'+String(min%60).padStart(2,'0'); }
 function rtNum(v,c){ return (v==null||!isFinite(v))?'—':Number(v).toLocaleString('pt-BR',{minimumFractionDigits:c||0,maximumFractionDigits:c||0}); }
 
+/* Uma carga só: a tela pede o mapa várias vezes seguidas ao abrir. Sem
+   guardar a promessa, cada pedido baixava outra cópia do Leaflet; o mapa
+   nascia com uma e as linhas eram criadas com a outra — e o desenho quebrava
+   ("Cannot read properties of undefined (reading 'x')"). */
+var _rtLeafletP=null;
 function rtCarregarLeaflet(){
-  return new Promise(function(ok, falhou){
+  if(_rtLeafletP) return _rtLeafletP;
+  _rtLeafletP=new Promise(function(ok, falhou){
     if(window.L && window.L.map){ ok(window.L); return; }
     var V='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/';
     if(!document.getElementById('rt-leaflet-css')){
@@ -1522,6 +1540,8 @@ function rtCarregarLeaflet(){
     s.onerror=function(){ falhou(new Error('sem conexão com o servidor do mapa')); };
     document.head.appendChild(s);
   });
+  _rtLeafletP.catch(function(){ _rtLeafletP=null; });   /* falhou (sem internet): deixa tentar de novo */
+  return _rtLeafletP;
 }
 
 window.rotasCarregar=function(){
@@ -2087,6 +2107,7 @@ function rzDesenharLeaflet(enquadrar){
     if(rzVolta() && linha.length>1) linha.push([base.lat,base.lng]);
     if(linha.length>2) L.polyline(linha.slice(0,-1), { color:cor, weight:3.5, opacity:.8, dashArray:'6 6' }).addTo(rzCamada);
     if(linha.length>1) L.polyline(linha.slice(-2), { color:'#1a73e8', weight:3.5, opacity:.85, dashArray:'6 6' }).addTo(rzCamada);   /* último trecho (volta) em azul */
+    rzVerDesenharL(L, pts);                    /* rotas salvas marcadas em "Ver várias rotas" */
     if(enquadrar && pts.length) rzMapa.fitBounds(pts, { padding:[30,30], maxZoom:15 });
   }).catch(function(e){ document.getElementById('rz-mapa').innerHTML='<div class="empty" style="padding:40px 16px">'+esc(e.message||String(e))+'</div>'; });
 }
@@ -2153,6 +2174,7 @@ function rzListar(){
       return '<option value="'+esc(r.firestoreId)+'"'+(r.firestoreId===rzAberta?' selected':'')+'>'+esc(r.nome||'(sem nome)')
         +((r.dias||[]).length?' · '+r.dias.map(function(d){ return RZ_DIAS[d]; }).join('/'):'')+' · '+(r.pontos||[]).length+' pontos</option>';
     }).join('');
+    rzPintarVer(); if(Object.keys(rzVer.sel).length) rzDesenhar(false);
   }).catch(function(e){
     console.error('frotaRoteiros:',e);
     var inf=document.getElementById('rz-msg'); if(inf) inf.textContent='Não foi possível ler as rotas salvas: '+(e.code||e.message);
@@ -2439,6 +2461,7 @@ function rzGDesenhar(enquadrar){
     if(reta.length>2) rzG.objs.push(tracejado(reta.slice(0,-1), cor));
     rzG.objs.push(tracejado(reta.slice(-2), AZUL));
   }
+  if(rzVerDesenharG(bounds)) tem=true;       /* rotas salvas marcadas em "Ver várias rotas" */
   if(enquadrar && tem) rzG.mapa.fitBounds(bounds, 40);
 }
 
@@ -2662,6 +2685,139 @@ function rzCliResumo(p){
   if(f.descargaMin!=null && f.descargaMin!=='') x.push('descarga '+f.descargaMin+' min');
   if(Array.isArray(f.dias) && f.dias.length) x.push('recebe '+f.dias.map(function(d){ return RZ_DIAS_C[d]; }).join('/'));
   return '👤 '+(c.n||'Cliente')+(x.length?' · '+x.join(' · '):'');
+}
+
+/* ===== ROTEIRIZAR — várias rotas no mesmo mapa =====
+   Desenha rotas SALVAS por cima do mapa, cada uma numa cor, para ver o dia
+   inteiro (todas as de segunda) ou comparar rotas de dias diferentes.
+   Só mostra — não edita: a rota em edição continua na cor de sempre.
+   Traçado: o salvo pelas ruas (Google) quando existe; senão, tracejado
+   em linha reta ligando as paradas. Não consulta o Google: não gasta nada. */
+var rzVer={ aberto:false, sel:{} };
+var RZ_VER_CORES=['#e6194b','#4363d8','#911eb4','#0fa3b1','#d6336c','#8f9a00','#9a6324','#5c7cfa','#e8590c','#495057','#f032e6','#469990'];
+
+/* polyline codificada do Google → [[lat,lng],…] (para o mapa gratuito também conseguir desenhar) */
+function rzDecodificar(enc){
+  var pts=[], i=0, lat=0, lng=0;
+  while(i<enc.length){
+    var r=0, s=0, b; do{ b=enc.charCodeAt(i++)-63; r|=(b&31)<<s; s+=5; }while(b>=32); lat+=(r&1)?~(r>>1):(r>>1);
+    r=0; s=0; do{ b=enc.charCodeAt(i++)-63; r|=(b&31)<<s; s+=5; }while(b>=32); lng+=(r&1)?~(r>>1):(r>>1);
+    pts.push([lat/1e5, lng/1e5]);
+  }
+  return pts;
+}
+function rzVerSelecionadas(){
+  return rzSalvas.filter(function(r){ return rzVer.sel[r.firestoreId] && r.firestoreId!==rzAberta; });
+}
+function rzVerCor(r){
+  var i=rzSalvas.filter(function(x){ return rzVer.sel[x.firestoreId]; }).indexOf(r);
+  return RZ_VER_CORES[(i<0?0:i)%RZ_VER_CORES.length];
+}
+/* paradas que contam numa rota salva (a sede fica fora quando a rota sai/volta da sede) */
+function rzVerParadas(r){
+  var b=(r.modo==='livre')?null:rzBase();
+  return (r.pontos||[]).filter(function(p){ return p.lat!=null && !(b && rzHav(b,p)<=RZ_RAIO_SEDE_KM); });
+}
+/* caminho da rota: pelas ruas se foi salva traçada; senão reta entre as paradas */
+function rzVerCaminho(r){
+  var rr=r.rotaRuas;
+  if(rr && Array.isArray(rr.legs) && rr.legs.some(function(l){ return l.p; })){
+    var tudo=[]; rr.legs.forEach(function(l){ if(l.p) tudo=tudo.concat(rzDecodificar(l.p)); });
+    return { pts:tudo, ruas:true };
+  }
+  if(rr && Array.isArray(rr.polys) && rr.polys.length){
+    var t2=[]; rr.polys.forEach(function(e){ t2=t2.concat(rzDecodificar(e)); }); return { pts:t2, ruas:true };
+  }
+  var b=(r.modo==='livre')?null:rzBase(), seq=[];
+  if(b) seq.push([b.lat,b.lng]);
+  rzVerParadas(r).forEach(function(p){ seq.push([p.lat,p.lng]); });
+  if(b && r.modo!=='sede_ida' && r.volta!==false && seq.length>1) seq.push([b.lat,b.lng]);
+  return { pts:seq, ruas:false };
+}
+
+/* ---- painel ---- */
+window.rzVerAbrir=function(){
+  rzVer.aberto=!rzVer.aberto;
+  if(rzVer.aberto && !rzListou) rzListar();
+  rzPintarVer();
+};
+function rzPintarVer(){
+  var box=document.getElementById('rz-ver'), bt=document.getElementById('rz-ver-bt');
+  var n=rzSalvas.filter(function(r){ return rzVer.sel[r.firestoreId]; }).length;
+  if(bt) bt.textContent='🗺 Ver várias rotas'+(n?' ('+n+')':'');
+  if(!box) return;
+  if(!rzVer.aberto){ box.style.display='none'; return; }
+  box.style.display='';
+  if(!rzSalvas.length){ box.innerHTML='<div class="rz-cli-dica">Nenhuma rota salva ainda.</div>'; return; }
+  var dias=[1,2,3,4,5,6,0].map(function(d){
+    var rs=rzSalvas.filter(function(r){ return (r.dias||[]).indexOf(d)>=0; });
+    var todas=rs.length && rs.every(function(r){ return rzVer.sel[r.firestoreId]; });
+    return '<button class="rz-dia'+(todas?' on':'')+'" '+(rs.length?'':'disabled style="opacity:.35"')+' onclick="rzVerDia('+d+')" title="'+rs.length+' rota(s)">'+RZ_DIAS[d]+(rs.length?' <small>'+rs.length+'</small>':'')+'</button>';
+  }).join('');
+  box.innerHTML='<div class="rz-ver-top"><span>Marcar todas as rotas do dia:</span><button class="btn btn-sm btn-ghost" onclick="rzVerLimpar()">Limpar</button></div>'
+    +'<div class="rz-dias" style="margin-bottom:8px">'+dias+'</div>'
+    +rzSalvas.map(function(r){
+      var on=!!rzVer.sel[r.firestoreId], aberta=r.firestoreId===rzAberta, cor=on?rzVerCor(r):'transparent';
+      return '<label class="rz-ver-it'+(on?' on':'')+'">'
+        +'<input type="checkbox" '+(on?'checked':'')+' onchange="rzVerRota(\''+esc(r.firestoreId)+'\',this.checked)">'
+        +'<span class="rz-ver-cor" style="background:'+cor+';border-color:'+(on?cor:'var(--border)')+'"></span>'
+        +'<span class="rz-ver-n" onclick="event.preventDefault();rzVerFocar(\''+esc(r.firestoreId)+'\')" title="Ver no mapa">'+esc(r.nome||'(sem nome)')
+        +'<small>'+((r.dias||[]).length?r.dias.map(function(d){ return RZ_DIAS[d]; }).join('/')+' · ':'avulsa · ')
+        +rzVerParadas(r).length+' paradas'+(r.kmEstimado?' · '+String(r.kmEstimado).replace('.',',')+' km':'')
+        +(r.kmPelasRuas?' · pelas ruas':'')+(aberta?' · <b>aberta para edição</b>':'')+'</small></span></label>';
+    }).join('');
+}
+window.rzVerDia=function(d){
+  var rs=rzSalvas.filter(function(r){ return (r.dias||[]).indexOf(d)>=0; });
+  var todas=rs.every(function(r){ return rzVer.sel[r.firestoreId]; });
+  rs.forEach(function(r){ if(todas) delete rzVer.sel[r.firestoreId]; else rzVer.sel[r.firestoreId]=true; });
+  rzPintarVer(); rzDesenhar(true);
+};
+window.rzVerRota=function(id,on){ if(on) rzVer.sel[id]=true; else delete rzVer.sel[id]; rzPintarVer(); rzDesenhar(true); };
+window.rzVerLimpar=function(){ rzVer.sel={}; rzPintarVer(); rzDesenhar(true); };
+window.rzVerFocar=function(id){
+  var r=rzSalvas.filter(function(x){ return x.firestoreId===id; })[0]; if(!r) return;
+  if(!rzVer.sel[id] && id!==rzAberta){ rzVer.sel[id]=true; rzPintarVer(); rzDesenhar(false); }
+  var c=rzVerCaminho(r).pts; if(!c.length) return;
+  if(window.innerWidth<900) document.getElementById('rz-mapa').scrollIntoView({ behavior:'smooth', block:'start' });
+  if(rzGAtivo() && rzG.mapa){ var bb=new google.maps.LatLngBounds(); c.forEach(function(p){ bb.extend({ lat:p[0], lng:p[1] }); }); rzG.mapa.fitBounds(bb, 50); }
+  else if(rzMapa) rzMapa.fitBounds(c, { padding:[30,30], maxZoom:15 });
+};
+
+/* ---- desenho (chamado pelos dois mapas) ---- */
+function rzVerDesenharG(bounds){
+  var tem=false;
+  rzVerSelecionadas().forEach(function(r){
+    var cor=rzVerCor(r), cam=rzVerCaminho(r);
+    if(cam.pts.length>1){
+      var path=cam.pts.map(function(p){ return { lat:p[0], lng:p[1] }; });
+      rzG.objs.push(cam.ruas
+        ? new google.maps.Polyline({ path:path, map:rzG.mapa, strokeColor:cor, strokeOpacity:.85, strokeWeight:4, zIndex:0 })
+        : new google.maps.Polyline({ path:path, map:rzG.mapa, strokeOpacity:0, zIndex:0,
+            icons:[{ icon:{ path:'M 0,-1 0,1', strokeOpacity:.85, strokeColor:cor, scale:3 }, offset:'0', repeat:'14px' }] }));
+      path.forEach(function(ll){ bounds.extend(ll); }); tem=true;
+    }
+    rzVerParadas(r).forEach(function(p,i){
+      var m=new google.maps.Marker({ position:{ lat:p.lat, lng:p.lng }, map:rzG.mapa, zIndex:500+i,
+        icon:{ path:google.maps.SymbolPath.CIRCLE, scale:9, fillColor:cor, fillOpacity:1, strokeColor:'#fff', strokeWeight:2 },
+        label:{ text:String(i+1), color:'#fff', fontWeight:'700', fontSize:'10px' }, title:(r.nome||'')+' · '+(i+1)+'. '+(p.nome||p.endereco||'') });
+      m.addListener('click', function(){ rzG.info.setContent('<div class="rt-pop"><b>'+esc(r.nome||'Rota')+' · parada '+(i+1)+'</b><br>'+esc(p.nome||p.endereco||'')+'</div>'); rzG.info.open({ map:rzG.mapa, anchor:m }); });
+      rzG.objs.push(m); bounds.extend(m.getPosition()); tem=true;
+    });
+  });
+  return tem;
+}
+function rzVerDesenharL(L, pts){
+  rzVerSelecionadas().forEach(function(r){
+    var cor=rzVerCor(r), cam=rzVerCaminho(r);
+    if(cam.pts.length>1) L.polyline(cam.pts, cam.ruas?{ color:cor, weight:4, opacity:.85 }:{ color:cor, weight:3.5, opacity:.85, dashArray:'6 6' }).addTo(rzCamada);
+    cam.pts.forEach(function(p){ pts.push(p); });
+    rzVerParadas(r).forEach(function(p,i){
+      pts.push([p.lat,p.lng]);
+      L.marker([p.lat,p.lng], { icon:L.divIcon({ className:'', html:'<div class="rt-pino" style="background:'+cor+';width:19px;height:19px;line-height:19px;font-size:10px">'+(i+1)+'</div>', iconSize:[19,19], iconAnchor:[10,10] }) })
+        .bindPopup('<div class="rt-pop"><b>'+esc(r.nome||'Rota')+' · parada '+(i+1)+'</b><br>'+esc(p.nome||p.endereco||'')+'</div>').addTo(rzCamada);
+    });
+  });
 }
 
 function renderRoteirizar(){
