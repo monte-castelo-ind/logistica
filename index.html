@@ -560,6 +560,11 @@ html[data-pal="vinho"][data-theme="light"]{
 .rz-ver-n{flex:1;min-width:0;overflow-wrap:anywhere}
 .rz-ver-n:hover{text-decoration:underline}
 .rz-ver-n small{display:block;color:var(--muted);font-size:11px;font-weight:400;margin-top:1px}
+
+.rz-imp-it{display:flex;align-items:center;gap:8px;padding:8px 2px;border-top:1px solid var(--border)}
+.rz-imp-it label{flex:1;display:flex;gap:8px;align-items:flex-start;margin:0;cursor:pointer;color:var(--text);font-size:13px;font-weight:500}
+.rz-imp-it input{width:auto;margin-top:3px;accent-color:var(--primary)}
+.rz-imp-it small{display:block;color:var(--muted);font-size:11.5px;font-weight:400;margin-top:1px}
 </style>
 </head>
 <body>
@@ -898,6 +903,8 @@ html[data-pal="vinho"][data-theme="light"]{
             <button class="btn btn-sm" onclick="rzAdicionar()">+ Ponto</button>
           </div>
           <div class="rz-linha"><button class="btn btn-sm btn-ghost" onclick="rzColar()" style="flex:1">📋 Colar lista de endereços</button></div>
+          <div class="rz-linha"><button class="btn btn-sm btn-ghost" onclick="rzImportarCobli()" style="flex:1">📥 Importar planilha do Cobli</button>
+            <input type="file" id="rz-cobli-arq" accept=".xlsx,.xls" style="display:none" onchange="rzCobliArquivo(this)"></div>
           <div class="fld" style="margin-bottom:6px"><label>Adicionar cliente pelo nome</label>
             <input id="rz-cli-q" placeholder="Ex.: mercadinho joão" oninput="rzCliBuscar(this)" autocomplete="off">
             <div id="rz-cli-res"></div>
@@ -2036,6 +2043,8 @@ function rzPintar(){
       +   (L.atraso>0?'<div class="rz-s rz-av atr">⚠ chega '+rzHora(L.chegada+L.espera)+', mas fecha '+esc((rzFicha[p.clienteId]||{}).fecha||'')+'</div>':'')
       +   (L.diaRuim?'<div class="rz-s rz-av atr">⚠ não recebe '+esc(L.diaRuim)+'</div>':'')
       +   ((rzFicha[p.clienteId]||{}).obs?'<div class="rz-s rz-obs">📝 '+esc(rzFicha[p.clienteId].obs)+'</div>':'')
+      +   (p.cobliHora!=null||p.cobliMin?'<div class="rz-s'+(p.cobliMin>=60?' rz-av esp':'')+'">🛰 no Cobli: '+(p.cobliHora!=null?'chegou '+rzHora(p.cobliHora)+' · ':'')+'parou '+rzDur(p.cobliMin||0)
+          +(p.cobliMin>=60?' — parada longa (almoço?): confira se é cliente':'')+'</div>':'')
       +   (rzPosicionando===p.id?'<div class="rz-s" style="color:var(--primary)">👉 Clique no mapa onde fica este ponto</div>':'')+'</div>'
       + '<div class="rz-bts">'
       +   '<button title="Subir" onclick="rzMover(\''+p.id+'\',-1)">↑</button><button title="Descer" onclick="rzMover(\''+p.id+'\',1)">↓</button>'
@@ -2221,7 +2230,8 @@ window.rzSalvar=function(){
     saida:rzVal('rz-saida')||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28),
     pontos:rzPontos.map(function(p){ return { id:p.id, nome:p.nome||'', endereco:p.endereco, lat:p.lat, lng:p.lng,
       status:(p.status==='fila'||p.status==='buscando')?'erro':p.status, paradaMin:p.paradaMin!=null?p.paradaMin:null,
-      clienteId:p.clienteId||null, semCliente:!!p.semCliente }; }),
+      clienteId:p.clienteId||null, semCliente:!!p.semCliente,
+      cobliMin:p.cobliMin!=null?p.cobliMin:null, cobliHora:p.cobliHora!=null?p.cobliHora:null }; }),
     kmEstimado:+T.km.toFixed(1), minEstimado:Math.round(T.min), kmPelasRuas:!!T.ruas,
     rotaRuas:rzGRotaValida()?rzG.rota:null,
     atualizadoEm:agora(), atualizadoPor:sessaoEmail };
@@ -2817,6 +2827,216 @@ function rzVerDesenharL(L, pts){
       L.marker([p.lat,p.lng], { icon:L.divIcon({ className:'', html:'<div class="rt-pino" style="background:'+cor+';width:19px;height:19px;line-height:19px;font-size:10px">'+(i+1)+'</div>', iconSize:[19,19], iconAnchor:[10,10] }) })
         .bindPopup('<div class="rt-pop"><b>'+esc(r.nome||'Rota')+' · parada '+(i+1)+'</b><br>'+esc(p.nome||p.endereco||'')+'</div>').addTo(rzCamada);
     });
+  });
+}
+
+/* ===== ROTEIRIZAR — importar planilha do Cobli =====
+   A planilha "Detalhado" do Cobli tem uma linha por deslocamento: veículo,
+   motorista, Rota, endereço e horário de cada parada e o tempo parado.
+   Colunas lidas PELO NOME do cabeçalho (não pela letra) — se o Cobli mudar
+   a ordem, continua funcionando. Cada (Rota + dia + veículo) vira uma rota
+   com o nome da coluna "Rota". Paradas:
+   - em ordem de horário de chegada;
+   - menos de 3 min fica de fora (semáforo, manobra) — mesma régua da tela Rotas;
+   - o mesmo endereço em sequência vira uma parada só;
+   - a sede (até 250 m) sai da conta pela regra que já existe.
+   O horário em que chegou e o tempo que ficou parado (pelo Cobli) vão junto
+   em cada ponto, só para comparar — não mudam o cálculo. */
+var rzImp={ rotas:[], arquivo:'' }, rzGeoCache={};
+var RZ_DIA_TXT={ 'domingo':0, 'segunda':1, 'terca':2, 'quarta':3, 'quinta':4, 'sexta':5, 'sabado':6 };
+
+window.rzImportarCobli=function(){
+  var inp=document.getElementById('rz-cobli-arq');
+  inp.value=''; inp.click();
+};
+window.rzCobliArquivo=function(inp){
+  var f=inp.files && inp.files[0]; if(!f) return;
+  rzImp.arquivo=f.name; rzMsg('Lendo a planilha…');
+  carregarXLSX().then(function(){
+    return new Promise(function(ok, falhou){
+      var r=new FileReader();
+      r.onload=function(){ try{ ok(XLSX.read(new Uint8Array(r.result), { type:'array', cellDates:true })); }catch(e){ falhou(e); } };
+      r.onerror=function(){ falhou(new Error('não foi possível ler o arquivo')); };
+      r.readAsArrayBuffer(f);
+    });
+  }).then(function(wb){
+    var rotas=rzCobliInterpretar(wb);
+    if(!rotas.length){ rzMsg('Não achei rotas nessa planilha. Ela precisa ter as colunas "Rota", "Endereço de parada" e "Data e horário da parada".', true); return; }
+    rzImp.rotas=rotas; rzMsg(''); rzCobliJanela();
+  }).catch(function(e){ console.error('cobli xlsx:',e); rzMsg('Não foi possível ler a planilha: '+(e.message||e), true); });
+};
+
+function rzCobliChave(s){ return rzNormNome(s).toLowerCase(); }
+function rzCobliHora(v){
+  /* "09/09/2026 - 07:35" → { dia:'2026-09-09', min:455 } */
+  if(v instanceof Date && !isNaN(v)) return { dia:rtHojeISO(v), min:v.getHours()*60+v.getMinutes() };
+  var m=String(v||'').match(/(\d{2})\/(\d{2})\/(\d{4})\D+(\d{1,2}):(\d{2})/);
+  if(m) return { dia:m[3]+'-'+m[2]+'-'+m[1], min:(+m[4])*60+(+m[5]) };
+  return null;
+}
+function rzCobliMinTxt(v){ if(v instanceof Date) return v.getHours()*60+v.getMinutes(); var m=String(v||'').match(/(\d{1,2}):(\d{2})/); return m?(+m[1])*60+(+m[2]):null; }
+function rzCobliInterpretar(wb){
+  var saida=[];
+  wb.SheetNames.forEach(function(nome){
+    var linhas=XLSX.utils.sheet_to_json(wb.Sheets[nome], { header:1, raw:true, defval:'' });
+    /* acha a linha do cabeçalho (às vezes o Cobli põe título antes) */
+    var hi=-1, col={};
+    for(var i=0;i<Math.min(linhas.length,15) && hi<0;i++){
+      var ks=linhas[i].map(rzCobliChave);
+      if(ks.indexOf('rota')>=0 && ks.indexOf('endereco de parada')>=0){ hi=i; ks.forEach(function(k,j){ if(k && col[k]==null) col[k]=j; }); }
+    }
+    if(hi<0) return;
+    var C=function(r,k){ var j=col[k]; return j==null?'':r[j]; };
+    var grupos={};
+    linhas.slice(hi+1).forEach(function(r){
+      var rota=String(C(r,'rota')||'').trim(), end=String(C(r,'endereco de parada')||'').trim();
+      if(!rota || !end) return;
+      var h=rzCobliHora(C(r,'data e horario da parada'));
+      var dia=h?h.dia:(C(r,'data de partida') instanceof Date?rtHojeISO(C(r,'data de partida')):'');
+      var placa=String(C(r,'placa do veiculo')||'').trim();
+      var k=rota+'|'+dia+'|'+placa;
+      var g=grupos[k]=grupos[k]||{ nome:rota, data:dia, placa:placa, motorista:String(C(r,'motorista')||'').trim(),
+        diaSemana:RZ_DIA_TXT[rzCobliChave(C(r,'dia da semana')).split(/[\s-]/)[0]], linhas:[], saidaMin:null };
+      var part=rzCobliMinTxt(C(r,'horario de partida'));
+      if(part!=null && (g.saidaMin==null || part<g.saidaMin)) g.saidaMin=part;
+      g.linhas.push({ end:end, min:parseInt(C(r,'tempo parado no local min'),10)||0, hora:h?h.min:null });
+    });
+    Object.keys(grupos).forEach(function(k){
+      var g=grupos[k];
+      g.linhas.sort(function(a,b){ return (a.hora==null?1e9:a.hora)-(b.hora==null?1e9:b.hora); });
+      var par=[];
+      g.linhas.forEach(function(l){
+        if(l.min<3) return;                                         /* semáforo, manobra */
+        var u=par[par.length-1];
+        if(u && rzCobliChave(u.endereco)===rzCobliChave(l.end)){ u.cobliMin+=l.min; return; }   /* mesmo lugar em sequência */
+        par.push({ endereco:l.end, cobliMin:l.min, cobliHora:l.hora });
+      });
+      if(g.diaSemana==null && g.data){ var p=g.data.split('-'); g.diaSemana=new Date(+p[0],+p[1]-1,+p[2]).getDay(); }
+      saida.push({ nome:g.nome, data:g.data, placa:g.placa, motorista:g.motorista, diaSemana:g.diaSemana,
+                   saida:g.saidaMin!=null?rzHora(g.saidaMin):'', paradas:par, marcada:true });
+    });
+  });
+  return saida.sort(function(a,b){ return (a.nome+a.data).localeCompare(b.nome+b.data,'pt-BR'); });
+}
+
+/* ---- janela com as rotas encontradas ---- */
+function rzCobliJanela(){
+  var dt=function(iso){ var p=String(iso||'').split('-'); return p.length===3?p[2]+'/'+p[1]:''; };
+  modal({ titulo:'Importar do Cobli', sub:esc(rzImp.arquivo)+' · '+rzImp.rotas.length+' rota'+(rzImp.rotas.length===1?'':'s'),
+    body:'<div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.5"><b>Abrir</b> monta a rota na tela para você revisar, otimizar e salvar. '
+      +'<b>Salvar as marcadas</b> procura os endereços e cria as rotas salvas direto, com o nome da coluna "Rota".</div>'
+      +'<div id="rz-imp-lista">'+rzImp.rotas.map(function(r,i){
+        var longa=r.paradas.filter(function(p){ return p.cobliMin>=60; }).length;
+        return '<div class="rz-imp-it"><label><input type="checkbox" '+(r.marcada?'checked':'')+' onchange="rzImp.rotas['+i+'].marcada=this.checked">'
+          +'<span><b>'+esc(r.nome)+'</b><small>'+esc([(r.diaSemana!=null?RZ_DIAS[r.diaSemana]+' ':'')+dt(r.data), r.placa, r.motorista].filter(Boolean).join(' · '))
+          +' · '+r.paradas.length+' paradas'+(r.saida?' · saiu '+r.saida:'')+(longa?' · ⚠ '+longa+' parada(s) de 1h ou mais':'')+'</small></span></label>'
+          +'<button class="btn btn-sm btn-ghost" onclick="rzCobliAbrir('+i+')">Abrir</button></div>';
+      }).join('')+'</div><div id="rz-imp-prog" class="rz-msg" style="margin-top:8px"></div>',
+    ok:'Salvar as marcadas', onOk:function(){ rzCobliSalvarMarcadas(); return false; } });
+}
+
+/* abre uma rota da planilha na tela (não salva sozinho) */
+window.rzCobliAbrir=function(i){
+  var r=rzImp.rotas[i]; if(!r) return;
+  if(rzSujo && rzPontos.length && !confirm('A rota aberta tem mudanças não salvas. Descartar e abrir "'+r.nome+'" do Cobli?')) return;
+  fecharModal();
+  rzAberta=''; rzFila=[]; rzG.rota=null;
+  rzPontos=r.paradas.map(function(p){ return { id:rzId(), nome:'', endereco:p.endereco, lat:null, lng:null, status:'fila', cobliMin:p.cobliMin, cobliHora:p.cobliHora }; });
+  rzDias=r.diaSemana!=null?[r.diaSemana]:[];
+  document.getElementById('rz-nome').value=r.nome;
+  document.getElementById('rz-salvas').value='';
+  if(r.saida) document.getElementById('rz-saida').value=r.saida;
+  rzSujo=true; document.getElementById('rz-salvar').textContent='💾 Salvar *';
+  rzPintarDias(); rzPintar(); rzDesenhar(true);
+  rzPontos.forEach(rzBuscar);
+  rzMsg('"'+r.nome+'" importada do Cobli: '+rzPontos.length+' paradas, na ordem em que foram feitas. Procurando os endereços… depois é só ⚡ Otimizar e 💾 Salvar.');
+};
+
+/* endereço → posição, para salvar sem abrir na tela (Google se ativo; senão o gratuito, 1 por segundo) */
+function rzGeoTexto(end){
+  var k=rzCobliChave(end);
+  if(rzGeoCache[k]) return Promise.resolve(rzGeoCache[k]);
+  var espera=(rzGChave() && rzG.estado!=='falhou') ? rzGCarregar().catch(function(){}) : Promise.resolve();
+  return espera.then(function(){
+    return new Promise(function(ok){
+      var fim=function(r){ rzGeoCache[k]=r; ok(r); };
+      if(rzGAtivo()){
+        var gc=new google.maps.Geocoder(), ts=[{ q:end, aprox:false }].concat(rzVariantes(end).filter(function(v){ return v.q && v.aprox; }));
+        (function tenta(i){
+          if(i>=ts.length){ fim({ lat:null, lng:null, status:'erro' }); return; }
+          gc.geocode({ address:ts[i].q, region:'br', componentRestrictions:{ country:'BR' } }, function(res, st){
+            if(st!=='OK' || !res || !res[0]){ tenta(i+1); return; }
+            var g=res[0].geometry, t=g.location_type;
+            fim({ lat:+g.location.lat().toFixed(6), lng:+g.location.lng().toFixed(6), status:(!ts[i].aprox && (t==='ROOFTOP'||t==='RANGE_INTERPOLATED'))?'ok':'aprox' });
+          });
+        })(0);
+        return;
+      }
+      var vs=rzVariantes(end);
+      (function tenta(i){
+        if(i>=vs.length){ setTimeout(function(){ fim({ lat:null, lng:null, status:'erro' }); }, 1100); return; }
+        var v=vs[i], base='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&accept-language=pt-BR';
+        fetch(v.cep?base+'&postalcode='+encodeURIComponent(v.cep):base+'&q='+encodeURIComponent(v.q))
+          .then(function(r){ return r.ok?r.json():[]; })
+          .then(function(res){
+            var a=res&&res[0];
+            if(!a){ setTimeout(function(){ tenta(i+1); }, 1100); return; }
+            var t=String(a.addresstype||a.type||'');
+            setTimeout(function(){ fim({ lat:+(+a.lat).toFixed(6), lng:+(+a.lon).toFixed(6),
+              status:(!v.aprox && /^(house|building|amenity|shop|office|industrial|commercial|retail|house_number)$/.test(t))?'ok':'aprox' }); }, 1100);
+          })
+          .catch(function(){ setTimeout(function(){ tenta(i+1); }, 1100); });
+      })(0);
+    });
+  });
+}
+
+function rzCobliSalvarMarcadas(){
+  var sel=rzImp.rotas.filter(function(r){ return r.marcada; });
+  if(!sel.length){ alert('Marque pelo menos uma rota.'); return; }
+  if(rzImp.salvando) return;
+  var existentes=sel.filter(function(r){ return rzSalvas.some(function(s){ return rzCobliChave(s.nome)===rzCobliChave(r.nome); }); });
+  var substituir=true;
+  if(existentes.length) substituir=confirm('Já existem rotas salvas com estes nomes: '+existentes.map(function(r){ return r.nome; }).join(', ')
+    +'.\n\nOK = substituir as paradas delas pelas da planilha (mantém dias, horário e configuração).\nCancelar = criar rotas novas, com a data no nome.');
+  var prog=document.getElementById('rz-imp-prog'), bt=document.getElementById('modal-ok');
+  rzImp.salvando=true; if(bt){ bt.disabled=true; bt.textContent='Salvando…'; }
+  var total=sel.reduce(function(a,r){ return a+r.paradas.length; },0), feitos=0, criadas=0, trocadas=0, semLocal=0;
+  var marcar=function(){ if(prog) prog.textContent='Procurando endereços: '+feitos+' de '+total+'…'; };
+  marcar();
+  sel.reduce(function(pr,r){
+    return pr.then(function(){
+      var pontos=[];
+      return r.paradas.reduce(function(p2,par){
+        return p2.then(function(){ return rzGeoTexto(par.endereco).then(function(g){
+          feitos++; marcar(); if(g.lat==null) semLocal++;
+          pontos.push({ id:rzId(), nome:'', endereco:par.endereco, lat:g.lat, lng:g.lng, status:g.status, paradaMin:null,
+                        clienteId:null, semCliente:false, cobliMin:par.cobliMin, cobliHora:par.cobliHora });
+        }); });
+      }, Promise.resolve()).then(function(){
+        var origem={ cobli:true, data:r.data, placa:r.placa, motorista:r.motorista, arquivo:rzImp.arquivo, importadoEm:agora(), importadoPor:sessaoEmail };
+        var ja=rzSalvas.filter(function(s){ return rzCobliChave(s.nome)===rzCobliChave(r.nome); })[0];
+        if(ja && substituir){
+          trocadas++;
+          return updateDoc(doc(dbC,'frotaRoteiros',ja.firestoreId), { pontos:pontos, rotaRuas:null, kmPelasRuas:false, origemCobli:origem,
+            dias:(ja.dias&&ja.dias.length)?ja.dias:(r.diaSemana!=null?[r.diaSemana]:[]), atualizadoEm:agora(), atualizadoPor:sessaoEmail });
+        }
+        criadas++;
+        var nome=(ja?r.nome+' (Cobli '+String(r.data).split('-').reverse().slice(0,2).join('/')+')':r.nome);
+        return addDoc(collection(dbC,'frotaRoteiros'), { nome:nome, dias:r.diaSemana!=null?[r.diaSemana]:[], modo:'sede_volta', volta:true,
+          saida:r.saida||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28), pontos:pontos,
+          kmEstimado:null, minEstimado:null, kmPelasRuas:false, rotaRuas:null, origemCobli:origem,
+          criadoEm:agora(), criadoPor:sessaoEmail, atualizadoEm:agora(), atualizadoPor:sessaoEmail });
+      });
+    });
+  }, Promise.resolve()).then(function(){
+    rzImp.salvando=false; fecharModal(); rzListar();
+    rzMsg('Do Cobli: '+(criadas?criadas+' rota'+(criadas===1?' criada':'s criadas'):'')+(criadas&&trocadas?' e ':'')+(trocadas?trocadas+' atualizada'+(trocadas===1?'':'s'):'')
+      +(semLocal?' · '+semLocal+' endereço(s) não encontrado(s) — abra a rota e use 📍':'')+'. Abra cada uma pela lista para ⚡ Otimizar e 🛣 Traçar.');
+  }).catch(function(e){
+    console.error('cobli salvar:',e); rzImp.salvando=false;
+    if(bt){ bt.disabled=false; bt.textContent='Salvar as marcadas'; }
+    if(prog){ prog.style.color='var(--red)'; prog.textContent='Não foi possível salvar: '+(e.code||'')+' '+(e.message||''); }
   });
 }
 
