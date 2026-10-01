@@ -1730,6 +1730,50 @@ function rzBuscar(p){ p.status='fila'; rzFila.push(p.id); rzPintar(); rzRodarFil
    preferência — a correção vale para as próximas importações também.
    Se o Google responder que o limite do dia acabou, o resto segue pelo
    serviço gratuito (1 por segundo), em vez de virar "não encontrado". */
+/* Plus Code (Open Location Code) → coordenada, sem consultar ninguém.
+   Código completo (8 caracteres antes do "+"), ou curto (4 ou 6) recuperado
+   pela vizinhança de uma referência — aqui, a sede. */
+var RZ_OLC='23456789CFGHJMPQRVWX', RZ_OLC_RES=[20,1,0.05,0.0025,0.000125];
+function rzOlcDecodificar(c){
+  c=c.replace('+','').toUpperCase(); var lat=-90, lng=-180, n=Math.min(c.length,10), i, tam=20;
+  for(i=0;i<n;i+=2){ tam=RZ_OLC_RES[i/2]; lat+=RZ_OLC.indexOf(c[i])*tam; lng+=RZ_OLC.indexOf(c[i+1])*tam; }
+  var tLat=tam, tLng=tam;
+  for(i=10;i<c.length;i++){ var d=RZ_OLC.indexOf(c[i]); tLat/=5; tLng/=4; lat+=Math.floor(d/4)*tLat; lng+=(d%4)*tLng; }
+  return { lat:lat+tLat/2, lng:lng+tLng/2 };
+}
+function rzOlcCodificar(lat,lng){
+  lat=Math.min(89.9999,Math.max(-90,lat))+90; lng=((lng+180)%360+360)%360; var c='';
+  for(var i=0;i<5;i++){ var r=RZ_OLC_RES[i], a=Math.floor(lat/r), b=Math.floor(lng/r); c+=RZ_OLC[a]+RZ_OLC[b]; lat-=a*r; lng-=b*r; }
+  return c.slice(0,8)+'+'+c.slice(8);
+}
+function rzPlusCode(t, ref){
+  var m=String(t||'').toUpperCase().match(/(?:^|[^A-Z0-9])([23456789CFGHJMPQRVWX]{2,8})\+([23456789CFGHJMPQRVWX]{2,3})(?![A-Z0-9])/);
+  if(!m || m[1].length%2) return null;
+  var antes=m[1], depois=m[2];
+  if(antes.length===8){ var d=rzOlcDecodificar(antes+'+'+depois); return { lat:+d.lat.toFixed(6), lng:+d.lng.toFixed(6), status:'ok' }; }
+  if(!ref) return null;                         /* código curto: precisa de referência perto (até ~50 km) */
+  var falta=8-antes.length, cheio=rzOlcCodificar(ref.lat,ref.lng).replace('+','').slice(0,falta)+antes+depois;
+  var p=rzOlcDecodificar(cheio), meio=RZ_OLC_RES[falta/2-1]/2;
+  if(p.lat-ref.lat>meio) p.lat-=meio*2; else if(ref.lat-p.lat>meio) p.lat+=meio*2;
+  if(p.lng-ref.lng>meio) p.lng-=meio*2; else if(ref.lng-p.lng>meio) p.lng+=meio*2;
+  return { lat:+p.lat.toFixed(6), lng:+p.lng.toFixed(6), status:'ok' };
+}
+
+function rzPlusCodeDe(t){ return rzPlusCode(t, rzBase()); }
+/* serviço gratuito recusando (bloqueio por excesso): parar de insistir no dia */
+var rzGratisBloq=false, rzGratisFalhas=0;
+function rzGratisRecusou(){
+  rzGratisFalhas++;
+  if(rzGratisFalhas>=2 && !rzGratisBloq){
+    rzGratisBloq=true;
+    rzMsg('O serviço gratuito de endereços está recusando as buscas (bloqueio por excesso)'
+      +(rzGeoEsgotado||!rzGAtivo()?' e o limite do Google acabou':'')+'. Os que faltaram ficam para tentar amanhã — ou suba a cota diária do Google.', true);
+  }
+}
+var RZ_MOTIVO={ naoachou:'Não encontrado — endereço incompleto ou rural: use 📍',
+                bloqueado:'Busca recusada hoje (limite do Google e do serviço gratuito) — tente amanhã',
+                curto:'Link curto do Google — abra, copie o link completo e cole de novo' };
+
 var rzGeoEsgotado=false, rzGeoIdx=null;
 function rzGeoIndice(){
   if(rzGeoIdx) return rzGeoIdx;
@@ -1757,8 +1801,8 @@ function rzGeoLimite(st){
 window.rzReprocurar=function(){
   var faltam=rzPontos.filter(function(p){ return p.lat==null && p.status!=='fila' && p.status!=='buscando'; });
   if(!faltam.length) return;
-  rzGeoIdx=null;
-  faltam.forEach(function(p){ p._vinc=''; rzBuscar(p); });
+  rzGeoIdx=null; rzGratisBloq=false; rzGratisFalhas=0;
+  faltam.forEach(function(p){ p._vinc=''; p.motivo=null; rzBuscar(p); });
   rzMsg('Procurando de novo '+faltam.length+' endereço'+(faltam.length===1?'':'s')+'…');
 };
 
@@ -1832,6 +1876,8 @@ function rzRodarFila(){
     return;
   }
 
+  var pcd=rzPlusCodeDe(p.endereco);
+  if(pcd){ p.lat=pcd.lat; p.lng=pcd.lng; p.status='ok'; p.motivo=null; rzMarcarSujo(); rzFimBusca(0); return; }
   var conhecido=rzGeoConhecido(p.endereco);
   if(conhecido){
     p.lat=conhecido.lat; p.lng=conhecido.lng; p.status=conhecido.status==='manual'?'manual':conhecido.status;
@@ -1854,7 +1900,13 @@ function rzRodarFila(){
     })(0);
     return;
   }
-  /* serviço gratuito: uma tentativa por segundo (regra de uso), da mais completa à só-cidade */
+  /* serviço gratuito: mesma busca da importação (1 por segundo, detecta bloqueio) */
+  rzGeoTexto(p.endereco).then(function(g){
+    if(g.lat!=null){ p.lat=g.lat; p.lng=g.lng; p.status=g.status; p.motivo=null; rzMarcarSujo(); }
+    else { p.status='erro'; p.motivo=g.motivo||'naoachou'; }
+    rzFimBusca(0);
+  });
+  return;
   (function tenta(i){
     if(i>=vs.length){ p.status='erro'; rzFimBusca(1100); return; }
     var v=vs[i], base='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&accept-language=pt-BR&viewbox=-57.7,-27.0,-49.6,-33.8';
@@ -2082,6 +2134,7 @@ function rzPintar(){
   var NUM=rzNumeros();
   el.innerHTML=rzPontos.map(function(p,i){
     var L=T.lin[i]||{}, st=RZ_ST[p.status]||RZ_ST.ok, sede=rzEhSede(p);
+    if(p.status==='erro' && p.motivo==='bloqueado') st=['!','Busca recusada hoje (limite) — tente "procurar de novo" amanhã, ou use 📍'];
     if(sede) st=['⌂','É a sede — início/fim da rota, não conta como parada'];
     return '<div class="rz-item'+(p.status==='erro'?' erro':'')+(sede?' sede':'')+(rzPosicionando===p.id?' pos':'')+'">'
       + '<div class="rz-num" onclick="rzFocar(\''+p.id+'\')" title="Ver no mapa">'+(sede?'⌂':(NUM[p.id]||'?'))+'</div>'
@@ -2285,7 +2338,7 @@ window.rzSalvar=function(){
     pontos:rzPontos.map(function(p){ return { id:p.id, nome:p.nome||'', endereco:p.endereco, lat:p.lat, lng:p.lng,
       status:(p.status==='fila'||p.status==='buscando')?'erro':p.status, paradaMin:p.paradaMin!=null?p.paradaMin:null,
       clienteId:p.clienteId||null, semCliente:!!p.semCliente,
-      cobliMin:p.cobliMin!=null?p.cobliMin:null, cobliHora:p.cobliHora!=null?p.cobliHora:null }; }),
+      cobliMin:p.cobliMin!=null?p.cobliMin:null, cobliHora:p.cobliHora!=null?p.cobliHora:null, motivo:p.lat==null?(p.motivo||null):null }; }),
     kmEstimado:+T.km.toFixed(1), minEstimado:Math.round(T.min), kmPelasRuas:!!T.ruas,
     rotaRuas:rzGRotaValida()?rzG.rota:null,
     atualizadoEm:agora(), atualizadoPor:sessaoEmail };
@@ -3010,17 +3063,19 @@ window.rzCobliAbrir=function(i){
 /* endereço → posição, para salvar sem abrir na tela (Google se ativo; senão o gratuito, 1 por segundo) */
 function rzGeoTexto(end){
   var k=rzCobliChave(end);
+  var pc=rzPlusCodeDe(end); if(pc) return Promise.resolve(pc);        /* Plus Code: converte aqui, exato e sem gastar */
   var conhecido=rzGeoConhecido(end);
   if(conhecido) return Promise.resolve(conhecido);
   if(rzGeoCache[k]) return Promise.resolve(rzGeoCache[k]);
   var espera=(rzGChave() && rzG.estado!=='falhou') ? rzGCarregar().catch(function(){}) : Promise.resolve();
   return espera.then(function(){
     return new Promise(function(ok){
-      var fim=function(r){ rzGeoCache[k]=r; ok(r); };
+      /* só guarda na memória o que achou ou o que de fato não existe — recusa não, para tentar de novo */
+      var fim=function(r){ if(r.lat!=null || r.motivo==='naoachou') rzGeoCache[k]=r; ok(r); };
       if(rzGAtivo() && !rzGeoEsgotado){
         var gc=new google.maps.Geocoder(), ts=[{ q:end, aprox:false }].concat(rzVariantes(end).filter(function(v){ return v.q && v.aprox; }));
         (function tenta(i){
-          if(i>=ts.length){ fim({ lat:null, lng:null, status:'erro' }); return; }
+          if(i>=ts.length){ fim({ lat:null, lng:null, status:'erro', motivo:'naoachou' }); return; }
           gc.geocode({ address:ts[i].q, region:'br', componentRestrictions:{ country:'BR' } }, function(res, st){
             if(rzGeoLimite(st)){ rzGeoTexto(end).then(ok); return; }     /* limite acabou: refaz pelo gratuito */
             if(st!=='OK' || !res || !res[0]){ tenta(i+1); return; }
@@ -3030,20 +3085,28 @@ function rzGeoTexto(end){
         })(0);
         return;
       }
+      if(rzGratisBloq){ fim({ lat:null, lng:null, status:'erro', motivo:'bloqueado' }); return; }
       var vs=rzVariantes(end);
       (function tenta(i){
-        if(i>=vs.length){ setTimeout(function(){ fim({ lat:null, lng:null, status:'erro' }); }, 1100); return; }
+        if(i>=vs.length){ setTimeout(function(){ fim({ lat:null, lng:null, status:'erro', motivo:'naoachou' }); }, 1100); return; }
+        if(rzGratisBloq){ fim({ lat:null, lng:null, status:'erro', motivo:'bloqueado' }); return; }
         var v=vs[i], base='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&accept-language=pt-BR';
         fetch(v.cep?base+'&postalcode='+encodeURIComponent(v.cep):base+'&q='+encodeURIComponent(v.q))
-          .then(function(r){ return r.ok?r.json():[]; })
+          .then(function(r){ if(!r.ok) throw { recusa:true }; return r.json(); })
           .then(function(res){
+            rzGratisFalhas=0;
             var a=res&&res[0];
             if(!a){ setTimeout(function(){ tenta(i+1); }, 1100); return; }
             var t=String(a.addresstype||a.type||'');
             setTimeout(function(){ fim({ lat:+(+a.lat).toFixed(6), lng:+(+a.lon).toFixed(6),
               status:(!v.aprox && /^(house|building|amenity|shop|office|industrial|commercial|retail|house_number)$/.test(t))?'ok':'aprox' }); }, 1100);
           })
-          .catch(function(){ setTimeout(function(){ tenta(i+1); }, 1100); });
+          .catch(function(){
+            /* resposta recusada ou bloqueada (o bloqueio chega como erro de rede): não é "não existe" */
+            rzGratisRecusou();
+            if(rzGratisBloq){ fim({ lat:null, lng:null, status:'erro', motivo:'bloqueado' }); return; }
+            setTimeout(function(){ tenta(i); }, 3000);                  /* uma recusa solta: espera e tenta a mesma */
+          });
       })(0);
     });
   });
@@ -3135,15 +3198,37 @@ function rzPintarCompl(txt){
   var f=rzComplFaltam();
   if(!f.pts){ el.style.display='none'; el.innerHTML=''; return; }
   el.style.display='';
-  el.innerHTML='<span>⚠ <b>'+f.pts+'</b> parada'+(f.pts===1?'':'s')+' sem local em '+f.rotas+' rota'+(f.rotas===1?'':'s')+' salva'+(f.rotas===1?'':'s')+'</span>'
+  el.innerHTML='<span>⚠ <b>'+f.pts+'</b> parada'+(f.pts===1?'':'s')+' sem local em '+f.rotas+' rota'+(f.rotas===1?'':'s')+' salva'+(f.rotas===1?'':'s')
+    +' · <a href="#" onclick="rzComplLista();return false">ver quais</a></span>'
     +'<button class="btn btn-sm" onclick="rzComplTodas()">🔁 Completar todas</button>';
 }
+/* lista dos endereços que faltaram, sem repetir, com o motivo e as rotas onde aparecem */
+window.rzComplLista=function(){
+  var por={};
+  (rzSalvas||[]).forEach(function(r){ (r.pontos||[]).forEach(function(p){
+    if(p.lat!=null || !p.endereco) return;
+    var k=rzCobliChave(p.endereco), e=por[k]=por[k]||{ end:p.endereco, rotas:[], motivo:p.motivo||'naoachou' };
+    if(e.rotas.indexOf(r.nome)<0) e.rotas.push(r.nome);
+    if(p.motivo==='bloqueado') e.motivo='bloqueado';
+  }); });
+  var lista=Object.keys(por).map(function(k){ return por[k]; }).sort(function(a,b){ return a.motivo.localeCompare(b.motivo)||a.end.localeCompare(b.end,'pt-BR'); });
+  var nB=lista.filter(function(x){ return x.motivo==='bloqueado'; }).length;
+  modal({ titulo:'Paradas sem local', sub:lista.length+' endereço'+(lista.length===1?'':'s')+' diferente'+(lista.length===1?'':'s'),
+    body:(nB?'<div class="rz-av esp" style="font-size:12.5px;margin-bottom:8px">'+nB+' foram recusados pelos serviços de busca hoje (limite) — tente "Completar todas" amanhã, ou suba a cota diária do Google.</div>':'')
+      +'<div style="max-height:55vh;overflow:auto">'+lista.map(function(x){
+        return '<div class="rz-imp-it" style="display:block"><div style="font-size:13px;font-weight:600;overflow-wrap:anywhere">'+esc(x.end)+'</div>'
+          +'<div style="font-size:11.5px;color:'+(x.motivo==='bloqueado'?'var(--amber)':'var(--muted)')+'">'+esc(RZ_MOTIVO[x.motivo]||RZ_MOTIVO.naoachou)+'</div>'
+          +'<div style="font-size:11.5px;margin-top:2px">'+x.rotas.map(function(n){
+            var r=rzSalvas.filter(function(s2){ return s2.nome===n; })[0];
+            return '<a href="#" onclick="fecharModal();rzAbrir(\''+esc(r?r.firestoreId:'')+'\');return false">'+esc(n)+'</a>'; }).join(' · ')+'</div></div>';
+      }).join('')+'</div>' });
+};
 window.rzComplParar=function(){ rzCompl.parar=true; rzPintarCompl('Parando depois do endereço atual…'); };
 window.rzComplTodas=function(){
   if(rzCompl.rodando) return;
   var alvo=(rzSalvas||[]).filter(function(r){ return (r.pontos||[]).some(function(p){ return p.lat==null && p.endereco; }); });
   if(!alvo.length) return;
-  rzCompl.rodando=true; rzCompl.parar=false; rzGeoIdx=null;
+  rzCompl.rodando=true; rzCompl.parar=false; rzGeoIdx=null; rzGratisBloq=false; rzGratisFalhas=0;
   Object.keys(rzGeoCache).forEach(function(k){ if(!rzGeoCache[k] || rzGeoCache[k].lat==null) delete rzGeoCache[k]; });   /* falha antiga: tenta de novo */
   var total=alvo.reduce(function(a,r){ return a+(r.pontos||[]).filter(function(p){ return p.lat==null && p.endereco; }).length; },0);
   var feitos=0, achados=0, rotasGravadas=0;
@@ -3158,13 +3243,14 @@ window.rzComplTodas=function(){
           if(rzCompl.parar || pt.lat!=null || !pt.endereco) return;
           return rzGeoTexto(pt.endereco).then(function(g){
             feitos++;
-            if(g && g.lat!=null){ pt.lat=g.lat; pt.lng=g.lng; pt.status=g.status||'aprox'; achados++; mudou=true; }
+            if(g && g.lat!=null){ pt.lat=g.lat; pt.lng=g.lng; pt.status=g.status||'aprox'; pt.motivo=null; achados++; mudou=true; }
+            else if(g && g.motivo && pt.motivo!==g.motivo){ pt.motivo=g.motivo; mudou=true; }
             mostra();
           });
         });
       }, Promise.resolve()).then(function(){
         if(!mudou) return;
-        rotasGravadas++;
+        if(pontos.some(function(x,ii){ return x.lat!=null && (r.pontos[ii]||{}).lat==null; })) rotasGravadas++;
         /* a ordem e o km mudam com pontos novos: o traçado salvo deixa de valer */
         return updateDoc(doc(dbC,'frotaRoteiros',r.firestoreId), { pontos:pontos, rotaRuas:null, kmPelasRuas:false, atualizadoEm:agora(), atualizadoPor:sessaoEmail })
           .then(function(){ r.pontos=pontos; r.rotaRuas=null; r.kmPelasRuas=false; if(r.firestoreId===rzAberta) rzAbrir(r.firestoreId); });
@@ -3174,7 +3260,10 @@ window.rzComplTodas=function(){
     var parou=rzCompl.parar; rzCompl.rodando=false; rzCompl.parar=false;
     var f=rzComplFaltam();
     rzMsg((parou?'Parado. ':'')+achados+' de '+feitos+' endereço'+(feitos===1?'':'s')+' localizado'+(achados===1?'':'s')+' em '+rotasGravadas+' rota'+(rotasGravadas===1?'':'s')
-      +(f.pts?' · ainda faltam '+f.pts+' (abra a rota e use 📍, ou tente de novo amanhã com o limite do Google renovado)':' · todas as rotas salvas estão com as paradas no mapa.')
+      +(f.pts?' · ainda faltam '+f.pts+(rzGratisBloq
+          ? ' — os serviços de busca estão recusando hoje (limite do Google e bloqueio do gratuito). Tente amanhã, ou suba a cota diária do Google. "ver quais" mostra a lista.'
+          : ' (abra a rota e use 📍 — "ver quais" mostra a lista)')
+        :' · todas as rotas salvas estão com as paradas no mapa.')
       +(rotasGravadas?' Abra cada rota e ⚡ Otimize para traçar pelas ruas.':''), !!f.pts && !achados);
     rzListar();
   }).catch(function(e){
