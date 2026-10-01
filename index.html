@@ -565,6 +565,10 @@ html[data-pal="vinho"][data-theme="light"]{
 .rz-imp-it label{flex:1;display:flex;gap:8px;align-items:flex-start;margin:0;cursor:pointer;color:var(--text);font-size:13px;font-weight:500}
 .rz-imp-it input{width:auto;margin-top:3px;accent-color:var(--primary)}
 .rz-imp-it small{display:block;color:var(--muted);font-size:11.5px;font-weight:400;margin-top:1px}
+
+.rz-compl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;background:var(--card-2);border:1px solid var(--amber);
+  border-radius:10px;padding:8px 10px;margin:-2px 0 10px}
+.rz-compl span{flex:1;min-width:0}
 </style>
 </head>
 <body>
@@ -881,6 +885,7 @@ html[data-pal="vinho"][data-theme="light"]{
             <select id="rz-salvas" onchange="rzAbrir(this.value)"><option value="">Rotas salvas…</option></select>
             <button class="btn btn-sm btn-ghost" onclick="rzNova()">+ Nova</button>
           </div>
+          <div class="rz-compl" id="rz-compl" style="display:none"></div>
           <div class="rz-linha"><button class="btn btn-sm btn-ghost" id="rz-ver-bt" onclick="rzVerAbrir()" style="flex:1">🗺 Ver várias rotas</button></div>
           <div class="rz-ver" id="rz-ver" style="display:none"></div>
           <label class="rz-chk" style="margin:-2px 0 10px"><input type="checkbox" id="rz-tracos" onchange="rzTracosAlternar(this.checked)"> 〰 Mostrar os traços das rotas</label>
@@ -2232,6 +2237,7 @@ function rzListar(){
         +((r.dias||[]).length?' · '+r.dias.map(function(d){ return RZ_DIAS[d]; }).join('/'):'')+' · '+(r.pontos||[]).length+' pontos</option>';
     }).join('');
     rzPintarVer(); if(Object.keys(rzVer.sel).length) rzDesenhar(false);
+    rzPintarCompl();
   }).catch(function(e){
     console.error('frotaRoteiros:',e);
     var inf=document.getElementById('rz-msg'); if(inf) inf.textContent='Não foi possível ler as rotas salvas: '+(e.code||e.message);
@@ -3109,6 +3115,73 @@ function rzAplicarTracos(){
   if(rzG.mapa && window.google && google.maps) rzG.objs.forEach(function(o){ if(o instanceof google.maps.Polyline) o.setMap(null); });
   if(rzCamada && window.L) rzCamada.eachLayer(function(l){ if(l instanceof L.Polyline) rzCamada.removeLayer(l); });
 }
+
+/* ---- completar as localizações de TODAS as rotas salvas ----
+   Para cada parada sem local: a mesma posição já achada em outra rota
+   (não gasta nada) → Google, enquanto há limite no dia → serviço gratuito.
+   Grava rota por rota: se parar no meio, o que já foi achado fica salvo. */
+var rzCompl={ rodando:false, parar:false };
+function rzComplFaltam(){
+  var rotas=0, pts=0;
+  (rzSalvas||[]).forEach(function(r){ var n=(r.pontos||[]).filter(function(p){ return p.lat==null && p.endereco; }).length; if(n){ rotas++; pts+=n; } });
+  return { rotas:rotas, pts:pts };
+}
+function rzPintarCompl(txt){
+  var el=document.getElementById('rz-compl'); if(!el) return;
+  if(rzCompl.rodando){
+    el.style.display=''; el.innerHTML='<span>'+esc(txt||'Completando…')+'</span><button class="btn btn-sm btn-ghost" onclick="rzComplParar()">Parar</button>';
+    return;
+  }
+  var f=rzComplFaltam();
+  if(!f.pts){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='';
+  el.innerHTML='<span>⚠ <b>'+f.pts+'</b> parada'+(f.pts===1?'':'s')+' sem local em '+f.rotas+' rota'+(f.rotas===1?'':'s')+' salva'+(f.rotas===1?'':'s')+'</span>'
+    +'<button class="btn btn-sm" onclick="rzComplTodas()">🔁 Completar todas</button>';
+}
+window.rzComplParar=function(){ rzCompl.parar=true; rzPintarCompl('Parando depois do endereço atual…'); };
+window.rzComplTodas=function(){
+  if(rzCompl.rodando) return;
+  var alvo=(rzSalvas||[]).filter(function(r){ return (r.pontos||[]).some(function(p){ return p.lat==null && p.endereco; }); });
+  if(!alvo.length) return;
+  rzCompl.rodando=true; rzCompl.parar=false; rzGeoIdx=null;
+  Object.keys(rzGeoCache).forEach(function(k){ if(!rzGeoCache[k] || rzGeoCache[k].lat==null) delete rzGeoCache[k]; });   /* falha antiga: tenta de novo */
+  var total=alvo.reduce(function(a,r){ return a+(r.pontos||[]).filter(function(p){ return p.lat==null && p.endereco; }).length; },0);
+  var feitos=0, achados=0, rotasGravadas=0;
+  var mostra=function(){ rzPintarCompl('Procurando '+feitos+' de '+total+' · '+achados+' achado'+(achados===1?'':'s')+(rzGeoEsgotado?' · pelo serviço gratuito (1 por segundo)':'')); };
+  mostra();
+  alvo.reduce(function(pr,r){
+    return pr.then(function(){
+      if(rzCompl.parar) return;
+      var pontos=(r.pontos||[]).map(function(p){ return Object.assign({}, p); }), mudou=false;
+      return pontos.reduce(function(p2,pt){
+        return p2.then(function(){
+          if(rzCompl.parar || pt.lat!=null || !pt.endereco) return;
+          return rzGeoTexto(pt.endereco).then(function(g){
+            feitos++;
+            if(g && g.lat!=null){ pt.lat=g.lat; pt.lng=g.lng; pt.status=g.status||'aprox'; achados++; mudou=true; }
+            mostra();
+          });
+        });
+      }, Promise.resolve()).then(function(){
+        if(!mudou) return;
+        rotasGravadas++;
+        /* a ordem e o km mudam com pontos novos: o traçado salvo deixa de valer */
+        return updateDoc(doc(dbC,'frotaRoteiros',r.firestoreId), { pontos:pontos, rotaRuas:null, kmPelasRuas:false, atualizadoEm:agora(), atualizadoPor:sessaoEmail })
+          .then(function(){ r.pontos=pontos; r.rotaRuas=null; r.kmPelasRuas=false; if(r.firestoreId===rzAberta) rzAbrir(r.firestoreId); });
+      });
+    });
+  }, Promise.resolve()).then(function(){
+    var parou=rzCompl.parar; rzCompl.rodando=false; rzCompl.parar=false;
+    var f=rzComplFaltam();
+    rzMsg((parou?'Parado. ':'')+achados+' de '+feitos+' endereço'+(feitos===1?'':'s')+' localizado'+(achados===1?'':'s')+' em '+rotasGravadas+' rota'+(rotasGravadas===1?'':'s')
+      +(f.pts?' · ainda faltam '+f.pts+' (abra a rota e use 📍, ou tente de novo amanhã com o limite do Google renovado)':' · todas as rotas salvas estão com as paradas no mapa.')
+      +(rotasGravadas?' Abra cada rota e ⚡ Otimize para traçar pelas ruas.':''), !!f.pts && !achados);
+    rzListar();
+  }).catch(function(e){
+    console.error('completar:',e); rzCompl.rodando=false; rzCompl.parar=false;
+    rzMsg('Não foi possível gravar: '+(e.code||'')+' '+(e.message||''), true); rzListar();
+  });
+};
 
 function renderRoteirizar(){
   rzCliCarregar();
