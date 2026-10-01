@@ -1718,6 +1718,45 @@ function rzMarcarSujo(){ rzSujo=true; var b=document.getElementById('rz-salvar')
 
 /* ---------- busca de endereço (fila de 1 por segundo) ---------- */
 function rzBuscar(p){ p.status='fila'; rzFila.push(p.id); rzPintar(); rzRodarFila(); }
+
+/* ---- endereço já localizado antes, e o limite diário do Google ----
+   Antes de gastar uma busca, procura o MESMO endereço nas rotas salvas (as
+   rotas da semana repetem muito cliente). Posição corrigida à mão tem
+   preferência — a correção vale para as próximas importações também.
+   Se o Google responder que o limite do dia acabou, o resto segue pelo
+   serviço gratuito (1 por segundo), em vez de virar "não encontrado". */
+var rzGeoEsgotado=false, rzGeoIdx=null;
+function rzGeoIndice(){
+  if(rzGeoIdx) return rzGeoIdx;
+  var idx={};
+  (rzSalvas||[]).forEach(function(r){ (r.pontos||[]).forEach(function(p){
+    if(p.lat==null || p.status==='erro' || p.status==='fila' || !p.endereco) return;
+    var k=rzCobliChave(p.endereco), a=idx[k];
+    if(!a || (p.status==='manual' && a.status!=='manual')) idx[k]={ lat:p.lat, lng:p.lng, status:p.status };
+  }); });
+  return (rzGeoIdx=idx);
+}
+function rzGeoConhecido(end){
+  var k=rzCobliChave(end); if(!k) return null;
+  if(rzGeoCache[k] && rzGeoCache[k].lat!=null) return rzGeoCache[k];
+  return rzGeoIndice()[k] || null;
+}
+function rzGeoLimite(st){
+  if(st!=='OVER_QUERY_LIMIT' && st!=='OVER_DAILY_LIMIT' && st!=='REQUEST_DENIED') return false;
+  if(!rzGeoEsgotado){
+    rzGeoEsgotado=true;
+    rzMsg('O limite diário de buscas de endereço do Google acabou — continuo pelo serviço gratuito (mais lento, 1 por segundo).', true);
+  }
+  return true;
+}
+window.rzReprocurar=function(){
+  var faltam=rzPontos.filter(function(p){ return p.lat==null && p.status!=='fila' && p.status!=='buscando'; });
+  if(!faltam.length) return;
+  rzGeoIdx=null;
+  faltam.forEach(function(p){ p._vinc=''; rzBuscar(p); });
+  rzMsg('Procurando de novo '+faltam.length+' endereço'+(faltam.length===1?'':'s')+'…');
+};
+
 /* ---------- entender o que foi colado ----------
    Link do Google Maps (como o Cobli manda) ou "lat, lng" solto: a coordenada
    já é exata — só se busca o endereço do ponto, para o nome ficar legível.
@@ -1788,13 +1827,19 @@ function rzRodarFila(){
     return;
   }
 
+  var conhecido=rzGeoConhecido(p.endereco);
+  if(conhecido){
+    p.lat=conhecido.lat; p.lng=conhecido.lng; p.status=conhecido.status==='manual'?'manual':conhecido.status;
+    rzMarcarSujo(); rzFimBusca(0); return;
+  }
   var vs=rzVariantes(p.endereco);
-  if(rzGAtivo()){
+  if(rzGAtivo() && !rzGeoEsgotado){
     /* Google: o endereço como veio; se não achar, a cidade (aproximado) */
     var gc=new google.maps.Geocoder(), tentativas=[{ q:p.endereco, aprox:false }].concat(vs.filter(function(v){ return v.q && v.aprox; }));
     (function tenta(i){
       if(i>=tentativas.length){ p.status='erro'; rzFimBusca(250); return; }
       gc.geocode({ address:tentativas[i].q, region:'br', componentRestrictions:{ country:'BR' } }, function(res, st){
+        if(rzGeoLimite(st)){ p.status='fila'; rzFila.unshift(p.id); rzFimBusca(0); return; }   /* volta para a fila, agora pelo gratuito */
         if(st!=='OK' || !res || !res[0]){ tenta(i+1); return; }
         var g=res[0].geometry, t=g.location_type;
         p.lat=+g.location.lat().toFixed(6); p.lng=+g.location.lng().toFixed(6);
@@ -2011,7 +2056,7 @@ function rzPintar(){
     : '<span style="color:var(--amber)">⚠ Defina o ponto de partida (a fábrica) para calcular a rota a partir dela.</span> <button class="btn btn-sm" onclick="rzDefinirBase()">Definir</button>';
   var nSede=rzPontos.filter(rzEhSede).length, n=rzPontos.length-nSede, loc=rzPontos.filter(rzConta).length;
   document.getElementById('rz-resumo').innerHTML=rzPontos.length
-    ? '<b>'+n+'</b> parada'+(n===1?'':'s')+(loc<n?' ('+(n-loc)+' sem local)':'')+(nSede?' <span style="color:var(--muted)">(+'+nSede+'× a sede, fora da conta)</span>':'')+' · <b>'+T.km.toFixed(1).replace('.',',')+' km</b> · <b>'+rzDur(T.min)+'</b>'
+    ? '<b>'+n+'</b> parada'+(n===1?'':'s')+(loc<n?' ('+(n-loc)+' sem local · <a href="#" onclick="rzReprocurar();return false">🔁 procurar de novo</a>)':'')+(nSede?' <span style="color:var(--muted)">(+'+nSede+'× a sede, fora da conta)</span>':'')+' · <b>'+T.km.toFixed(1).replace('.',',')+' km</b> · <b>'+rzDur(T.min)+'</b>'
       +' · '+(rzVolta()?'volta':'fim')+' ~'+rzHora(T.fim)
       +'<div style="font-size:11px;margin-top:3px;color:'+(T.ruas?'var(--green)':'var(--muted)')+'">'
       +(T.ruas?'✓ km e horários pelas ruas (Google)':(rzGAtivo()?'Estimativa em linha reta — clique em 🛣 Traçar pelas ruas':'Estimativa em linha reta'))+'</div>'
@@ -2178,6 +2223,7 @@ window.rzGoogle=function(){
 function rzListar(){
   rzListou=true;
   getDocs(collection(dbC,'frotaRoteiros')).then(function(s){
+    rzGeoIdx=null;
     rzSalvas=s.docs.map(function(x){ return Object.assign({ firestoreId:x.id }, x.data()); })
       .sort(function(a,b){ return String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR'); });
     var sel=document.getElementById('rz-salvas');
@@ -2958,16 +3004,19 @@ window.rzCobliAbrir=function(i){
 /* endereço → posição, para salvar sem abrir na tela (Google se ativo; senão o gratuito, 1 por segundo) */
 function rzGeoTexto(end){
   var k=rzCobliChave(end);
+  var conhecido=rzGeoConhecido(end);
+  if(conhecido) return Promise.resolve(conhecido);
   if(rzGeoCache[k]) return Promise.resolve(rzGeoCache[k]);
   var espera=(rzGChave() && rzG.estado!=='falhou') ? rzGCarregar().catch(function(){}) : Promise.resolve();
   return espera.then(function(){
     return new Promise(function(ok){
       var fim=function(r){ rzGeoCache[k]=r; ok(r); };
-      if(rzGAtivo()){
+      if(rzGAtivo() && !rzGeoEsgotado){
         var gc=new google.maps.Geocoder(), ts=[{ q:end, aprox:false }].concat(rzVariantes(end).filter(function(v){ return v.q && v.aprox; }));
         (function tenta(i){
           if(i>=ts.length){ fim({ lat:null, lng:null, status:'erro' }); return; }
           gc.geocode({ address:ts[i].q, region:'br', componentRestrictions:{ country:'BR' } }, function(res, st){
+            if(rzGeoLimite(st)){ rzGeoTexto(end).then(ok); return; }     /* limite acabou: refaz pelo gratuito */
             if(st!=='OK' || !res || !res[0]){ tenta(i+1); return; }
             var g=res[0].geometry, t=g.location_type;
             fim({ lat:+g.location.lat().toFixed(6), lng:+g.location.lng().toFixed(6), status:(!ts[i].aprox && (t==='ROOFTOP'||t==='RANGE_INTERPOLATED'))?'ok':'aprox' });
@@ -3035,7 +3084,8 @@ function rzCobliSalvarMarcadas(){
   }, Promise.resolve()).then(function(){
     rzImp.salvando=false; fecharModal(); rzListar();
     rzMsg('Do Cobli: '+(criadas?criadas+' rota'+(criadas===1?' criada':'s criadas'):'')+(criadas&&trocadas?' e ':'')+(trocadas?trocadas+' atualizada'+(trocadas===1?'':'s'):'')
-      +(semLocal?' · '+semLocal+' endereço(s) não encontrado(s) — abra a rota e use 📍':'')+'. Abra cada uma pela lista para ⚡ Otimizar e 🛣 Traçar.');
+      +(semLocal?' · '+semLocal+' endereço(s) não encontrado(s) — abra a rota e use "🔁 procurar de novo" ou 📍':'')+'. Abra cada uma pela lista para ⚡ Otimizar e 🛣 Traçar.'
+      +(rzGeoEsgotado?' (O limite diário do Google acabou no meio — o resto foi pelo serviço gratuito.)':''));
   }).catch(function(e){
     console.error('cobli salvar:',e); rzImp.salvando=false;
     if(bt){ bt.disabled=false; bt.textContent='Salvar as marcadas'; }
