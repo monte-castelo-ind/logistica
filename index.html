@@ -538,6 +538,17 @@ html[data-pal="vinho"][data-theme="light"]{
   .rz-mapa.rt-mapa{order:-1;position:relative;top:0;height:46vh;min-height:280px}
   .rz-painel{max-height:none}
 }
+
+.rz-cli-op{display:block;width:100%;text-align:left;background:var(--card-2);border:1px solid var(--border);border-radius:8px;
+  padding:7px 10px;margin-top:5px;color:var(--text);font:inherit;font-size:12.5px;cursor:pointer}
+.rz-cli-op:hover{border-color:var(--primary)}
+.rz-cli-op span{color:var(--muted);font-size:11.5px}
+.rz-cli-dica{font-size:11.5px;color:var(--muted);margin-top:5px}
+.rz-s.rz-cli{color:var(--text);font-weight:600}
+.rz-av.esp{color:var(--amber);font-weight:600}
+.rz-av.atr{color:var(--red);font-weight:600}
+.rz-s.rz-obs{color:var(--text);font-style:italic}
+.rz-ficha{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
 </style>
 </head>
 <body>
@@ -874,6 +885,10 @@ html[data-pal="vinho"][data-theme="light"]{
             <button class="btn btn-sm" onclick="rzAdicionar()">+ Ponto</button>
           </div>
           <div class="rz-linha"><button class="btn btn-sm btn-ghost" onclick="rzColar()" style="flex:1">📋 Colar lista de endereços</button></div>
+          <div class="fld" style="margin-bottom:6px"><label>Adicionar cliente pelo nome</label>
+            <input id="rz-cli-q" placeholder="Ex.: mercadinho joão" oninput="rzCliBuscar(this)" autocomplete="off">
+            <div id="rz-cli-res"></div>
+            <div class="rz-g" id="rz-cli-st" style="margin:4px 0 0"></div></div>
           <div class="rz-resumo" id="rz-resumo"></div>
           <div class="rz-acoes">
             <button class="btn btn-sm" onclick="rzOtimizar()">⚡ Otimizar ordem</button>
@@ -1881,22 +1896,48 @@ function rzOtimizarLocal(){
     for(var i=0;i<rest.length;i++){ var d=rzHav(atual,rest[i]); if(d<md){ md=d; mi=i; } }
     atual=rest.splice(mi,1)[0]; ord.push(atual);
   }
-  /* 2-opt: desfaz cruzamentos */
-  function custo(o){ var c=0, a=base||o[0], k0=base?0:1; for(var k=k0;k<o.length;k++){ c+=rzHav(a,o[k]); a=o[k]; } if(volta) c+=rzHav(a,base); return c; }
-  var melhor=custo(ord), melhorou=true, voltas=0, ini2=base?0:1;
-  while(melhorou && voltas<60){
-    melhorou=false; voltas++;
-    for(var i2=ini2;i2<ord.length-1;i2++) for(var j2=i2+1;j2<ord.length;j2++){
-      var nova=ord.slice(0,i2).concat(ord.slice(i2,j2+1).reverse(), ord.slice(j2+1));
-      var c=custo(nova); if(c<melhor-1e-9){ ord=nova; melhor=c; melhorou=true; }
+  /* Custo = tempo total da rota (deslocamento + espera + descarga) + atraso
+     pesado. Sem ficha com horário, é o mesmo que a menor distância; com
+     horário, a ordem passa a respeitar quem abre cedo e quem abre tarde. */
+  var vel=rzNumCampo('rz-vel',28), par=rzNumCampo('rz-par',10), hs=(rzVal('rz-saida')||'06:00').split(':'), t0=(+hs[0]||0)*60+(+hs[1]||0);
+  function custo(o){ return rzSimular(base?o:o.slice(1), base||o[0], volta, vel, par, base?t0:t0+rzMinParada(o[0],par)).custo; }
+  var ini2=base?0:1;
+  function melhorar(o){
+    var melhor=custo(o), melhorou=true, voltas=0;
+    while(melhorou && voltas<60){
+      melhorou=false; voltas++;
+      /* 2-opt: inverte um trecho (desfaz cruzamentos) */
+      for(var i2=ini2;i2<o.length-1;i2++) for(var j2=i2+1;j2<o.length;j2++){
+        var nova=o.slice(0,i2).concat(o.slice(i2,j2+1).reverse(), o.slice(j2+1));
+        var c=custo(nova); if(c<melhor-1e-9){ o=nova; melhor=c; melhorou=true; }
+      }
+      /* mover uma parada para outra posição (é o que acerta horário de abrir) */
+      for(var a=ini2;a<o.length;a++) for(var b=ini2;b<o.length;b++){
+        if(a===b) continue;
+        var n2=o.slice(), x=n2.splice(a,1)[0]; n2.splice(b,0,x);
+        var c2=custo(n2); if(c2<melhor-1e-9){ o=n2; melhor=c2; melhorou=true; }
+      }
     }
+    return { o:o, c:melhor };
   }
+  var cand=[melhorar(ord)];
+  if(rzTemJanela()){
+    /* segundo ponto de partida: quem abre mais cedo primeiro */
+    var fixo=base?[]:[ord[0]], resto=(base?ord:ord.slice(1)).slice().sort(function(x,y){
+      var jx=rzJanela(x), jy=rzJanela(y); return ((jx&&jx.abre!=null)?jx.abre:0)-((jy&&jy.abre!=null)?jy.abre:0); });
+    cand.push(melhorar(fixo.concat(resto)));
+  }
+  cand.sort(function(x,y){ return x.c-y.c; }); ord=cand[0].o;
   var antes=rzTotais().km;
   rzPontos=ord.concat(sem); rzMarcarSujo(); rzPintar(); rzDesenhar(true);
   var depois=rzTotais().km;
   var inf=document.getElementById('rz-msg');
   if(inf){ inf.style.color='';
-    inf.textContent=(antes>depois+0.05?('Ordem otimizada: '+antes.toFixed(1).replace('.',',')+' → '+depois.toFixed(1).replace('.',',')+' km estimados.'):'A ordem já estava boa.')
+    var TT=rzTotais();
+    inf.textContent=(rzTemJanela()
+        ? ('Ordem otimizada considerando os horários dos clientes: '+depois.toFixed(1).replace('.',',')+' km'
+           +(TT.foraHorario?' · '+TT.foraHorario+' ainda depois de fechar':' · todos dentro do horário')+'.')
+        : (antes>depois+0.05?('Ordem otimizada: '+antes.toFixed(1).replace('.',',')+' → '+depois.toFixed(1).replace('.',',')+' km estimados.'):'A ordem já estava boa.'))
       +(rzGAtivo()?' Traçando pelas ruas…':''); }
   /* com o Google, otimizar já traça pelas ruas — um clique só */
   if(rzGAtivo()) setTimeout(rzTracar, 50);
@@ -1904,32 +1945,27 @@ function rzOtimizarLocal(){
 
 /* ---------- estimativas ---------- */
 function rzTotais(){
+  /* chegada em cada parada, com a ficha do cliente: descarga própria, espera
+     quando chega antes de abrir e atraso quando chega depois de fechar */
   var base=rzBaseRota(), vel=rzNumCampo('rz-vel',28), par=rzNumCampo('rz-par',10);
   var s=rzVal('rz-saida')||'06:00', hs=s.split(':'), t=(+hs[0]||0)*60+(+hs[1]||0), t0=t;
-  if(typeof rzGRotaValida==='function' && rzGRotaValida()){
-    /* trecho k = seq[k] → seq[k+1], com seq = [fábrica] + pontos localizados + [fábrica se volta] */
-    var L=rzG.rota.legs, k=base?0:-1, kmR=0, linR=[];
-    rzPontos.forEach(function(p){
-      if(!rzConta(p)){ linR.push({ id:p.id, chegada:null, perna:null }); return; }
-      var perna=null;
-      if(k>=0 && L[k]){ perna=L[k].m/1000; kmR+=perna; t+=L[k].s/60; }
-      linR.push({ id:p.id, chegada:t, perna:perna });
-      t+=(p.paradaMin!=null?p.paradaMin:par); k++;
-    });
-    var kv=0; if(L[k]){ kv=L[k].m/1000; kmR+=kv; t+=L[k].s/60; }
-    return { km:kmR, min:t-t0, fim:t, lin:linR, kmVolta:kv, ruas:true };
-  }
-  var km=0, ant=base, lin=[];
+  var espera=0, atraso=0, foraHorario=0, diaRuim=0, ruas=false, km=0, kmV=0, lin=[];
+  var L=(typeof rzGRotaValida==='function' && rzGRotaValida()) ? rzG.rota.legs : null, k=base?0:-1, ant=base;
+  if(L) ruas=true;
   rzPontos.forEach(function(p){
+    if(!rzConta(p)){ lin.push({ id:p.id, chegada:null, perna:null }); return; }
     var perna=null;
-    var conta=rzConta(p);
-    if(conta && ant){ perna=rzKm(ant,p); km+=perna; t+=perna/vel*60; }
-    lin.push({ id:p.id, chegada:(conta&&(ant||!base))?t:null, perna:perna });
-    if(conta){ t+=(p.paradaMin!=null?p.paradaMin:par); ant=p; }
+    if(L){ if(k>=0 && L[k]){ perna=L[k].m/1000; km+=perna; t+=L[k].s/60; } k++; }
+    else if(ant){ perna=rzKm(ant,p); km+=perna; t+=perna/vel*60; }
+    var chegou=t, c=rzChegar(p,t); t=c.t;
+    espera+=c.espera; if(c.atraso>0){ atraso+=c.atraso; foraHorario++; }
+    var dr=rzDiaRuim(p); if(dr) diaRuim++;
+    lin.push({ id:p.id, chegada:(ant||!base||L)?chegou:null, perna:perna, espera:c.espera, atraso:c.atraso, diaRuim:dr });
+    t+=rzMinParada(p,par); ant=p;
   });
-  var kmV=0;
-  if(rzVolta() && ant && ant!==base){ kmV=rzKm(ant,base); km+=kmV; t+=kmV/vel*60; }
-  return { km:km, min:t-t0, fim:t, lin:lin, kmVolta:kmV };
+  if(L){ if(L[k]){ kmV=L[k].m/1000; km+=kmV; t+=L[k].s/60; } }
+  else if(rzVolta() && ant && ant!==base){ kmV=rzKm(ant,base); km+=kmV; t+=kmV/vel*60; }
+  return { km:km, min:t-t0, fim:t, lin:lin, kmVolta:kmV, ruas:ruas, espera:espera, atraso:atraso, foraHorario:foraHorario, diaRuim:diaRuim };
 }
 
 /* ---------- desenho ---------- */
@@ -1950,27 +1986,40 @@ function rzPintar(){
       +' · '+(rzVolta()?'volta':'fim')+' ~'+rzHora(T.fim)
       +'<div style="font-size:11px;margin-top:3px;color:'+(T.ruas?'var(--green)':'var(--muted)')+'">'
       +(T.ruas?'✓ km e horários pelas ruas (Google)':(rzGAtivo()?'Estimativa em linha reta — clique em 🛣 Traçar pelas ruas':'Estimativa em linha reta'))+'</div>'
+      +(T.foraHorario?'<div class="rz-av atr" style="font-size:12px;margin-top:3px">⚠ '+T.foraHorario+' parada'+(T.foraHorario===1?'':'s')+' depois do horário de fechar</div>':'')
+      +(T.diaRuim?'<div class="rz-av atr" style="font-size:12px;margin-top:3px">⚠ '+T.diaRuim+' cliente'+(T.diaRuim===1?' não recebe':'s não recebem')+' em algum dia desta rota</div>':'')
+      +(T.espera>=1?'<div class="rz-av esp" style="font-size:12px;margin-top:3px">⏳ '+rzDur(T.espera)+' de espera na porta, somando todas as paradas</div>':'')
     : 'Adicione endereços para montar a rota.';
+  var cs=document.getElementById('rz-cli-st');
+  if(cs) cs.innerHTML=rzCli.erro?'<span style="color:var(--red)">'+esc(rzCli.erro)+'</span>'
+    : (!rzCli.carregou?'Carregando clientes…':(rzCliN()?rzCliN()+' clientes na base · '+rzPontos.filter(function(x){ return x.clienteId; }).length+' reconhecidos nesta rota':'Base de clientes ainda vazia — o robô do ERP preenche uma vez por dia.'));
   var bt=document.getElementById('rz-tracar'); if(bt) bt.style.display=rzGAtivo()?'':'none';
   var gs=document.getElementById('rz-gstatus');
   if(gs) gs.innerHTML=rzGChave()
       ? (rzG.estado==='falhou'?'<span style="color:var(--red)">Google: '+esc(rzG.erro)+'</span>':(rzGAtivo()?'<span style="color:var(--green)">Google Maps ativo</span>':'Google: carregando…'))
         +(podeConfig?' <button class="btn btn-sm btn-ghost" onclick="rzConfigGoogle()">Chave</button>':'')
       : (podeConfig?'Mapa gratuito (OpenStreetMap). <button class="btn btn-sm btn-ghost" onclick="rzConfigGoogle()">Usar Google Maps</button>':'');
+  rzPontos.forEach(rzVincular);
   var NUM=rzNumeros();
   el.innerHTML=rzPontos.map(function(p,i){
     var L=T.lin[i]||{}, st=RZ_ST[p.status]||RZ_ST.ok, sede=rzEhSede(p);
     if(sede) st=['⌂','É a sede — início/fim da rota, não conta como parada'];
     return '<div class="rz-item'+(p.status==='erro'?' erro':'')+(sede?' sede':'')+(rzPosicionando===p.id?' pos':'')+'">'
       + '<div class="rz-num" onclick="rzFocar(\''+p.id+'\')" title="Ver no mapa">'+(sede?'⌂':(NUM[p.id]||'?'))+'</div>'
-      + '<div class="rz-info"><div class="rz-t">'+esc(p.nome||p.endereco)+'</div>'
-      +   (p.nome?'<div class="rz-s">'+esc(p.endereco)+'</div>':'')
+      + '<div class="rz-info"><div class="rz-t">'+esc(rzTitulo(p))+'</div>'
+      +   (rzTitulo(p)!==p.endereco?'<div class="rz-s">'+esc(p.endereco)+'</div>':'')
       +   '<div class="rz-s"><span class="rz-st st-'+p.status+'" title="'+esc(st[1])+'">'+st[0]+' '+esc(st[1].split(' — ')[0])+'</span>'
       +   (L.chegada!=null?' · chega ~'+rzHora(L.chegada):'')+(L.perna!=null?' · '+L.perna.toFixed(1).replace('.',',')+' km':'')+'</div>'
+      +   (p.clienteId?'<div class="rz-s rz-cli">'+esc(rzCliResumo(p))+'</div>':'')
+      +   (L.espera>0?'<div class="rz-s rz-av esp">⏳ espera '+rzDur(L.espera)+' na porta — abre '+esc((rzFicha[p.clienteId]||{}).abre||'')+'</div>':'')
+      +   (L.atraso>0?'<div class="rz-s rz-av atr">⚠ chega '+rzHora(L.chegada+L.espera)+', mas fecha '+esc((rzFicha[p.clienteId]||{}).fecha||'')+'</div>':'')
+      +   (L.diaRuim?'<div class="rz-s rz-av atr">⚠ não recebe '+esc(L.diaRuim)+'</div>':'')
+      +   ((rzFicha[p.clienteId]||{}).obs?'<div class="rz-s rz-obs">📝 '+esc(rzFicha[p.clienteId].obs)+'</div>':'')
       +   (rzPosicionando===p.id?'<div class="rz-s" style="color:var(--primary)">👉 Clique no mapa onde fica este ponto</div>':'')+'</div>'
       + '<div class="rz-bts">'
       +   '<button title="Subir" onclick="rzMover(\''+p.id+'\',-1)">↑</button><button title="Descer" onclick="rzMover(\''+p.id+'\',1)">↓</button>'
       +   '<button title="Posicionar no mapa" onclick="rzPosicionar(\''+p.id+'\')">📍</button>'
+      +   '<button title="'+(p.clienteId?'Ficha do cliente':'Qual é o cliente?')+'" onclick="rzFichaAbrir(\''+p.id+'\')">'+(p.clienteId?'👤':'🔗')+'</button>'
       +   '<button title="Editar" onclick="rzEditar(\''+p.id+'\')">✎</button>'
       +   '<button title="Tirar da rota" onclick="rzRemover(\''+p.id+'\')">×</button></div>'
       + '</div>';
@@ -2028,7 +2077,8 @@ function rzDesenharLeaflet(enquadrar){
       var c=p.status==='aprox'?'#e67700':cor;
       L.marker([p.lat,p.lng], { icon:rzIcone(L,String(nn),c), draggable:true, title:p.nome||p.endereco })
         .on('dragend', function(ev){ var ll=ev.target.getLatLng(); p.lat=+ll.lat.toFixed(6); p.lng=+ll.lng.toFixed(6); p.status='manual'; rzMarcarSujo(); rzPintar(); rzDesenhar(false); })
-        .bindPopup('<div class="rt-pop"><b>'+nn+'. '+esc(p.nome||p.endereco)+'</b>'+(p.nome?'<br>'+esc(p.endereco):'')
+        .bindPopup('<div class="rt-pop"><b>'+nn+'. '+esc(rzTitulo(p))+'</b>'+(rzTitulo(p)!==p.endereco?'<br>'+esc(p.endereco):'')
+          +(p.clienteId?'<br>'+esc(rzCliResumo(p)):'')+((rzFicha[p.clienteId]||{}).obs?'<br>📝 '+esc(rzFicha[p.clienteId].obs):'')
           +(p.status==='aprox'?'<br><span style="color:#b35c00">≈ posição aproximada — arraste o pino se precisar</span>':'')+'</div>')
         .addTo(rzCamada);
       rzLMk[p.id]=rzCamada.getLayers()[rzCamada.getLayers().length-1];
@@ -2147,7 +2197,8 @@ window.rzSalvar=function(){
   var dados={ nome:nome, dias:rzDias.slice().sort(), modo:rzModo(), volta:rzVolta(),
     saida:rzVal('rz-saida')||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28),
     pontos:rzPontos.map(function(p){ return { id:p.id, nome:p.nome||'', endereco:p.endereco, lat:p.lat, lng:p.lng,
-      status:(p.status==='fila'||p.status==='buscando')?'erro':p.status, paradaMin:p.paradaMin!=null?p.paradaMin:null }; }),
+      status:(p.status==='fila'||p.status==='buscando')?'erro':p.status, paradaMin:p.paradaMin!=null?p.paradaMin:null,
+      clienteId:p.clienteId||null, semCliente:!!p.semCliente }; }),
     kmEstimado:+T.km.toFixed(1), minEstimado:Math.round(T.min), kmPelasRuas:!!T.ruas,
     rotaRuas:rzGRotaValida()?rzG.rota:null,
     atualizadoEm:agora(), atualizadoPor:sessaoEmail };
@@ -2289,7 +2340,8 @@ window.rzTracar=function(){
 };
 /* otimiza pelas ruas (até 25 paradas no meio, com a fábrica como início e fim) */
 function rzGOtimizar(){
-  if(rzModo()==='livre') return false;                        /* sem fim fixo: o Google não otimiza assim — cálculo local e depois traça */
+  if(rzModo()==='livre') return false;
+  if(rzTemJanela()) return false;                           /* o otimizar do Google não enxerga horário de abrir/fechar */                        /* sem fim fixo: o Google não otimiza assim — cálculo local e depois traça */
   var base=rzBaseRota(), ps=rzPontos.filter(rzConta);
   if(!base){ rzMsg('Para otimizar pelas ruas, defina a sede (ponto de partida).', true); return false; }
   if(ps.length>25 || !rzVolta()) return false;                /* fora do que o Google otimiza: usa o cálculo local */
@@ -2352,7 +2404,8 @@ function rzGDesenhar(enquadrar){
       icon:rzGSimbolo(p.status==='aprox'?'#e67700':cor), label:{ text:String(nn), color:'#fff', fontWeight:'700', fontSize:'11px' },
       title:nn+'. '+(p.nome||p.endereco) });
     m.addListener('dragend', function(ev){ p.lat=+ev.latLng.lat().toFixed(6); p.lng=+ev.latLng.lng().toFixed(6); p.status='manual'; rzMarcarSujo(); rzPintar(); rzDesenhar(false); });
-    pop(m, '<b>'+nn+'. '+esc(p.nome||p.endereco)+'</b>'+(p.nome?'<br>'+esc(p.endereco):'')
+    pop(m, '<b>'+nn+'. '+esc(rzTitulo(p))+'</b>'+(rzTitulo(p)!==p.endereco?'<br>'+esc(p.endereco):'')
+      +(p.clienteId?'<br>'+esc(rzCliResumo(p)):'')+((rzFicha[p.clienteId]||{}).obs?'<br>📝 '+esc(rzFicha[p.clienteId].obs):'')
       +(p.status==='aprox'?'<br><span style="color:#b35c00">≈ posição aproximada — arraste o pino se precisar</span>':''), p.id);
     rzG.objs.push(m); bounds.extend(m.getPosition()); tem=true; reta.push({ lat:p.lat, lng:p.lng });
   });
@@ -2404,7 +2457,207 @@ window.rzConfigGoogle=function(){
     } });
 };
 
+/* ===== ROTEIRIZAR — clientes =====
+   Base: logClientesMapa (robô do ERP, uma vez por dia) — nome, cidade, rota,
+   posição; SEM CNPJ e SEM endereço. Ficha: logClientesFicha (a gestão
+   preenche) — abre, fecha, descarga, dias que recebe, observação e posição
+   corrigida à mão. Não existe lista completa na tela: o cliente aparece
+   quando um ponto colado cai nele (até 120 m) ou pela busca pelo nome, que
+   mostra no máximo 8 resultados. */
+var rzCli={ base:{}, carregou:false, carregando:false, erro:'' }, rzFicha={};
+var RZ_RAIO_CLI_KM=0.12, RZ_DIAS_C=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+function rzCliCarregar(){
+  if(rzCli.carregou || rzCli.carregando) return;
+  rzCli.carregando=true;
+  Promise.all([ getDocs(collection(dbC,'logClientesMapa')), getDocs(collection(dbC,'logClientesFicha')) ])
+    .then(function(r){
+      var base={};
+      r[0].docs.forEach(function(d){ var cl=(d.data()||{}).clientes||{}; Object.keys(cl).forEach(function(k){ base[k]=cl[k]; }); });
+      rzCli.base=base;
+      rzFicha={}; r[1].docs.forEach(function(d){ rzFicha[d.id]=d.data()||{}; });
+      rzCli.carregou=true; rzCli.carregando=false;
+      rzPontos.forEach(function(p){ p._vinc=''; });   /* tenta reconhecer de novo com a base carregada */
+      rzPintar(); rzDesenhar(false);
+    })
+    .catch(function(e){
+      console.error('logClientes:',e); rzCli.carregando=false; rzCli.carregou=true;
+      rzCli.erro=e.code==='permission-denied'?'Sem acesso à base de clientes (regras do Firestore ainda não publicadas?).':'Não foi possível ler a base de clientes: '+(e.code||e.message);
+      rzPintar();
+    });
+}
+function rzCliN(){ return Object.keys(rzCli.base).length; }
+function rzCliPos(id){
+  var f=rzFicha[id]; if(f && f.posManual && f.posManual.lat!=null) return f.posManual;
+  var c=rzCli.base[id]; return (c && c.la!=null && c.p!=='cidade') ? { lat:c.la, lng:c.lo } : null;
+}
+function rzNormNome(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim(); }
+
+/* reconhece o cliente de um ponto: posição (até 120 m) e, sem isso, o nome igual */
+function rzVincular(p){
+  if(!rzCli.carregou || p.clienteId || p.semCliente || p.lat==null) return;
+  var marca=p.lat+','+p.lng+'|'+(p.nome||''); if(p._vinc===marca) return; p._vinc=marca;
+  var melhor=null, md=1e9;
+  Object.keys(rzCli.base).forEach(function(id){
+    var pos=rzCliPos(id); if(!pos) return;
+    var d=rzHav(p,pos); if(d<=RZ_RAIO_CLI_KM && d<md){ md=d; melhor=id; }
+  });
+  if(!melhor && p.nome){
+    var n=rzNormNome(p.nome), achados=Object.keys(rzCli.base).filter(function(id){ return rzNormNome(rzCli.base[id].n)===n; });
+    if(achados.length===1) melhor=achados[0];
+  }
+  if(melhor){ p.clienteId=melhor; rzMarcarSujo(); }
+}
+/* título do ponto: o nome digitado; senão o do cliente reconhecido; senão o endereço */
+function rzTitulo(p){ var c=p.clienteId && rzCli.base[p.clienteId]; return p.nome || (c && c.n) || p.endereco; }
+function rzCliDe(p){ return p && p.clienteId ? (rzCli.base[p.clienteId] || { n:p.clienteNome||'Cliente', c:'' }) : null; }
+
+/* ---- regras da ficha usadas no cálculo ---- */
+function rzHM2min(s){ var m=String(s||'').match(/^(\d{1,2}):(\d{2})/); return m?(+m[1])*60+(+m[2]):null; }
+function rzMinParada(p, padrao){
+  if(p.paradaMin!=null) return p.paradaMin;
+  var f=p.clienteId && rzFicha[p.clienteId];
+  return (f && f.descargaMin!=null && f.descargaMin!=='') ? +f.descargaMin : padrao;
+}
+function rzJanela(p){
+  var f=p.clienteId && rzFicha[p.clienteId]; if(!f) return null;
+  var a=rzHM2min(f.abre), z=rzHM2min(f.fecha);
+  return (a==null && z==null) ? null : { abre:a, fecha:z };
+}
+function rzTemJanela(){ return rzPontos.some(function(p){ return rzConta(p) && !!rzJanela(p); }); }
+/* chega em t: se ainda está fechado espera abrir; se já fechou, registra o atraso */
+function rzChegar(p, t){
+  var j=rzJanela(p), r={ t:t, espera:0, atraso:0 };
+  if(!j) return r;
+  if(j.abre!=null && t<j.abre){ r.espera=j.abre-t; r.t=j.abre; }
+  if(j.fecha!=null && r.t>j.fecha) r.atraso=r.t-j.fecha;
+  return r;
+}
+function rzDiaRuim(p){
+  var f=p.clienteId && rzFicha[p.clienteId];
+  if(!f || !Array.isArray(f.dias) || !f.dias.length || !rzDias.length) return null;
+  var ruins=rzDias.filter(function(d){ return f.dias.indexOf(d)<0; });
+  return ruins.length ? ruins.map(function(d){ return RZ_DIAS_C[d]; }).join('/') : null;
+}
+
+/* simula uma ordem (só os pontos que contam) e devolve o custo: tempo total + atraso pesado */
+function rzSimular(ord, base, volta, vel, par, t0){
+  var t=t0, ant=base, atraso=0, espera=0;
+  for(var i=0;i<ord.length;i++){
+    var p=ord[i];
+    if(ant) t+=rzKm(ant,p)/vel*60;
+    var c=rzChegar(p,t); t=c.t; espera+=c.espera; atraso+=c.atraso;
+    t+=rzMinParada(p,par); ant=p;
+  }
+  if(volta && ant && base) t+=rzKm(ant,base)/vel*60;
+  return { custo:(t-t0)+25*atraso, fim:t, atraso:atraso, espera:espera };
+}
+
+/* ---- busca de cliente pelo nome (no máximo 8 resultados, nunca a lista toda) ---- */
+window.rzCliBuscar=function(el){
+  var box=document.getElementById('rz-cli-res'); if(!box) return;
+  var q=rzNormNome(el.value);
+  if(q.length<3 || !rzCli.carregou){ box.innerHTML=(q.length && q.length<3)?'<div class="rz-cli-dica">Digite pelo menos 3 letras</div>':''; return; }
+  var partes=q.split(' '), res=[];
+  Object.keys(rzCli.base).some(function(id){
+    var c=rzCli.base[id], nn=rzNormNome(c.n+' '+c.c);
+    if(partes.every(function(x){ return nn.indexOf(x)>=0; })) res.push(id);
+    return res.length>=8;
+  });
+  box.innerHTML=res.length ? res.map(function(id){
+    var c=rzCli.base[id], tem=!!rzCliPos(id);
+    return '<button class="rz-cli-op" onclick="rzCliAdd(\''+id+'\')"><b>'+esc(c.n)+'</b> <span>'+esc(c.c||'')+(c.r?' · '+esc(c.r):'')+(tem?'':' · sem posição ainda')+'</span></button>';
+  }).join('') : '<div class="rz-cli-dica">Nenhum cliente com esse nome.</div>';
+};
+window.rzCliAdd=function(id){
+  var c=rzCli.base[id]; if(!c) return;
+  var pos=rzCliPos(id);
+  var p={ id:rzId(), nome:c.n, endereco:(c.c||'')+(c.r?' · rota '+c.r:''), clienteId:id,
+          lat:pos?pos.lat:null, lng:pos?pos.lng:null, status:pos?'ok':'erro' };
+  rzPontos.push(p); rzMarcarSujo();
+  var el=document.getElementById('rz-cli-q'); if(el){ el.value=''; el.focus(); }
+  document.getElementById('rz-cli-res').innerHTML='';
+  if(!pos) rzMsg('"'+c.n+'" ainda não tem posição no mapa — use 📍 para posicionar (fica guardado na ficha).', true);
+  rzPintar(); rzDesenhar(false);
+};
+
+/* ---- ficha ---- */
+window.rzFichaAbrir=function(pid){
+  var p=rzPontos.filter(function(x){ return x.id===pid; })[0]; if(!p) return;
+  if(!p.clienteId){ rzVincularManual(pid); return; }
+  var id=p.clienteId, c=rzCliDe(p), f=rzFicha[id]||{}, dias=Array.isArray(f.dias)?f.dias.slice():[];
+  var hist=(c.d||[]).map(function(d){ return RZ_DIAS_C[d]; }).join(', ');
+  var posPonto=p.lat!=null, auto=rzCli.base[id], difere=posPonto && (!f.posManual) && auto && auto.la!=null && rzHav(p,{lat:auto.la,lng:auto.lo})>0.03;
+  window._rzFichaDias=dias;
+  modal({ titulo:esc(c.n||'Cliente'), sub:esc([c.c, c.r?'rota '+c.r:''].filter(Boolean).join(' · ')),
+    body:'<div class="rz-ficha">'
+      +'<div class="fld"><label>Abre às</label><input type="time" id="fz-abre" value="'+esc(f.abre||'')+'"></div>'
+      +'<div class="fld"><label>Fecha às</label><input type="time" id="fz-fecha" value="'+esc(f.fecha||'')+'"></div>'
+      +'<div class="fld"><label>Descarga (min)</label><input type="number" min="0" id="fz-desc" value="'+(f.descargaMin!=null?esc(f.descargaMin):'')+'" placeholder="padrão da rota"></div>'
+      +'</div>'
+      +'<div class="fld"><label>Dias que recebe'+(hist?' <span style="font-weight:400;color:var(--muted)">— pelo histórico: '+esc(hist)+'</span>':'')+'</label>'
+      +'<div class="rz-dias" id="fz-dias"></div>'
+      +(hist&&!dias.length?'<button class="btn btn-sm btn-ghost" style="margin-top:6px" onclick="rzFichaUsarHist(\''+id+'\')">Usar os dias do histórico</button>':'')+'</div>'
+      +'<div class="fld"><label>Observações</label><textarea id="fz-obs" rows="3" placeholder="Ex.: descarga pelos fundos · ligar antes · caminhão grande não entra">'+esc(f.obs||'')+'</textarea></div>'
+      +(difere||p.status==='manual'?'<label class="rz-chk"><input type="checkbox" id="fz-pos" checked> Gravar a posição deste ponto como a correta do cliente</label>':'')
+      +(f.posManual?'<div style="font-size:11.5px;color:var(--muted)">📌 Posição corrigida à mão'+(f.atualizadoNome?' por '+esc(f.atualizadoNome):'')+'.</div>':'')
+      +'<div style="margin-top:12px"><button class="btn btn-sm btn-ghost" onclick="rzDesvincular(\''+pid+'\')">Não é este cliente</button></div>',
+    ok:'Salvar ficha', onOk:function(){
+      var abre=document.getElementById('fz-abre').value, fecha=document.getElementById('fz-fecha').value;
+      if(abre && fecha && fecha<=abre){ alert('O horário de fechar precisa ser depois do de abrir.'); return false; }
+      var dsc=document.getElementById('fz-desc').value;
+      var dados={ nome:c.n||'', abre:abre||'', fecha:fecha||'', descargaMin:dsc===''?null:Math.max(0,+dsc),
+        dias:(window._rzFichaDias||[]).slice().sort(), obs:String(document.getElementById('fz-obs').value||'').trim(),
+        atualizadoEm:agora(), atualizadoPor:sessaoEmail, atualizadoNome:sessaoNome||sessaoEmail };
+      var cx=document.getElementById('fz-pos'); if(cx && cx.checked && p.lat!=null) dados.posManual={ lat:p.lat, lng:p.lng };
+      setDoc(doc(dbC,'logClientesFicha',id), dados, { merge:true })
+        .then(function(){ rzFicha[id]=Object.assign({}, rzFicha[id]||{}, dados); fecharModal(); rzMarcarSujo(); rzPintar(); rzDesenhar(false); rzMsg('Ficha salva.'); })
+        .catch(function(e){ console.error('logClientesFicha:',e); alert('Não foi possível salvar a ficha: '+(e.code||e.message)); });
+    } });
+  rzFichaPintarDias();
+};
+function rzFichaPintarDias(){
+  var el=document.getElementById('fz-dias'); if(!el) return;
+  el.innerHTML=[1,2,3,4,5,6,0].map(function(d){
+    return '<button class="rz-dia'+((window._rzFichaDias||[]).indexOf(d)>=0?' on':'')+'" onclick="rzFichaDia('+d+')">'+RZ_DIAS_C[d]+'</button>';
+  }).join('');
+}
+window.rzFichaDia=function(d){ var a=window._rzFichaDias||[], i=a.indexOf(d); if(i>=0) a.splice(i,1); else a.push(d); window._rzFichaDias=a; rzFichaPintarDias(); };
+window.rzFichaUsarHist=function(id){ var c=rzCli.base[id]; window._rzFichaDias=(c&&c.d||[]).slice(); rzFichaPintarDias(); };
+window.rzDesvincular=function(pid){
+  var p=rzPontos.filter(function(x){ return x.id===pid; })[0]; if(!p) return;
+  p.clienteId=null; p.semCliente=true; fecharModal(); rzMarcarSujo(); rzPintar(); rzDesenhar(false);
+};
+/* ponto sem cliente reconhecido: escolhe pela busca */
+function rzVincularManual(pid){
+  if(!rzCli.carregou){ alert('A base de clientes ainda está carregando.'); return; }
+  modal({ titulo:'Qual é o cliente deste ponto?',
+    body:'<div class="fld"><label>Buscar pelo nome</label><input id="rz-vm-q" placeholder="Ex.: mercadinho joão" oninput="rzVincBuscar(this,\''+pid+'\')" autocomplete="off"></div><div id="rz-vm-res"></div>' });
+}
+window.rzVincBuscar=function(el,pid){
+  var q=rzNormNome(el.value), box=document.getElementById('rz-vm-res');
+  if(q.length<3){ box.innerHTML=''; return; }
+  var partes=q.split(' '), res=[];
+  Object.keys(rzCli.base).some(function(id){ var c=rzCli.base[id], nn=rzNormNome(c.n+' '+c.c); if(partes.every(function(x){ return nn.indexOf(x)>=0; })) res.push(id); return res.length>=8; });
+  box.innerHTML=res.map(function(id){ var c=rzCli.base[id]; return '<button class="rz-cli-op" onclick="rzVincEscolher(\''+pid+'\',\''+id+'\')"><b>'+esc(c.n)+'</b> <span>'+esc(c.c||'')+'</span></button>'; }).join('')||'<div class="rz-cli-dica">Nenhum cliente com esse nome.</div>';
+};
+window.rzVincEscolher=function(pid,id){
+  var p=rzPontos.filter(function(x){ return x.id===pid; })[0]; if(!p) return;
+  p.clienteId=id; p.semCliente=false; fecharModal(); rzMarcarSujo(); rzPintar(); rzDesenhar(false);
+  rzFichaAbrir(pid);
+};
+/* linha de informação do cliente para a lista e o balão */
+function rzCliResumo(p){
+  if(!p.clienteId) return '';
+  var c=rzCliDe(p), f=rzFicha[p.clienteId]||{}, x=[];
+  if(f.abre||f.fecha) x.push((f.abre?'abre '+f.abre:'')+(f.abre&&f.fecha?' · ':'')+(f.fecha?'fecha '+f.fecha:''));
+  if(f.descargaMin!=null && f.descargaMin!=='') x.push('descarga '+f.descargaMin+' min');
+  if(Array.isArray(f.dias) && f.dias.length) x.push('recebe '+f.dias.map(function(d){ return RZ_DIAS_C[d]; }).join('/'));
+  return '👤 '+(c.n||'Cliente')+(x.length?' · '+x.join(' · '):'');
+}
+
 function renderRoteirizar(){
+  rzCliCarregar();
   if(!rzListou){ rzListar(); rzPintarDias(); }
   rzPintar(); rzDesenhar(!rzMapa);
 }
