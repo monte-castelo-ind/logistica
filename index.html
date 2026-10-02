@@ -146,6 +146,7 @@ td.cx-sb{text-align:right;font-family:'JetBrains Mono',monospace;font-weight:600
 td.cx-zero{color:var(--muted)!important;font-weight:400}
 tr.cx-falta td{background:rgba(245,176,19,.08)}
 input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;padding:5px 7px}
+input.cx-rat.cx-kg{width:118px}
 .cx-tag{font-size:10px;font-weight:700;color:var(--amber);letter-spacing:.3px}
 .mixg{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 15px;margin-bottom:13px}
 .mixg-off{opacity:.72}
@@ -5250,8 +5251,10 @@ function cxMigrarChaves(bruto){
     var reg=bruto[k]||{}, key=cxKey(k), cur=saida[key];
     var pct=(reg.pct!=null && reg.pct!=='') ? Number(reg.pct) : null;
     var nome=String(reg.nome||'').trim();
-    if(!cur){ saida[key]={pct:(pct>0?pct:null), nome:nome}; return; }
+    var kg=(reg.kg!=null && reg.kg!=='') ? Number(reg.kg) : null;
+    if(!cur){ saida[key]={pct:(pct>0?pct:null), nome:nome, kg:(kg>0?kg:null)}; return; }
     unidos++;
+    if(cur.kg==null && kg>0) cur.kg=kg;
     if(cur.pct==null && pct>0) cur.pct=pct;
     else if(cur.pct!=null && pct>0 && cur.pct!==pct) conflitos.push(key+' ('+cur.pct+' ou '+pct+')');
     if(!cur.nome && nome) cur.nome=nome;
@@ -5514,6 +5517,20 @@ function cxAgregar(){
   return ordem.map(function(c){ return mapa[c]; });
 }
 
+/* Peso do PACOTE. Vale o cadastrado em Configurações; sem ele, o que estiver
+   escrito no nome em KG ("6,6KG", "PCT C/ 1,02KG") — marcado como estimado.
+   Gramas no nome (75GR) costumam ser da UNIDADE, não do pacote: não usa. */
+function cxKgNome(nome){
+  var m=String(nome||'').toUpperCase().match(/(\d+(?:[.,]\d+)?)\s*KGS?\b/);
+  var v=m?parseFloat(m[1].replace(',','.')):NaN;
+  return (isFinite(v) && v>0 && v<100) ? v : null;
+}
+function cxKgDe(cod, nome){
+  var reg=cxRatios[cod]||{};
+  if(reg.kg>0) return { kg:+reg.kg, origem:'cad' };
+  var n=cxKgNome(reg.nome||nome);
+  return n ? { kg:n, origem:'nome' } : { kg:null, origem:null };
+}
 function cxCalcular(){
   var itens=cxAgregar(), linhas=[], total=0, sobras=0, faltando=0, i, it, reg, L;
   var naoVao=[], semCad=[];
@@ -5547,14 +5564,24 @@ function cxCalcular(){
   for(gi=0;gi<A.grupos.length;gi++) autoCx+=A.grupos[gi].caixas.length;
   var soltos = restoLivre.reduce(function(a,b){ return a+b.resta; },0)
              + cxSomaItens(cxManual.atual);
+  /* peso total do que vai (o que "não vai" já saiu de L.qtd) */
+  var pesoKg=0, pesoNome=0, semPeso=[];
+  linhas.forEach(function(x){
+    if(!x.qtd) return;
+    var k=cxKgDe(cxKey(x.cod), x.nome);
+    if(k.kg==null){ semPeso.push(x); return; }
+    x.kg=k.kg*x.qtd; x.kgOrigem=k.origem; pesoKg+=x.kg; if(k.origem==='nome') pesoNome++;
+  });
   return {linhas:linhas, total:total, sobras:sobras, faltando:faltando, docs:cxDocs.length,
           grupos:A.grupos, residuo:A.residuo, restoLivre:restoLivre,
           naoVao:naoVao, semCad:semCad,
           manual:cxManual.caixas, emMontagem:cxManual.atual,
           autoCx:autoCx, manualCx:cxManual.caixas.length,
           qtdMistas:autoCx+cxManual.caixas.length, soltosFinal:soltos,
-          totalGeral:total+autoCx+cxManual.caixas.length};
+          totalGeral:total+autoCx+cxManual.caixas.length,
+          pesoKg:pesoKg, pesoNome:pesoNome, semPeso:semPeso};
 }
+function cxKgTxt(v){ return (v>=100?Math.round(v):Math.round(v*10)/10).toLocaleString('pt-BR'); }
 
 function cxTipoNome(d){ return d.tipo==='pedido' ? 'Pedido' : 'Carregamento'; }
 
@@ -5952,8 +5979,7 @@ window.salvarConversao=function(){
     docs: cxLimpo(cxDocs),
     manual: cxLimpo(cxManualParaGravar()),
     naoVai: cxLimpo(cxNaoVai),
-    resumo: { total:R.total, autoCx:R.autoCx, manualCx:R.manualCx,
-              totalGeral:R.totalGeral, soltos:R.soltosFinal, produtos:R.linhas.length }
+    resumo: cxResumo(R)
   })
   .then(function(){ alert('Conversão salva.'); })
   .catch(function(e){
@@ -6072,7 +6098,8 @@ function cxOrigemLogistica(convId){
 }
 function cxResumo(R){
   return { total:R.total, autoCx:R.autoCx, manualCx:R.manualCx,
-           totalGeral:R.totalGeral, soltos:R.soltosFinal, produtos:R.linhas.length };
+           totalGeral:R.totalGeral, soltos:R.soltosFinal, produtos:R.linhas.length,
+           pesoKg:Math.round(R.pesoKg*10)/10, semPeso:R.semPeso.length };
 }
 /* código normalizado (sem zero à frente) -> código como o Produlog guarda.
    O estoque do Produlog tem a palavra final, porque é ele que dá a baixa. */
@@ -6435,6 +6462,10 @@ function renderCaixas(){
   h+='<div class="card"><div class="cxbig" style="color:var(--text)">'+R.total+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">fechadas de um produto só</div></div>';
   h+='<div class="card"><div class="cxbig" style="color:#7FB3D5">'+R.qtdMistas+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">mistas &middot; '+R.autoCx+' automáticas'+(R.manualCx?' + '+R.manualCx+' do operador':'')+'</div></div>';
   h+='<div class="card"><div class="cxbig" style="color:var(--amber)">'+R.soltosFinal+'</div><div style="font-size:11px;color:var(--muted);margin-top:5px">pacotes que ficam soltos</div></div>';
+  h+='<div class="card"><div class="cxbig" style="color:var(--text)">'+cxKgTxt(R.pesoKg)+'<span style="font-size:16px;margin-left:4px">kg</span></div>'
+   + '<div style="font-size:11px;color:var(--muted);margin-top:5px">de mercadoria'
+   + (R.semPeso.length?' · <span style="color:var(--amber)" title="'+esc(R.semPeso.map(function(x){ return x.cod+' '+x.nome; }).join('\n'))+'">'+R.semPeso.length+' produto'+(R.semPeso.length===1?'':'s')+' sem peso</span>':'')
+   + (R.pesoNome?' · '+R.pesoNome+' pelo nome':'')+'</div></div>';
   h+='</div>';
 
   h+=cxCardsDestaque(R);
@@ -6636,6 +6667,7 @@ function cxRenderPrint(R){
    + '<div><b>'+R.total+'</b>de um produto só</div>'
    + '<div><b>'+R.qtdMistas+'</b>mistas</div>'
    + '<div><b>'+R.soltosFinal+'</b>pacotes soltos</div>'
+   + '<div><b>'+cxKgTxt(R.pesoKg)+' kg</b>de mercadoria'+(R.semPeso.length?' ('+R.semPeso.length+' sem peso)':'')+'</div>'
    + '<div><b>'+R.linhas.length+'</b>produtos</div>';
   if(R.naoVao.length) h+='<div><b>'+R.naoVao.length+'</b>não vão</div>';
   if(R.faltando) h+='<div><b>'+R.faltando+'</b>sem conversão</div>';
@@ -6774,7 +6806,7 @@ window.renderConfigCaixas=function(){
     return;
   }
 
-  var h='<thead><tr><th style="width:70px">Cód</th><th>Produto</th><th style="text-align:right;width:150px">Pacotes por caixa</th></tr></thead><tbody>';
+  var h='<thead><tr><th style="width:70px">Cód</th><th>Produto</th><th style="text-align:right;width:150px">Pacotes por caixa</th><th style="text-align:right;width:150px">Kg por pacote</th></tr></thead><tbody>';
   var i, c, r, achou=0, faltam=0, dis=podeCaixas?'':' disabled';
   for(i=0;i<cods.length;i++){
     c=cods[i]; r=cxRatios[c];
@@ -6788,6 +6820,8 @@ window.renderConfigCaixas=function(){
      + '<td>'+esc(r.nome||'—')+'</td>'
      + '<td style="text-align:right"><input type="number" min="1" step="1" class="cx-rat" value="'
      +   (r.pct||'')+'" data-cod="'+esc(c)+'" oninput="cxSetPct(this)"'+dis+'></td>'
+     + '<td style="text-align:right"><input type="number" min="0" step="0.001" class="cx-rat cx-kg" value="'+(r.kg||'')+'" data-cod="'+esc(c)+'" oninput="cxSetKg(this)"'
+     +   (cxKgNome(r.nome)?' placeholder="'+String(cxKgNome(r.nome)).replace('.',',')+' (nome)" title="Vazio: usa o peso escrito no nome ('+String(cxKgNome(r.nome)).replace('.',',')+' kg)"':' placeholder="—"')+dis+'></td>'
      + '</tr>';
   }
   h+='</tbody>';
@@ -6813,6 +6847,12 @@ window.renderConfigCaixas=function(){
   }
 };
 
+window.cxSetKg=function(el){
+  var c=el.getAttribute('data-cod'), v=parseFloat(String(el.value).replace(',','.'));
+  if(!cxRatios[c]) cxRatios[c]={pct:null, nome:''};
+  cxRatios[c].kg=(isFinite(v)&&v>0)?Math.round(v*1000)/1000:null;
+  cxSujo=true;
+};
 window.cxSetPct=function(el){
   var c=el.getAttribute('data-cod'), v=parseInt(el.value,10);
   if(!cxRatios[c]) cxRatios[c]={pct:null, nome:''};
