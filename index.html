@@ -146,7 +146,7 @@ td.cx-sb{text-align:right;font-family:'JetBrains Mono',monospace;font-weight:600
 td.cx-zero{color:var(--muted)!important;font-weight:400}
 tr.cx-falta td{background:rgba(245,176,19,.08)}
 input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;padding:5px 7px}
-input.cx-rat.cx-kg{width:118px}
+input.cx-rat.cx-kg{width:132px}
 .cx-tag{font-size:10px;font-weight:700;color:var(--amber);letter-spacing:.3px}
 .mixg{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 15px;margin-bottom:13px}
 .mixg-off{opacity:.72}
@@ -5525,9 +5525,30 @@ function cxKgNome(nome){
   var v=m?parseFloat(m[1].replace(',','.')):NaN;
   return (isFinite(v) && v>0 && v<100) ? v : null;
 }
+/* Peso do pacote no PRODULOG, lido ao vivo (o Produlog é a fonte):
+   pães em quadraProdutosCustom.kgPacote (kg); salgados e confeitaria em
+   produtosConfeitaria.pesoPct (gramas). Lido uma vez por sessão. */
+var cxPesoPL=null, cxPesoPLlendo=false;
+function cxCarregarPesosPL(){
+  if(cxPesoPL || cxPesoPLlendo) return;
+  cxPesoPLlendo=true;
+  var d2=dbProdulog();
+  Promise.all([ getDocs(collection(d2,'quadraProdutosCustom')), getDocs(collection(d2,'produtosConfeitaria')) ])
+    .then(function(res){
+      var m={};
+      res[0].docs.forEach(function(x){ var p=x.data()||{}, kg=Number(p.kgPacote)||0; if(p.cod!=null && kg>0) m[cxKey(p.cod)]=kg; });
+      res[1].docs.forEach(function(x){ var p=x.data()||{}, g=Number(p.pesoPct)||0; if(p.cod!=null && g>0 && !m[cxKey(p.cod)]) m[cxKey(p.cod)]=g/1000; });
+      cxPesoPL=m; cxPesoPLlendo=false;
+      if(pagina==='caixas') renderCaixas();
+      if(document.getElementById('tbl-caixas')) renderConfigCaixas();
+    })
+    .catch(function(e){ console.warn('produlog/pesos:', e); cxPesoPL={}; cxPesoPLlendo=false; });
+}
+/* prioridade: digitado na Logística → Produlog → escrito no nome */
 function cxKgDe(cod, nome){
   var reg=cxRatios[cod]||{};
   if(reg.kg>0) return { kg:+reg.kg, origem:'cad' };
+  if(cxPesoPL && cxPesoPL[cod]>0) return { kg:cxPesoPL[cod], origem:'produlog' };
   var n=cxKgNome(reg.nome||nome);
   return n ? { kg:n, origem:'nome' } : { kg:null, origem:null };
 }
@@ -6414,6 +6435,7 @@ window.cxLimparResto=function(){
 };
 
 function renderCaixas(){
+  cxCarregarPesosPL();
   var saida=document.getElementById('cx-saida'), chips=document.getElementById('cx-chips');
   if(!saida) return;
   pintarSalvas();
@@ -6797,6 +6819,7 @@ window.imprimirCaixas=function(){
 window.renderConfigCaixas=function(){
   var alvo=document.getElementById('tbl-caixas');
   if(!alvo) return;
+  cxCarregarPesosPL();
   var termo=((document.getElementById('cgcx-busca')||{}).value||'').toLowerCase();
   var filtro=((document.getElementById('cgcx-filtro')||{}).value||'todos');
   var cods=Object.keys(cxRatios).sort(function(a,b){ return parseInt(a,10)-parseInt(b,10); });
@@ -6821,7 +6844,9 @@ window.renderConfigCaixas=function(){
      + '<td style="text-align:right"><input type="number" min="1" step="1" class="cx-rat" value="'
      +   (r.pct||'')+'" data-cod="'+esc(c)+'" oninput="cxSetPct(this)"'+dis+'></td>'
      + '<td style="text-align:right"><input type="number" min="0" step="0.001" class="cx-rat cx-kg" value="'+(r.kg||'')+'" data-cod="'+esc(c)+'" oninput="cxSetKg(this)"'
-     +   (cxKgNome(r.nome)?' placeholder="'+String(cxKgNome(r.nome)).replace('.',',')+' (nome)" title="Vazio: usa o peso escrito no nome ('+String(cxKgNome(r.nome)).replace('.',',')+' kg)"':' placeholder="—"')+dis+'></td>'
+     +   ((cxPesoPL && cxPesoPL[c]>0)
+           ? ' placeholder="'+String(Math.round(cxPesoPL[c]*1000)/1000).replace('.',',')+' (Produlog)" title="Vazio: usa o peso do Produlog ('+String(Math.round(cxPesoPL[c]*1000)/1000).replace('.',',')+' kg). Digite só se for diferente."'
+           : (cxKgNome(r.nome)?' placeholder="'+String(cxKgNome(r.nome)).replace('.',',')+' (nome)" title="Vazio: usa o peso escrito no nome ('+String(cxKgNome(r.nome)).replace('.',',')+' kg)"':' placeholder="—"'))+dis+'></td>'
      + '</tr>';
   }
   h+='</tbody>';
