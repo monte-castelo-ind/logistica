@@ -529,6 +529,9 @@ html[data-pal="vinho"][data-theme="light"]{
 .rz-t{font-size:13px;font-weight:600;overflow-wrap:anywhere}
 .rz-s{font-size:11.5px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
 .rz-st.st-erro{color:var(--red);font-weight:600}
+.rz-st.st-escolher{color:var(--amber);font-weight:600}
+.rz-cands{margin-top:4px}
+.rz-cands .rz-cli-op span{color:var(--text)}
 .rz-st.st-aprox{color:#e67700;font-weight:600}
 .rz-st.st-ok,.rz-st.st-manual{color:var(--green)}
 .rz-bts{display:flex;gap:2px;flex:0 0 auto}
@@ -1857,6 +1860,14 @@ function rzRodarFila(){
   var id=rzFila.shift(); if(!id) return;
   var p=rzPontos.filter(function(x){ return x.id===id; })[0];
   if(!p){ rzRodarFila(); return; }
+  if(p.modo==='razao'){
+    if(!rzCli.carregou){ rzCliCarregar(); rzFila.unshift(id); setTimeout(rzRodarFila, 500); return; }   /* espera a base */
+    p.modo=null;
+    var achou=rzCliPorNome(p.endereco);
+    if(achou.length===1){ rzAplicarCliente(p, achou[0]); rzPintar(); rzDesenhar(false); rzRodarFila(); return; }
+    if(achou.length>1){ p.candidatos=achou; p.status='escolher'; p.nome=(rzCli.base[achou[0]]||{}).n||p.endereco; rzMarcarSujo(); rzPintar(); rzRodarFila(); return; }
+    /* não é cliente da base: segue como endereço */
+  }
   rzBuscandoFila=true; p.status='buscando'; rzPintar();
 
   /* ponto que veio com coordenada: só o nome do lugar */
@@ -1940,7 +1951,10 @@ function rzNovoPonto(linha){
   if(c){
     p.lat=c.lat; p.lng=c.lng; p.modo='reverso';
     p.endereco='Ponto '+String(c.lat).replace('.',',')+' / '+String(c.lng).replace('.',',');
-  }else if(rzEhLinkCurto(end)){
+  }else if(!nome && !rzPlusCodeDe(end)){
+    p.modo='razao';            /* pode ser a razão social de um cliente: a fila confere na base antes de buscar endereço */
+  }
+  if(rzEhLinkCurto(end)){
     /* link encurtado (maps.app.goo.gl) não dá para abrir daqui: não traz a coordenada no texto */
     p.status='erro'; p.endereco=end;
     p.nome=p.nome||'Link curto do Google — abra, copie o link completo e cole de novo';
@@ -1950,7 +1964,7 @@ function rzNovoPonto(linha){
 }
 window.rzColar=function(){
   modal({ titulo:'Colar lista de endereços',
-    body:'<div class="fld"><label>Um ponto por linha: <b>endereço</b>, <b>link do Google Maps</b> (como o Cobli manda) ou <b>coordenada</b>. '
+    body:'<div class="fld"><label>Um ponto por linha: <b>razão social do cliente</b>, <b>endereço</b>, <b>link do Google Maps</b> (como o Cobli manda) ou <b>coordenada</b>. '
       +'Com nome do cliente: <b>Nome ; Endereço</b> (ou colado de planilha, nome e endereço em colunas)</label>'
       +'<textarea id="rz-cola" rows="10" placeholder="Mercado Bom Preço ; Av. Assis Brasil, 2000, Porto Alegre\nRua Olavo Bilac, 1445 - Centro, Montenegro - RS, 92510-305, Brasil\nhttps://www.google.com/maps/search/?api=1&amp;query=-29.66983%2c-51.45477"></textarea></div>'
       +'<div style="font-size:11.5px;color:var(--muted)">Os endereços são procurados um por segundo (regra do serviço de mapas) — uma lista de 30 leva uns 30 segundos.</div>',
@@ -2136,6 +2150,8 @@ function rzPintar(){
   el.innerHTML=rzPontos.map(function(p,i){
     var L=T.lin[i]||{}, st=RZ_ST[p.status]||RZ_ST.ok, sede=rzEhSede(p);
     if(p.status==='erro' && p.motivo==='bloqueado') st=['!','Busca recusada hoje (limite) — tente "procurar de novo" amanhã, ou use 📍'];
+    if(p.status==='erro' && p.motivo==='semposicao') st=['!','Cliente ainda sem posição no mapa — use 📍 (fica guardado na ficha)'];
+    if(p.status==='escolher') st=['?','Mais de uma loja com essa razão social — escolha qual'];
     if(sede) st=['⌂','É a sede — início/fim da rota, não conta como parada'];
     return '<div class="rz-item'+(p.status==='erro'?' erro':'')+(sede?' sede':'')+(rzPosicionando===p.id?' pos':'')+'">'
       + '<div class="rz-num" onclick="rzFocar(\''+p.id+'\')" title="Ver no mapa">'+(sede?'⌂':(NUM[p.id]||'?'))+'</div>'
@@ -2144,6 +2160,10 @@ function rzPintar(){
       +   '<div class="rz-s"><span class="rz-st st-'+p.status+'" title="'+esc(st[1])+'">'+st[0]+' '+esc(st[1].split(' — ')[0])+'</span>'
       +   (L.chegada!=null?' · chega ~'+rzHora(L.chegada):'')+(L.perna!=null?' · '+L.perna.toFixed(1).replace('.',',')+' km':'')+'</div>'
       +   (p.clienteId?'<div class="rz-s rz-cli">'+esc(rzCliResumo(p))+'</div>':'')
+      +   (p.status==='escolher' && p.candidatos ? '<div class="rz-cands">'+p.candidatos.map(function(cid){
+            var c=rzCli.base[cid]||{};
+            return '<button class="rz-cli-op" onclick="rzEscolherCand(\''+p.id+'\',\''+cid+'\')"><span>'+esc([c.e||'(sem rua cadastrada)', c.c, c.r?'rota '+c.r:''].filter(Boolean).join(' · '))+'</span>'
+              +(rzCliPos(cid)?'':'<small>sem posição no mapa ainda</small>')+'</button>'; }).join('')+'</div>' : '')
       +   (L.espera>0?'<div class="rz-s rz-av esp">⏳ espera '+rzDur(L.espera)+' na porta — abre '+esc((rzFicha[p.clienteId]||{}).abre||'')+'</div>':'')
       +   (L.atraso>0?'<div class="rz-s rz-av atr">⚠ chega '+rzHora(L.chegada+L.espera)+', mas fecha '+esc((rzFicha[p.clienteId]||{}).fecha||'')+'</div>':'')
       +   (L.diaRuim?'<div class="rz-s rz-av atr">⚠ não recebe '+esc(L.diaRuim)+'</div>':'')
@@ -2617,7 +2637,7 @@ function rzCliCarregar(){
     .then(function(r){
       var base={};
       r[0].docs.forEach(function(d){ var cl=(d.data()||{}).clientes||{}; Object.keys(cl).forEach(function(k){ base[k]=cl[k]; }); });
-      rzCli.base=base;
+      rzCli.base=base; rzCli.idx=null;
       rzFicha={}; r[1].docs.forEach(function(d){ rzFicha[d.id]=d.data()||{}; });
       rzCli.carregou=true; rzCli.carregando=false;
       rzPontos.forEach(function(p){ p._vinc=''; });   /* tenta reconhecer de novo com a base carregada */
@@ -2638,7 +2658,7 @@ function rzNormNome(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\
 
 /* reconhece o cliente de um ponto: posição (até 120 m) e, sem isso, o nome igual */
 function rzVincular(p){
-  if(!rzCli.carregou || p.clienteId || p.semCliente || p.lat==null) return;
+  if(!rzCli.carregou || p.clienteId || p.semCliente || p.candidatos || p.lat==null) return;
   var marca=p.lat+','+p.lng+'|'+(p.nome||''); if(p._vinc===marca) return; p._vinc=marca;
   var melhor=null, md=1e9;
   Object.keys(rzCli.base).forEach(function(id){
@@ -2659,6 +2679,46 @@ function rzSubtitulo(p){
   if(c && c.e && /^Ponto\s-?\d/.test(p.endereco||'')) return [c.e, c.c].filter(Boolean).join(' · ');
   return p.endereco;
 }
+/* ---- razão social colada → cliente da base ----
+   Compara ignorando acento, pontuação, os sufixos de empresa (LTDA, ME, EPP,
+   EIRELI, S/A, & CIA) e o número de CNPJ que vem na frente do nome dos MEI.
+   Em ordem: nome idêntico → idêntico sem os sufixos → um contém o outro. */
+function rzNormRazao(s){
+  var t=' '+rzNormNome(s)+' ';
+  t=t.replace(/^\s*(\d+\s+)+/,' ');                                         /* "38 302 288 NATANAEL…" */
+  for(var k=0;k<3;k++) t=t.replace(/\s(LTDA|ME|EPP|EIRELI|SA|S A|SS|MEI|CIA|E CIA)(?=\s)/g,' ');
+  return t.replace(/\s+/g,' ').trim();
+}
+function rzCliIdx(){
+  if(rzCli.idx) return rzCli.idx;
+  var ix={};
+  Object.keys(rzCli.base).forEach(function(id){ var n=rzCli.base[id].n||''; ix[id]={ a:rzNormNome(n), b:rzNormRazao(n) }; });
+  return (rzCli.idx=ix);
+}
+function rzCliPorNome(txt){
+  var A=rzNormNome(txt), B=rzNormRazao(txt), ix=rzCliIdx(), ids=Object.keys(ix);
+  if(A.length<3) return [];
+  var t1=ids.filter(function(id){ return ix[id].a===A; }); if(t1.length) return t1;
+  if(B.length>=4){ var t2=ids.filter(function(id){ return ix[id].b===B; }); if(t2.length) return t2; }
+  if(B.length>=8){
+    var t3=ids.filter(function(id){ var b=ix[id].b; return b.indexOf(B)>=0 || (b.length>=8 && B.indexOf(b)>=0); });
+    if(t3.length && t3.length<=8) return t3;
+  }
+  return [];
+}
+function rzAplicarCliente(p, id){
+  var c=rzCli.base[id]||{}, pos=rzCliPos(id);
+  p.clienteId=id; p.semCliente=false; p.nome=c.n||p.nome;
+  p.endereco=[c.e, c.c].filter(Boolean).join(' · ')+(c.r?' · rota '+c.r:'');
+  delete p.candidatos;
+  if(pos){ p.lat=pos.lat; p.lng=pos.lng; p.status='ok'; p.motivo=null; }
+  else { p.lat=p.lng=null; p.status='erro'; p.motivo='semposicao'; }
+  rzMarcarSujo();
+}
+window.rzEscolherCand=function(pid, id){
+  var p=rzPontos.filter(function(x){ return x.id===pid; })[0]; if(!p) return;
+  rzAplicarCliente(p, id); rzPintar(); rzDesenhar(false);
+};
 function rzCliDe(p){ return p && p.clienteId ? (rzCli.base[p.clienteId] || { n:p.clienteNome||'Cliente', c:'' }) : null; }
 
 /* ---- regras da ficha usadas no cálculo ---- */
