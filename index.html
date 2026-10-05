@@ -888,6 +888,7 @@ html[data-pal="vinho"][data-theme="light"]{
           <div class="rz-linha">
             <select id="rz-salvas" onchange="rzAbrir(this.value)"><option value="">Rotas salvas…</option></select>
             <button class="btn btn-sm btn-ghost" onclick="rzNova()">+ Nova</button>
+            <button class="btn btn-sm btn-ghost" id="rz-apagar-varias" onclick="rzApagarVarias()" style="display:none" title="Só administrador">🗑 Apagar rotas…</button>
           </div>
           <div class="rz-compl" id="rz-compl" style="display:none"></div>
           <div class="rz-linha"><button class="btn btn-sm btn-ghost" id="rz-ver-bt" onclick="rzVerAbrir()" style="flex:1">🗺 Ver várias rotas</button></div>
@@ -1019,7 +1020,7 @@ html[data-pal="vinho"][data-theme="light"]{
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, collection, onSnapshot, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, getDocs, query, where, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, onSnapshot, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, getDocs, query, where, orderBy, limit, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const cfgFB = { apiKey:"AIzaSyCH_t074MvkJn-qVMvCtLfEMaQHf_e_d7M", authDomain:"manutencao-comodato.firebaseapp.com", projectId:"manutencao-comodato", storageBucket:"manutencao-comodato.firebasestorage.app", messagingSenderId:"89709396101", appId:"1:89709396101:web:22ee225ffa806e07a269ec" };
@@ -3333,8 +3334,73 @@ window.rzComplTodas=function(){
   });
 };
 
+/* ---- apagar várias rotas salvas de uma vez (só administrador) ----
+   Apaga numa gravação só (writeBatch): ou apaga todas as marcadas, ou
+   nenhuma — não fica meio apagado se a conexão cair no meio. */
+var rzApg={ sel:{}, filtro:'' };
+function rzApgPintar(){
+  var box=document.getElementById('rz-apg-lista'); if(!box) return;
+  var f=rzNormNome(rzApg.filtro), vis=rzSalvas.filter(function(r){ return !f || rzNormNome(r.nome).indexOf(f)>=0; });
+  var n=Object.keys(rzApg.sel).length;
+  box.innerHTML=vis.length ? vis.map(function(r){
+    var id=r.firestoreId, on=!!rzApg.sel[id];
+    return '<label class="rz-ver-it'+(on?' on':'')+'"><input type="checkbox" '+(on?'checked':'')+' onchange="rzApgMarcar(\''+esc(id)+'\',this.checked)">'
+      +'<span class="rz-ver-n">'+esc(r.nome||'(sem nome)')+'<small>'+((r.dias||[]).length?r.dias.map(function(d){ return RZ_DIAS[d]; }).join('/')+' · ':'avulsa · ')
+      +(r.pontos||[]).length+' paradas'+(r.kmEstimado?' · '+String(r.kmEstimado).replace('.',',')+' km':'')
+      +(r.origemCobli?' · do Cobli':'')+(id===rzAberta?' · <b>aberta na tela</b>':'')+'</small></span></label>';
+  }).join('') : '<div class="rz-cli-dica">Nenhuma rota com esse nome.</div>';
+  var bt=document.getElementById('modal-ok');
+  if(bt){ bt.disabled=!n; bt.textContent=n?'🗑 Apagar '+n+' rota'+(n===1?'':'s'):'Apagar as marcadas'; }
+  var tg=document.getElementById('rz-apg-todas'); if(tg) tg.textContent=(vis.length && vis.every(function(r){ return rzApg.sel[r.firestoreId]; }))?'Desmarcar todas':'Marcar todas';
+}
+window.rzApgMarcar=function(id,on){ if(on) rzApg.sel[id]=true; else delete rzApg.sel[id]; rzApgPintar(); };
+window.rzApgTodas=function(){
+  var f=rzNormNome(rzApg.filtro), vis=rzSalvas.filter(function(r){ return !f || rzNormNome(r.nome).indexOf(f)>=0; });
+  var todas=vis.every(function(r){ return rzApg.sel[r.firestoreId]; });
+  vis.forEach(function(r){ if(todas) delete rzApg.sel[r.firestoreId]; else rzApg.sel[r.firestoreId]=true; });
+  rzApgPintar();
+};
+window.rzApgFiltrar=function(el){ rzApg.filtro=el.value; rzApgPintar(); };
+window.rzApagarVarias=function(){
+  if(!ehAdmin){ alert('Só o administrador pode apagar várias rotas de uma vez.'); return; }
+  if(!rzSalvas.length){ alert('Não há rotas salvas.'); return; }
+  rzApg={ sel:{}, filtro:'' };
+  modal({ titulo:'Apagar rotas salvas', sub:rzSalvas.length+' rota'+(rzSalvas.length===1?'':'s')+' salva'+(rzSalvas.length===1?'':'s')+' · marque as que quer apagar',
+    body:'<div class="rz-linha"><input placeholder="Buscar pelo nome…" oninput="rzApgFiltrar(this)" autocomplete="off">'
+      +'<button class="btn btn-sm btn-ghost" id="rz-apg-todas" onclick="rzApgTodas()">Marcar todas</button></div>'
+      +'<div id="rz-apg-lista" style="max-height:52vh;overflow:auto"></div>'
+      +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">Apagar não se desfaz. As fichas dos clientes e a base de clientes não são apagadas.</div>',
+    ok:'Apagar as marcadas', onOk:function(){
+      var ids=Object.keys(rzApg.sel); if(!ids.length) return false;
+      var nomes=rzSalvas.filter(function(r){ return rzApg.sel[r.firestoreId]; }).map(function(r){ return r.nome||'(sem nome)'; });
+      if(!confirm('Apagar '+ids.length+' rota'+(ids.length===1?'':'s')+'?\n\n'+nomes.slice(0,12).join('\n')+(nomes.length>12?'\n… e mais '+(nomes.length-12):'')+'\n\nIsso não se desfaz.')) return false;
+      var bt=document.getElementById('modal-ok'); if(bt){ bt.disabled=true; bt.textContent='Apagando…'; }
+      /* um lote do Firestore aceita até 500 operações */
+      var lotes=[]; for(var i=0;i<ids.length;i+=450) lotes.push(ids.slice(i,i+450));
+      lotes.reduce(function(pr,lt){ return pr.then(function(){
+        var b=writeBatch(dbC); lt.forEach(function(id){ b.delete(doc(dbC,'frotaRoteiros',id)); }); return b.commit();
+      }); }, Promise.resolve())
+        .then(function(){
+          var abertaFoi=!!rzApg.sel[rzAberta];
+          fecharModal();
+          if(abertaFoi){ rzSujo=false; rzNova(); }
+          ids.forEach(function(id){ delete rzVer.sel[id]; });
+          rzListar(); rzDesenhar(false);
+          rzMsg(ids.length+' rota'+(ids.length===1?' apagada':'s apagadas')+'.');
+        })
+        .catch(function(e){
+          console.error('apagar rotas:',e);
+          if(bt){ bt.disabled=false; rzApgPintar(); }
+          alert('Não foi possível apagar: '+(e.code||'')+' '+(e.message||'')+'\n\nNenhuma rota deste lote foi apagada.');
+        });
+      return false;
+    } });
+  rzApgPintar();
+};
+
 function renderRoteirizar(){
   rzCliCarregar();
+  var bApg=document.getElementById('rz-apagar-varias'); if(bApg) bApg.style.display=ehAdmin?'':'none';
   var cxT=document.getElementById('rz-tracos'); if(cxT) cxT.checked=rzTracos;
   if(!rzListou){ rzListar(); rzPintarDias(); }
   rzPintar(); rzDesenhar(!rzMapa);
