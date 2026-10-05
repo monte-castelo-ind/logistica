@@ -926,7 +926,7 @@ html[data-pal="vinho"][data-theme="light"]{
             <button class="btn btn-sm" id="rz-tracar" onclick="rzTracar()" style="display:none">🛣 Traçar pelas ruas</button>
             <button class="btn btn-sm btn-ghost" onclick="rzGoogle()">Google Maps ↗</button>
             <button class="btn btn-sm btn-ghost" id="rz-salvar" onclick="rzSalvar()">💾 Salvar</button>
-            <button class="btn btn-sm btn-ghost" onclick="rzApagar()" title="Apagar a rota salva">🗑</button>
+            <button class="btn btn-sm btn-ghost" id="rz-apagar-uma" onclick="rzApagar()" title="Apagar a rota salva (só administrador)" style="display:none">🗑</button>
           </div>
           <div id="rz-msg" class="rz-msg"></div>
           <div id="rz-lista"></div>
@@ -2373,6 +2373,7 @@ window.rzSalvar=function(){
     .then(function(){ b.disabled=false; });
 };
 window.rzApagar=function(){
+  if(!ehAdmin){ alert('Só o administrador pode apagar rotas salvas.'); return; }
   if(!rzAberta){ rzNova(); return; }
   var r=rzSalvas.filter(function(x){ return x.firestoreId===rzAberta; })[0];
   if(!confirm('Apagar a rota "'+((r&&r.nome)||'')+'"? Isso não se desfaz.')) return;
@@ -3401,6 +3402,7 @@ window.rzApagarVarias=function(){
 function renderRoteirizar(){
   rzCliCarregar();
   var bApg=document.getElementById('rz-apagar-varias'); if(bApg) bApg.style.display=ehAdmin?'':'none';
+  var bUma=document.getElementById('rz-apagar-uma'); if(bUma) bUma.style.display=ehAdmin?'':'none';   /* apagar rota é só do admin (regra frotaRoteiros) */
   var cxT=document.getElementById('rz-tracos'); if(cxT) cxT.checked=rzTracos;
   if(!rzListou){ rzListar(); rzPintarDias(); }
   rzPintar(); rzDesenhar(!rzMapa);
