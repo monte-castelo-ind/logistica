@@ -574,6 +574,15 @@ html[data-pal="vinho"][data-theme="light"]{
 .rz-compl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;background:var(--card-2);border:1px solid var(--amber);
   border-radius:10px;padding:8px 10px;margin:-2px 0 10px}
 .rz-compl span{flex:1;min-width:0}
+
+.rz-cl-it{display:flex;gap:10px;align-items:flex-start;padding:9px 2px;border-top:1px solid var(--border)}
+.rz-cl-info{flex:1;min-width:0;font-size:12.5px;line-height:1.45}
+.rz-cl-info b{display:block;font-size:13px;overflow-wrap:anywhere}
+.rz-cl-info small{display:block;color:var(--muted);font-size:11px}
+.rz-cl-info span{display:block;color:var(--muted);font-size:11.5px;overflow-wrap:anywhere}
+.rz-cl-info .rz-cl-pos.ok{color:var(--green)}
+.rz-cl-info .rz-cl-pos.sem{color:var(--amber);font-weight:600}
+.rz-cl-bts{display:flex;flex-direction:column;gap:4px;flex:0 0 auto}
 </style>
 </head>
 <body>
@@ -890,6 +899,7 @@ html[data-pal="vinho"][data-theme="light"]{
             <select id="rz-salvas" onchange="rzAbrir(this.value)"><option value="">Rotas salvas…</option></select>
             <button class="btn btn-sm btn-ghost" onclick="rzNova()">+ Nova</button>
             <button class="btn btn-sm btn-ghost" id="rz-apagar-varias" onclick="rzApagarVarias()" style="display:none" title="Só administrador">🗑 Apagar rotas…</button>
+            <button class="btn btn-sm btn-ghost" id="rz-clientes-bt" onclick="rzClientesAdmin()" style="display:none" title="Só administrador">👥 Clientes</button>
           </div>
           <div class="rz-compl" id="rz-compl" style="display:none"></div>
           <div class="rz-linha"><button class="btn btn-sm btn-ghost" id="rz-ver-bt" onclick="rzVerAbrir()" style="flex:1">🗺 Ver várias rotas</button></div>
@@ -2642,6 +2652,7 @@ function rzCliCarregar(){
       r[0].docs.forEach(function(d){ var cl=(d.data()||{}).clientes||{}; Object.keys(cl).forEach(function(k){ base[k]=cl[k]; }); });
       rzCli.base=base; rzCli.idx=null;
       rzFicha={}; r[1].docs.forEach(function(d){ rzFicha[d.id]=d.data()||{}; });
+      rzAplicarNomes();                 /* nome editado pelo admin (ficha) por cima do nome do ERP */
       rzCli.carregou=true; rzCli.carregando=false;
       rzPontos.forEach(function(p){ p._vinc=''; });   /* tenta reconhecer de novo com a base carregada */
       rzPintar(); rzDesenhar(false);
@@ -2695,16 +2706,19 @@ function rzNormRazao(s){
 function rzCliIdx(){
   if(rzCli.idx) return rzCli.idx;
   var ix={};
-  Object.keys(rzCli.base).forEach(function(id){ var n=rzCli.base[id].n||''; ix[id]={ a:rzNormNome(n), b:rzNormRazao(n) }; });
+  Object.keys(rzCli.base).forEach(function(id){
+    var c=rzCli.base[id], ns=[c.nErp||c.n||'', c.n||''].filter(function(x,i,a){ return x && a.indexOf(x)===i; });
+    ix[id]={ a:ns.map(rzNormNome), b:ns.map(rzNormRazao) };
+  });
   return (rzCli.idx=ix);
 }
 function rzCliPorNome(txt){
   var A=rzNormNome(txt), B=rzNormRazao(txt), ix=rzCliIdx(), ids=Object.keys(ix);
   if(A.length<3) return [];
-  var t1=ids.filter(function(id){ return ix[id].a===A; }); if(t1.length) return t1;
-  if(B.length>=4){ var t2=ids.filter(function(id){ return ix[id].b===B; }); if(t2.length) return t2; }
+  var t1=ids.filter(function(id){ return ix[id].a.indexOf(A)>=0; }); if(t1.length) return t1;
+  if(B.length>=4){ var t2=ids.filter(function(id){ return ix[id].b.indexOf(B)>=0; }); if(t2.length) return t2; }
   if(B.length>=8){
-    var t3=ids.filter(function(id){ var b=ix[id].b; return b.indexOf(B)>=0 || (b.length>=8 && B.indexOf(b)>=0); });
+    var t3=ids.filter(function(id){ return ix[id].b.some(function(b){ return b.indexOf(B)>=0 || (b.length>=8 && B.indexOf(b)>=0); }); });
     if(t3.length && t3.length<=8) return t3;
   }
   return [];
@@ -2796,7 +2810,9 @@ window.rzCliAdd=function(id){
 
 /* ---- ficha ---- */
 window.rzFichaAbrir=function(pid){
-  var p=rzPontos.filter(function(x){ return x.id===pid; })[0]; if(!p) return;
+  var daLista=String(pid).indexOf('cli:')===0;
+  var p=daLista ? { id:pid, clienteId:String(pid).slice(4), lat:null, lng:null, status:'' } : rzPontos.filter(function(x){ return x.id===pid; })[0];
+  if(!p) return;
   if(!p.clienteId){ rzVincularManual(pid); return; }
   var id=p.clienteId, c=rzCliDe(p), f=rzFicha[id]||{}, dias=Array.isArray(f.dias)?f.dias.slice():[];
   var hist=(c.d||[]).map(function(d){ return RZ_DIAS_C[d]; }).join(', ');
@@ -2814,7 +2830,7 @@ window.rzFichaAbrir=function(pid){
       +'<div class="fld"><label>Observações</label><textarea id="fz-obs" rows="3" placeholder="Ex.: descarga pelos fundos · ligar antes · caminhão grande não entra">'+esc(f.obs||'')+'</textarea></div>'
       +(difere||p.status==='manual'?'<label class="rz-chk"><input type="checkbox" id="fz-pos" checked> Gravar a posição deste ponto como a correta do cliente</label>':'')
       +(f.posManual?'<div style="font-size:11.5px;color:var(--muted)">📌 Posição corrigida à mão'+(f.atualizadoNome?' por '+esc(f.atualizadoNome):'')+'.</div>':'')
-      +'<div style="margin-top:12px"><button class="btn btn-sm btn-ghost" onclick="rzDesvincular(\''+pid+'\')">Não é este cliente</button></div>',
+      +(daLista?'':'<div style="margin-top:12px"><button class="btn btn-sm btn-ghost" onclick="rzDesvincular(\''+pid+'\')">Não é este cliente</button></div>'),
     ok:'Salvar ficha', onOk:function(){
       var abre=document.getElementById('fz-abre').value, fecha=document.getElementById('fz-fecha').value;
       if(abre && fecha && fecha<=abre){ alert('O horário de fechar precisa ser depois do de abrir.'); return false; }
@@ -2824,7 +2840,8 @@ window.rzFichaAbrir=function(pid){
         atualizadoEm:agora(), atualizadoPor:sessaoEmail, atualizadoNome:sessaoNome||sessaoEmail };
       var cx=document.getElementById('fz-pos'); if(cx && cx.checked && p.lat!=null) dados.posManual={ lat:p.lat, lng:p.lng };
       setDoc(doc(dbC,'logClientesFicha',id), dados, { merge:true })
-        .then(function(){ rzFicha[id]=Object.assign({}, rzFicha[id]||{}, dados); fecharModal(); rzMarcarSujo(); rzPintar(); rzDesenhar(false); rzMsg('Ficha salva.'); })
+        .then(function(){ rzFicha[id]=Object.assign({}, rzFicha[id]||{}, dados); fecharModal(); if(!daLista) rzMarcarSujo(); rzPintar(); rzDesenhar(false); rzMsg('Ficha salva.');
+          if(daLista) rzClientesAdmin(); })
         .catch(function(e){ console.error('logClientesFicha:',e); alert('Não foi possível salvar a ficha: '+(e.code||e.message)); });
     } });
   rzFichaPintarDias();
@@ -3400,10 +3417,112 @@ window.rzApagarVarias=function(){
   rzApgPintar();
 };
 
+/* ===== ROTEIRIZAR — lista de clientes (só administrador) =====
+   Mostra a base inteira que o robô do ERP grava (logClientesMapa) e deixa o
+   admin trocar o NOME QUE APARECE NO APP e abrir a ficha de qualquer cliente.
+   O nome editado fica na FICHA (logClientesFicha.nomeExibicao), porque a base
+   é regravada todo dia pelo robô — editar lá sumiria na manhã seguinte.
+   O nome do ERP continua guardado (nErp) e vale para reconhecer razão social
+   colada. A regra do Firestore só deixa o admin gravar nomeExibicao. */
+var rzCl={ busca:'', filtro:'todos', limite:200 };
+
+/* aplica os nomes editados por cima da base (chamado ao carregar e ao editar) */
+function rzAplicarNomes(){
+  Object.keys(rzCli.base).forEach(function(id){
+    var c=rzCli.base[id], f=rzFicha[id]||{}, novo=String(f.nomeExibicao||'').trim();
+    if(c.nErp==null) c.nErp=c.n;
+    c.n=novo || c.nErp;
+  });
+  rzCli.idx=null;
+}
+
+function rzClPos(id){
+  var c=rzCli.base[id]||{}, f=rzFicha[id]||{};
+  if(f.posManual && f.posManual.lat!=null) return ['📌','posição ajustada à mão','ok'];
+  if(c.la==null) return ['✗','sem posição no mapa','sem'];
+  if(c.p==='cidade') return ['≈','só o centro da cidade','sem'];
+  if(c.p==='aprox') return ['≈','posição aproximada','ok'];
+  return ['✓','no mapa','ok'];
+}
+function rzClLista(){
+  var q=rzNormNome(rzCl.busca).split(' ').filter(Boolean);
+  return Object.keys(rzCli.base).filter(function(id){
+    var c=rzCli.base[id], f=rzFicha[id]||{};
+    if(rzCl.filtro==='sempos' && rzClPos(id)[2]!=='sem') return false;
+    if(rzCl.filtro==='editado' && !String(f.nomeExibicao||'').trim()) return false;
+    if(rzCl.filtro==='ficha' && !(f.abre||f.fecha||f.obs||f.descargaMin!=null||(f.dias||[]).length)) return false;
+    if(!q.length) return true;
+    var t=rzNormNome([c.n, c.nErp, c.c, c.e, c.r].join(' '));
+    return q.every(function(x){ return t.indexOf(x)>=0; });
+  }).sort(function(a,b){ return String(rzCli.base[a].n).localeCompare(String(rzCli.base[b].n),'pt-BR'); });
+}
+function rzClPintar(){
+  var box=document.getElementById('rz-cl-lista'); if(!box) return;
+  var ids=rzClLista(), mostra=ids.slice(0,rzCl.limite);
+  var tot=Object.keys(rzCli.base).length, semPos=Object.keys(rzCli.base).filter(function(id){ return rzClPos(id)[2]==='sem'; }).length;
+  var cont=document.getElementById('rz-cl-cont');
+  if(cont) cont.textContent=ids.length+' de '+tot+' clientes'+(semPos?' · '+semPos+' sem posição no mapa':'');
+  document.querySelectorAll('#rz-cl-filtros .rz-dia').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-f')===rzCl.filtro); });
+  box.innerHTML=mostra.map(function(id){
+    var c=rzCli.base[id], f=rzFicha[id]||{}, pos=rzClPos(id), editado=String(f.nomeExibicao||'').trim();
+    return '<div class="rz-cl-it">'
+      +'<div class="rz-cl-info"><b>'+esc(c.n||'(sem nome)')+'</b>'
+      +(editado?'<small>no ERP: '+esc(c.nErp||'')+'</small>':'')
+      +'<span>'+esc([c.e, c.c, c.r?'rota '+c.r:''].filter(Boolean).join(' · '))+'</span>'
+      +'<span class="rz-cl-pos '+pos[2]+'">'+pos[0]+' '+pos[1]+(c.u?' · última compra '+c.u.split('-').reverse().join('/'):'')+'</span>'
+      +(f.abre||f.fecha||f.obs?'<span>📝 '+esc([f.abre?'abre '+f.abre:'', f.fecha?'fecha '+f.fecha:'', f.obs||''].filter(Boolean).join(' · '))+'</span>':'')
+      +'</div><div class="rz-cl-bts">'
+      +'<button class="btn btn-sm btn-ghost" onclick="rzClNome(\''+id+'\')">✎ Nome</button>'
+      +'<button class="btn btn-sm btn-ghost" onclick="rzClFicha(\''+id+'\')">📝 Ficha</button>'
+      +'</div></div>';
+  }).join('')
+    +(ids.length>mostra.length?'<div style="text-align:center;padding:10px"><button class="btn btn-sm btn-ghost" onclick="rzCl.limite+=200;rzClPintar()">Mostrar mais ('+(ids.length-mostra.length)+')</button></div>':'')
+    +(!ids.length?'<div class="rz-cli-dica" style="padding:14px">Nenhum cliente com esse filtro.</div>':'');
+}
+window.rzClBuscar=function(el){ rzCl.busca=el.value; rzCl.limite=200; rzClPintar(); };
+window.rzClFiltro=function(f){ rzCl.filtro=f; rzCl.limite=200; rzClPintar(); };
+
+window.rzClientesAdmin=function(){
+  if(!ehAdmin){ alert('Só o administrador vê a lista de clientes.'); return; }
+  if(!rzCli.carregou){ rzCliCarregar(); alert('A base de clientes ainda está carregando. Tente de novo em alguns segundos.'); return; }
+  if(!Object.keys(rzCli.base).length){ alert('A base de clientes ainda está vazia — o robô do ERP preenche uma vez por dia.'); return; }
+  modal({ titulo:'Clientes do ERP', sub:'Só administrador · o nome editado vale no app; o do ERP continua guardado',
+    body:'<div class="rz-linha"><input id="rz-cl-q" placeholder="Buscar por nome, cidade, rua ou rota…" oninput="rzClBuscar(this)" autocomplete="off" value="'+esc(rzCl.busca)+'"></div>'
+      +'<div class="rz-dias" id="rz-cl-filtros" style="margin-bottom:6px">'
+      +[['todos','Todos'],['sempos','Sem posição'],['editado','Nome editado'],['ficha','Com ficha']].map(function(x){
+        return '<button class="rz-dia" data-f="'+x[0]+'" onclick="rzClFiltro(\''+x[0]+'\')">'+x[1]+'</button>'; }).join('')+'</div>'
+      +'<div id="rz-cl-cont" style="font-size:11.5px;color:var(--muted);margin-bottom:6px"></div>'
+      +'<div id="rz-cl-lista" style="max-height:58vh;overflow:auto"></div>' });
+  rzClPintar();
+  var q=document.getElementById('rz-cl-q'); if(q) q.focus();
+};
+
+window.rzClNome=function(id){
+  var c=rzCli.base[id]; if(!c) return;
+  var atual=String((rzFicha[id]||{}).nomeExibicao||'').trim();
+  modal({ titulo:'Nome do cliente', sub:'No ERP: '+esc(c.nErp||''),
+    body:'<div class="fld"><label>Nome que aparece no app</label><input id="rz-cl-nome" value="'+esc(atual)+'" placeholder="'+esc(c.nErp||'')+'" maxlength="80"></div>'
+      +'<div style="font-size:11.5px;color:var(--muted);line-height:1.5">Deixe em branco para voltar ao nome do ERP. A razão social do ERP continua sendo reconhecida quando colada no Roteirizar.</div>',
+    ok:'Salvar', onOk:function(){
+      var novo=String(document.getElementById('rz-cl-nome').value||'').trim().replace(/\s+/g,' ');
+      if(novo && novo===c.nErp) novo='';
+      setDoc(doc(dbC,'logClientesFicha',id), { nomeExibicao:novo, nomeEditadoEm:agora(), nomeEditadoPor:sessaoEmail }, { merge:true })
+        .then(function(){
+          rzFicha[id]=Object.assign({}, rzFicha[id]||{}, { nomeExibicao:novo });
+          rzAplicarNomes(); rzPintar(); rzDesenhar(false);
+          rzClientesAdmin();
+        })
+        .catch(function(e){ console.error('nome do cliente:',e); alert('Não foi possível salvar o nome: '+(e.code||e.message)+(e.code==='permission-denied'?'\n\n(A regra do Firestore só deixa o administrador editar nomes — confira se as regras novas foram publicadas.)':'')); });
+    } });
+};
+/* ficha a partir da lista: o cliente não precisa estar numa rota */
+window.rzClFicha=function(id){ rzFichaAbrir('cli:'+id); };
+
 function renderRoteirizar(){
   rzCliCarregar();
   var bApg=document.getElementById('rz-apagar-varias'); if(bApg) bApg.style.display=ehAdmin?'':'none';
-  var bUma=document.getElementById('rz-apagar-uma'); if(bUma) bUma.style.display=ehAdmin?'':'none';   /* apagar rota é só do admin (regra frotaRoteiros) */
+  var bUma=document.getElementById('rz-apagar-uma'); if(bUma) bUma.style.display=ehAdmin?'':'none';
+  var bCl=document.getElementById('rz-clientes-bt'); if(bCl) bCl.style.display=ehAdmin?'':'none';   /* apagar rota é só do admin (regra frotaRoteiros) */
   var cxT=document.getElementById('rz-tracos'); if(cxT) cxT.checked=rzTracos;
   if(!rzListou){ rzListar(); rzPintarDias(); }
   rzPintar(); rzDesenhar(!rzMapa);
