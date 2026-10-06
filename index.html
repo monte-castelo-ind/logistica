@@ -581,8 +581,12 @@ html[data-pal="vinho"][data-theme="light"]{
 .rz-cl-info small{display:block;color:var(--muted);font-size:11px}
 .rz-cl-info span{display:block;color:var(--muted);font-size:11.5px;overflow-wrap:anywhere}
 .rz-cl-info .rz-cl-pos.ok{color:var(--green)}
+.rz-cl-info .rz-cl-end{color:var(--text)}
 .rz-cl-info .rz-cl-pos.sem{color:var(--amber);font-weight:600}
 .rz-cl-bts{display:flex;flex-direction:column;gap:4px;flex:0 0 auto}
+
+.rz-mira .leaflet-container,.rz-mira .leaflet-interactive{cursor:crosshair}
+.rz-bts button.rz-pos-on,.rz-base .btn.rz-pos-on{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
@@ -899,7 +903,6 @@ html[data-pal="vinho"][data-theme="light"]{
             <select id="rz-salvas" onchange="rzAbrir(this.value)"><option value="">Rotas salvas…</option></select>
             <button class="btn btn-sm btn-ghost" onclick="rzNova()">+ Nova</button>
             <button class="btn btn-sm btn-ghost" id="rz-apagar-varias" onclick="rzApagarVarias()" style="display:none" title="Só administrador">🗑 Apagar rotas…</button>
-            <button class="btn btn-sm btn-ghost" id="rz-clientes-bt" onclick="rzClientesAdmin()" style="display:none" title="Só administrador">👥 Clientes</button>
           </div>
           <div class="rz-compl" id="rz-compl" style="display:none"></div>
           <div class="rz-linha"><button class="btn btn-sm btn-ghost" id="rz-ver-bt" onclick="rzVerAbrir()" style="flex:1">🗺 Ver várias rotas</button></div>
@@ -947,7 +950,7 @@ html[data-pal="vinho"][data-theme="light"]{
       <div style="font-size:11px;color:var(--muted);margin-top:9px;line-height:1.6">
         Sem o traçado pelas ruas, os km são estimados em linha reta com acréscimo de 30% e o tempo usa a velocidade média.
         Com o Google ativo, <strong>🛣 Traçar pelas ruas</strong> troca a estimativa pelo km e tempo reais (sem trânsito) — o horário de cada parada soma os minutos por parada.
-        Pino laranja = endereço aproximado: arraste até o lugar certo. <strong style="color:#1a73e8">Traço azul</strong> = último trecho (a volta).
+        Pino laranja = endereço aproximado. Os pinos ficam fixos: para mudar um de lugar, use 📍 Posicionar no mapa na lista. <strong style="color:#1a73e8">Traço azul</strong> = último trecho (a volta).
       </div>
     </div>
 
@@ -965,6 +968,7 @@ html[data-pal="vinho"][data-theme="light"]{
           </select>
           <button class="btn btn-sm" onclick="salvarCaixas()">Salvar</button>
           <button class="btn btn-sm btn-ghost" onclick="importarProdulog()">⟳ Puxar produtos do Produlog</button>
+          <button class="btn btn-sm btn-ghost admin-only" onclick="rzClientesAdmin()" title="Só administrador">👥 Clientes do ERP</button>
           <span id="cgcx-status" style="font-size:12px;color:var(--muted)"></span>
         </div>
         <div id="cgcx-aviso" style="display:none"></div>
@@ -2031,10 +2035,39 @@ window.rzFocar=function(id){
     if(mk) mk.openPopup();
   }
 };
+/* Pino localizado fica FIXO: arrastar sem querer não move nada. Para mudar a
+   posição, usa-se 📍 Posicionar no mapa no ponto (ou na sede): só então aquele
+   pino pode ser arrastado, ou clica-se no lugar certo do mapa. Feito isso, ele
+   volta a ficar fixo. "__base" = a sede (F). */
 window.rzPosicionar=function(id){
-  rzPosicionando=(rzPosicionando===id)?'':id; rzPintar();
-  if(rzPosicionando) document.getElementById('rz-mapa').scrollIntoView({ behavior:'smooth', block:'nearest' });
+  rzPosicionando=(rzPosicionando===id)?'':id;
+  rzPintar(); rzDesenhar(false); rzMiraMapa();
+  if(rzPosicionando){
+    document.getElementById('rz-mapa').scrollIntoView({ behavior:'smooth', block:'nearest' });
+    var p=rzPontos.filter(function(x){ return x.id===id; })[0];
+    rzMsg('Clique no mapa onde fica '+(id==='__base'?'a sede':'"'+(p?rzTitulo(p):'o ponto')+'"')+', ou arraste o pino. Para cancelar, clique em 📍 de novo (ou Esc).');
+  } else rzMsg('');
 };
+function rzMiraMapa(){
+  var mira=!!rzPosicionando;
+  if(rzG.mapa && rzG.mapa.setOptions) rzG.mapa.setOptions({ draggableCursor: mira?'crosshair':null });
+  var box=document.getElementById('rz-mapa'); if(box) box.classList.toggle('rz-mira', mira);
+}
+function rzFimPosicionar(){ rzPosicionando=''; rzMiraMapa(); rzMsg(''); }
+document.addEventListener('keydown', function(e){ if(e.key==='Escape' && rzPosicionando){ rzFimPosicionar(); rzPintar(); rzDesenhar(false); } });
+/* grava a posição escolhida (clique no mapa ou arrasto do pino em modo posicionar) */
+function rzGravarPosicao(lat, lng){
+  var alvo=rzPosicionando;
+  if(alvo==='__base'){
+    var b=rzBase(); rzFimPosicionar();
+    if(b && confirm('Mover a sede ('+(b.nome||'Fábrica')+') para cá?')) rzSalvarBase(Object.assign({}, b, { lat:+lat.toFixed(6), lng:+lng.toFixed(6) }), false);
+    else rzDesenhar(false);
+    return;
+  }
+  var p=rzPontos.filter(function(x){ return x.id===alvo; })[0];
+  if(p){ p.lat=+lat.toFixed(6); p.lng=+lng.toFixed(6); p.status='manual'; p.motivo=null; rzMarcarSujo(); }
+  rzFimPosicionar(); rzPintar(); rzDesenhar(false);
+}
 
 /* ---------- otimizar ---------- */
 window.rzOtimizar=function(){
@@ -2137,6 +2170,7 @@ function rzPintar(){
       +(base?' <span style="color:var(--muted)">A sede, se estiver na lista, conta como parada.</span>':'')
     : base
     ? '<b>'+(modo==='sede_volta'?'Sai e volta':'Sai')+':</b> '+esc(base.nome||'Fábrica')+' <span style="color:var(--muted)">· '+esc(base.endereco||'')+'</span> <button class="btn btn-sm btn-ghost" onclick="rzDefinirBase()">Alterar</button>'
+      +(podeConfig?' <button class="btn btn-sm btn-ghost'+(rzPosicionando==='__base'?' rz-pos-on':'')+'" onclick="rzPosicionar(\'__base\')" title="Posicionar a sede no mapa">📍</button>':'')
     : '<span style="color:var(--amber)">⚠ Defina o ponto de partida (a fábrica) para calcular a rota a partir dela.</span> <button class="btn btn-sm" onclick="rzDefinirBase()">Definir</button>';
   var nSede=rzPontos.filter(rzEhSede).length, n=rzPontos.length-nSede, loc=rzPontos.filter(rzConta).length;
   document.getElementById('rz-resumo').innerHTML=rzPontos.length
@@ -2182,10 +2216,10 @@ function rzPintar(){
       +   ((rzFicha[p.clienteId]||{}).obs?'<div class="rz-s rz-obs">📝 '+esc(rzFicha[p.clienteId].obs)+'</div>':'')
       +   (p.cobliHora!=null||p.cobliMin?'<div class="rz-s'+(p.cobliMin>=60?' rz-av esp':'')+'">🛰 no Cobli: '+(p.cobliHora!=null?'chegou '+rzHora(p.cobliHora)+' · ':'')+'parou '+rzDur(p.cobliMin||0)
           +(p.cobliMin>=60?' — parada longa (almoço?): confira se é cliente':'')+'</div>':'')
-      +   (rzPosicionando===p.id?'<div class="rz-s" style="color:var(--primary)">👉 Clique no mapa onde fica este ponto</div>':'')+'</div>'
+      +   (rzPosicionando===p.id?'<div class="rz-s" style="color:var(--primary)">👉 Clique no mapa onde fica este ponto, ou arraste o pino dele</div>':'')+'</div>'
       + '<div class="rz-bts">'
       +   '<button title="Subir" onclick="rzMover(\''+p.id+'\',-1)">↑</button><button title="Descer" onclick="rzMover(\''+p.id+'\',1)">↓</button>'
-      +   '<button title="Posicionar no mapa" onclick="rzPosicionar(\''+p.id+'\')">📍</button>'
+      +   '<button title="Posicionar no mapa" class="'+(rzPosicionando===p.id?'rz-pos-on':'')+'" onclick="rzPosicionar(\''+p.id+'\')">📍</button>'
       +   '<button title="'+(p.clienteId?'Ficha do cliente':'Qual é o cliente?')+'" onclick="rzFichaAbrir(\''+p.id+'\')">'+(p.clienteId?'👤':'🔗')+'</button>'
       +   '<button title="Editar" onclick="rzEditar(\''+p.id+'\')">✎</button>'
       +   '<button title="Tirar da rota" onclick="rzRemover(\''+p.id+'\')">×</button></div>'
@@ -2214,25 +2248,15 @@ function rzDesenharLeaflet(enquadrar){
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, referrerPolicy:'strict-origin-when-cross-origin',
         attribution:'&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> · busca de endereços: Nominatim' }).addTo(rzMapa);
       rzCamada=L.featureGroup().addTo(rzMapa);
-      rzMapa.on('click', function(e){
-        if(!rzPosicionando) return;
-        var p=rzPontos.filter(function(x){ return x.id===rzPosicionando; })[0];
-        if(p){ p.lat=+e.latlng.lat.toFixed(6); p.lng=+e.latlng.lng.toFixed(6); p.status='manual'; rzMarcarSujo(); }
-        rzPosicionando=''; rzPintar(); rzDesenhar(false);
-      });
+      rzMapa.on('click', function(e){ if(rzPosicionando) rzGravarPosicao(e.latlng.lat, e.latlng.lng); });
     }
     setTimeout(function(){ rzMapa.invalidateSize(); }, 60);
     rzCamada.clearLayers(); rzLMk={};
     var base=rzBaseRota(), pts=[], cor=getComputedStyle(document.documentElement).getPropertyValue('--primary').trim()||'#2fae7d', NUM=rzNumeros();
     if(base){
       pts.push([base.lat,base.lng]);
-      L.marker([base.lat,base.lng], { icon:rzIcone(L,'F','#343a40','base'), title:'Saída: '+(base.nome||'Fábrica'), draggable:!!podeConfig })
-        .on('dragend', function(ev){
-          var ll=ev.target.getLatLng();
-          if(confirm('Mover o ponto de partida ('+(base.nome||'Fábrica')+') para cá?'))
-            rzSalvarBase(Object.assign({}, base, { lat:+ll.lat.toFixed(6), lng:+ll.lng.toFixed(6) }), false);
-          else rzDesenhar(false);
-        })
+      L.marker([base.lat,base.lng], { icon:rzIcone(L,'F','#343a40','base'), title:'Saída: '+(base.nome||'Fábrica'), draggable:rzPosicionando==='__base' })
+        .on('dragend', function(ev){ var ll=ev.target.getLatLng(); rzGravarPosicao(ll.lat, ll.lng); })
         .bindPopup('<div class="rt-pop"><b>'+esc(base.nome||'Fábrica')+'</b><br>'+esc(base.endereco||'')+'</div>').addTo(rzCamada);
       rzLMk.base=rzCamada.getLayers()[rzCamada.getLayers().length-1];
     }
@@ -2242,11 +2266,11 @@ function rzDesenharLeaflet(enquadrar){
       var nn=NUM[p.id];
       pts.push([p.lat,p.lng]); linha.push([p.lat,p.lng]);
       var c=p.status==='aprox'?'#e67700':cor;
-      L.marker([p.lat,p.lng], { icon:rzIcone(L,String(nn),c), draggable:true, title:p.nome||p.endereco })
-        .on('dragend', function(ev){ var ll=ev.target.getLatLng(); p.lat=+ll.lat.toFixed(6); p.lng=+ll.lng.toFixed(6); p.status='manual'; rzMarcarSujo(); rzPintar(); rzDesenhar(false); })
+      L.marker([p.lat,p.lng], { icon:rzIcone(L,String(nn),c), draggable:rzPosicionando===p.id, title:p.nome||p.endereco })
+        .on('dragend', function(ev){ var ll=ev.target.getLatLng(); rzGravarPosicao(ll.lat, ll.lng); })
         .bindPopup('<div class="rt-pop"><b>'+nn+'. '+esc(rzTitulo(p))+'</b>'+(rzTitulo(p)!==p.endereco?'<br>'+esc(p.endereco):'')
           +(p.clienteId?'<br>'+esc(rzCliResumo(p)):'')+((rzFicha[p.clienteId]||{}).obs?'<br>📝 '+esc(rzFicha[p.clienteId].obs):'')
-          +(p.status==='aprox'?'<br><span style="color:#b35c00">≈ posição aproximada — arraste o pino se precisar</span>':'')+'</div>')
+          +(p.status==='aprox'?'<br><span style="color:#b35c00">≈ posição aproximada — use 📍 Posicionar no mapa se precisar</span>':'')+'</div>')
         .addTo(rzCamada);
       rzLMk[p.id]=rzCamada.getLayers()[rzCamada.getLayers().length-1];
     });
@@ -2543,12 +2567,7 @@ function rzGDesenhar(enquadrar){
     rzG.mapa=new google.maps.Map(box, { center:{ lat:-30.03, lng:-51.2 }, zoom:11, gestureHandling:'greedy',
       mapTypeControl:true, streetViewControl:false, fullscreenControl:true, clickableIcons:false });
     rzG.info=new google.maps.InfoWindow();
-    rzG.mapa.addListener('click', function(e){
-      if(!rzPosicionando) return;
-      var p=rzPontos.filter(function(x){ return x.id===rzPosicionando; })[0];
-      if(p){ p.lat=+e.latLng.lat().toFixed(6); p.lng=+e.latLng.lng().toFixed(6); p.status='manual'; rzMarcarSujo(); }
-      rzPosicionando=''; rzPintar(); rzDesenhar(false);
-    });
+    rzG.mapa.addListener('click', function(e){ if(rzPosicionando) rzGravarPosicao(e.latLng.lat(), e.latLng.lng()); });
   }
   rzG.objs.forEach(function(o){ o.setMap(null); }); rzG.objs=[]; rzG.mk={};
   var cor=getComputedStyle(document.documentElement).getPropertyValue('--primary').trim()||'#2fae7d';
@@ -2559,14 +2578,10 @@ function rzGDesenhar(enquadrar){
     if(chave) rzG.mk[chave]={ m:m, abrir:abrir };
   }
   if(base){
-    var mb=new google.maps.Marker({ position:{ lat:base.lat, lng:base.lng }, map:rzG.mapa, draggable:!!podeConfig, zIndex:900,
+    var mb=new google.maps.Marker({ position:{ lat:base.lat, lng:base.lng }, map:rzG.mapa, draggable:rzPosicionando==='__base', zIndex:900,
       icon:{ path:'M -11,-11 11,-11 11,11 -11,11 z', fillColor:'#343a40', fillOpacity:1, strokeColor:'#fff', strokeWeight:2, scale:1 },
       label:{ text:'F', color:'#fff', fontWeight:'700', fontSize:'12px' }, title:'Saída: '+(base.nome||'Fábrica') });
-    mb.addListener('dragend', function(ev){
-      if(confirm('Mover o ponto de partida ('+(base.nome||'Fábrica')+') para cá?'))
-        rzSalvarBase(Object.assign({}, base, { lat:+ev.latLng.lat().toFixed(6), lng:+ev.latLng.lng().toFixed(6) }), false);
-      else rzDesenhar(false);
-    });
+    mb.addListener('dragend', function(ev){ rzGravarPosicao(ev.latLng.lat(), ev.latLng.lng()); });
     pop(mb, '<b>'+esc(base.nome||'Fábrica')+'</b><br>'+esc(base.endereco||''), 'base');
     rzG.objs.push(mb); bounds.extend(mb.getPosition()); tem=true;
   }
@@ -2574,13 +2589,13 @@ function rzGDesenhar(enquadrar){
   rzPontos.forEach(function(p,i){
     if(!rzConta(p)) return;
     var nn=NUM[p.id];
-    var m=new google.maps.Marker({ position:{ lat:p.lat, lng:p.lng }, map:rzG.mapa, draggable:true, zIndex:1000+i,
+    var m=new google.maps.Marker({ position:{ lat:p.lat, lng:p.lng }, map:rzG.mapa, draggable:rzPosicionando===p.id, zIndex:1000+i,
       icon:rzGSimbolo(p.status==='aprox'?'#e67700':cor), label:{ text:String(nn), color:'#fff', fontWeight:'700', fontSize:'11px' },
       title:nn+'. '+(p.nome||p.endereco) });
-    m.addListener('dragend', function(ev){ p.lat=+ev.latLng.lat().toFixed(6); p.lng=+ev.latLng.lng().toFixed(6); p.status='manual'; rzMarcarSujo(); rzPintar(); rzDesenhar(false); });
+    m.addListener('dragend', function(ev){ rzGravarPosicao(ev.latLng.lat(), ev.latLng.lng()); });
     pop(m, '<b>'+nn+'. '+esc(rzTitulo(p))+'</b>'+(rzTitulo(p)!==p.endereco?'<br>'+esc(p.endereco):'')
       +(p.clienteId?'<br>'+esc(rzCliResumo(p)):'')+((rzFicha[p.clienteId]||{}).obs?'<br>📝 '+esc(rzFicha[p.clienteId].obs):'')
-      +(p.status==='aprox'?'<br><span style="color:#b35c00">≈ posição aproximada — arraste o pino se precisar</span>':''), p.id);
+      +(p.status==='aprox'?'<br><span style="color:#b35c00">≈ posição aproximada — use 📍 Posicionar no mapa se precisar</span>':''), p.id);
     rzG.objs.push(m); bounds.extend(m.getPosition()); tem=true; reta.push({ lat:p.lat, lng:p.lng });
   });
   if(rzVolta() && reta.length>1) reta.push({ lat:base.lat, lng:base.lng });
@@ -3424,7 +3439,22 @@ window.rzApagarVarias=function(){
    é regravada todo dia pelo robô — editar lá sumiria na manhã seguinte.
    O nome do ERP continua guardado (nErp) e vale para reconhecer razão social
    colada. A regra do Firestore só deixa o admin gravar nomeExibicao. */
-var rzCl={ busca:'', filtro:'todos', limite:200 };
+var rzCl={ busca:'', filtro:'todos', limite:200 }, rzClEnd=null, rzClEndLendo=false;
+/* endereço completo: logClientesEndereco, que só o ADMIN lê (regra do Firestore) */
+function rzClEndCarregar(depois){
+  if(rzClEnd){ depois && depois(); return; }
+  if(rzClEndLendo) return;
+  rzClEndLendo=true;
+  getDocs(collection(dbC,'logClientesEndereco')).then(function(r){
+    var m={}; r.docs.forEach(function(d){ var cl=(d.data()||{}).clientes; if(cl && typeof cl==='object') Object.keys(cl).forEach(function(k){ m[k]=cl[k]; }); });
+    rzClEnd=m; rzClEndLendo=false; depois && depois();
+  }).catch(function(e){ console.warn('logClientesEndereco:', e); rzClEnd={}; rzClEndLendo=false; depois && depois(); });
+}
+function rzClEndTxt(id){
+  var a=rzClEnd && rzClEnd[id]; if(!a) return '';
+  var cep=String(a.cep||'').replace(/\D/g,''); if(cep.length===8) cep=cep.slice(0,5)+'-'+cep.slice(5);
+  return [a.end, a.bairro, [a.cidade, a.uf].filter(Boolean).join('/'), cep].filter(Boolean).join(' · ');
+}
 
 /* aplica os nomes editados por cima da base (chamado ao carregar e ao editar) */
 function rzAplicarNomes(){
@@ -3452,7 +3482,7 @@ function rzClLista(){
     if(rzCl.filtro==='editado' && !String(f.nomeExibicao||'').trim()) return false;
     if(rzCl.filtro==='ficha' && !(f.abre||f.fecha||f.obs||f.descargaMin!=null||(f.dias||[]).length)) return false;
     if(!q.length) return true;
-    var t=rzNormNome([c.n, c.nErp, c.c, c.e, c.r].join(' '));
+    var t=rzNormNome([c.n, c.nErp, c.c, c.e, c.r, rzClEndTxt(id)].join(' '));
     return q.every(function(x){ return t.indexOf(x)>=0; });
   }).sort(function(a,b){ return String(rzCli.base[a].n).localeCompare(String(rzCli.base[b].n),'pt-BR'); });
 }
@@ -3468,7 +3498,8 @@ function rzClPintar(){
     return '<div class="rz-cl-it">'
       +'<div class="rz-cl-info"><b>'+esc(c.n||'(sem nome)')+'</b>'
       +(editado?'<small>no ERP: '+esc(c.nErp||'')+'</small>':'')
-      +'<span>'+esc([c.e, c.c, c.r?'rota '+c.r:''].filter(Boolean).join(' · '))+'</span>'
+      +(rzClEndTxt(id)?'<span class="rz-cl-end">📍 '+esc(rzClEndTxt(id))+'</span>':'')
+      +'<span>'+esc([rzClEndTxt(id)?'':c.e, rzClEndTxt(id)?'':c.c, c.r?'rota '+c.r:''].filter(Boolean).join(' · '))+'</span>'
       +'<span class="rz-cl-pos '+pos[2]+'">'+pos[0]+' '+pos[1]+(c.u?' · última compra '+c.u.split('-').reverse().join('/'):'')+'</span>'
       +(f.abre||f.fecha||f.obs?'<span>📝 '+esc([f.abre?'abre '+f.abre:'', f.fecha?'fecha '+f.fecha:'', f.obs||''].filter(Boolean).join(' · '))+'</span>':'')
       +'</div><div class="rz-cl-bts">'
@@ -3484,7 +3515,11 @@ window.rzClFiltro=function(f){ rzCl.filtro=f; rzCl.limite=200; rzClPintar(); };
 
 window.rzClientesAdmin=function(){
   if(!ehAdmin){ alert('Só o administrador vê a lista de clientes.'); return; }
-  if(!rzCli.carregou){ rzCliCarregar(); alert('A base de clientes ainda está carregando. Tente de novo em alguns segundos.'); return; }
+  if(!rzCli.carregou || !rzClEnd){
+    rzCliCarregar(); rzClEndCarregar();
+    var tent=0, esp=setInterval(function(){ tent++; if((rzCli.carregou && rzClEnd) || tent>40){ clearInterval(esp); if(rzCli.carregou) rzClientesAdmin(); else alert('Não foi possível carregar a base de clientes.'); } }, 250);
+    return;
+  }
   if(!Object.keys(rzCli.base).length){ alert('A base de clientes ainda está vazia — o robô do ERP preenche uma vez por dia.'); return; }
   modal({ titulo:'Clientes do ERP', sub:'Só administrador · o nome editado vale no app; o do ERP continua guardado',
     body:'<div class="rz-linha"><input id="rz-cl-q" placeholder="Buscar por nome, cidade, rua ou rota…" oninput="rzClBuscar(this)" autocomplete="off" value="'+esc(rzCl.busca)+'"></div>'
@@ -3500,7 +3535,7 @@ window.rzClientesAdmin=function(){
 window.rzClNome=function(id){
   var c=rzCli.base[id]; if(!c) return;
   var atual=String((rzFicha[id]||{}).nomeExibicao||'').trim();
-  modal({ titulo:'Nome do cliente', sub:'No ERP: '+esc(c.nErp||''),
+  modal({ titulo:'Nome do cliente', sub:'No ERP: '+esc(c.nErp||'')+(rzClEndTxt(id)?'<br>📍 '+esc(rzClEndTxt(id)):(c.e?'<br>📍 '+esc([c.e,c.c].filter(Boolean).join(' · ')):'')),
     body:'<div class="fld"><label>Nome que aparece no app</label><input id="rz-cl-nome" value="'+esc(atual)+'" placeholder="'+esc(c.nErp||'')+'" maxlength="80"></div>'
       +'<div style="font-size:11.5px;color:var(--muted);line-height:1.5">Deixe em branco para voltar ao nome do ERP. A razão social do ERP continua sendo reconhecida quando colada no Roteirizar.</div>',
     ok:'Salvar', onOk:function(){
@@ -3521,8 +3556,7 @@ window.rzClFicha=function(id){ rzFichaAbrir('cli:'+id); };
 function renderRoteirizar(){
   rzCliCarregar();
   var bApg=document.getElementById('rz-apagar-varias'); if(bApg) bApg.style.display=ehAdmin?'':'none';
-  var bUma=document.getElementById('rz-apagar-uma'); if(bUma) bUma.style.display=ehAdmin?'':'none';
-  var bCl=document.getElementById('rz-clientes-bt'); if(bCl) bCl.style.display=ehAdmin?'':'none';   /* apagar rota é só do admin (regra frotaRoteiros) */
+  var bUma=document.getElementById('rz-apagar-uma'); if(bUma) bUma.style.display=ehAdmin?'':'none';   /* apagar rota é só do admin (regra frotaRoteiros) */
   var cxT=document.getElementById('rz-tracos'); if(cxT) cxT.checked=rzTracos;
   if(!rzListou){ rzListar(); rzPintarDias(); }
   rzPintar(); rzDesenhar(!rzMapa);
