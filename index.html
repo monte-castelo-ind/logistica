@@ -595,6 +595,28 @@ html[data-pal="vinho"][data-theme="light"]{
 .cb-tbl td:nth-child(6) .cb-in{min-width:84px}
 .cb-tbl td:nth-child(8) .cb-in{min-width:150px}
 .cb-tbl td:nth-child(10) .cb-in{min-width:70px;text-align:right}
+
+.tr-grid{display:grid;grid-template-columns:360px 1fr;gap:14px;align-items:start}
+@media(max-width:900px){.tr-grid{grid-template-columns:1fr}}
+.tr-lado{max-height:calc(100vh - 150px);overflow:auto}
+.tr-mapa-card{padding:0;overflow:hidden}
+.tr-mapa{height:calc(100vh - 150px);min-height:460px}
+.tr-resumo{font-size:12.5px;color:var(--muted);margin-bottom:8px}
+.tr-desenho{background:var(--card-2);border:1px solid var(--primary);border-radius:10px;padding:10px;font-size:12.5px;line-height:1.5;margin-bottom:10px}
+.tr-vend{border-top:1px solid var(--border);padding:10px 0}
+.tr-vend.oculto{opacity:.5}
+.tr-vend-cab{display:flex;align-items:center;gap:8px}
+.tr-cor{width:16px;height:16px;border-radius:4px;flex:0 0 auto;border:1px solid rgba(0,0,0,.2)}
+.tr-vend-nome{flex:1;min-width:0}
+.tr-vend-nome b{display:block;font-size:13px}
+.tr-vend-nome small{color:var(--muted);font-size:11.5px}
+.tr-ico{background:none;border:0;cursor:pointer;font-size:14px;padding:4px;color:var(--text)}
+.tr-area{margin:6px 0 0 24px;padding:7px 9px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12.5px}
+.tr-area small{display:block;color:var(--muted);font-size:11px}
+.tr-area.on{border-color:var(--primary);background:var(--card-2)}
+.tr-area input{flex:1;min-width:0}
+.tr-dica{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4}
+.tr-nova{margin:6px 0 0 24px}
 </style>
 </head>
 <body>
@@ -640,6 +662,7 @@ html[data-pal="vinho"][data-theme="light"]{
     <button class="navbtn gestao-only" data-p="rotas" onclick="nav('rotas')"><span class="side-ico">⌖</span><span class="lbl">Rotas</span></button>
     <button class="navbtn gestao-only" data-p="roteirizar" onclick="nav('roteirizar')"><span class="side-ico">⤳</span><span class="lbl">Roteirizar</span></button>
     <button class="navbtn cobli-only" data-p="cobli" onclick="nav('cobli')" style="display:none"><span class="side-ico">⇪</span><span class="lbl">Cobli Conversor</span></button>
+    <button class="navbtn admin-only" data-p="territorios" onclick="nav('territorios')" style="display:none"><span class="side-ico">◩</span><span class="lbl">Territórios</span></button>
     <button class="navbtn config-only" data-p="config" onclick="nav('config')"><span class="side-ico">⚙</span><span class="lbl">Configurações</span></button>
     <div class="side-foot">
       <div class="uline">
@@ -964,6 +987,12 @@ html[data-pal="vinho"][data-theme="light"]{
     </div>
 
     <!-- CONFIG -->
+    <div class="page" id="page-territorios">
+      <div class="tr-grid">
+        <div class="card tr-lado"><div id="tr-painel"></div></div>
+        <div class="card tr-mapa-card"><div id="tr-mapa" class="tr-mapa"><div class="empty" style="padding:40px">Carregando o mapa…</div></div></div>
+      </div>
+    </div>
     <div class="page" id="page-cobli">
       <div class="card" style="max-width:1100px;margin-bottom:14px">
         <div class="klabel">1 · Cole os pedidos do carregamento</div>
@@ -1111,6 +1140,7 @@ const TITLES={
   rotas:['Rotas','O dia de cada veículo: saída, paradas e volta, pelo Cobli'],
   roteirizar:['Roteirizar','Monte a rota pelos endereços: melhor ordem, km, tempo e horário em cada parada'],
   cobli:['Cobli Conversor','Pedidos do carregamento do ERP → planilha de endereços para importar no Cobli'],
+  territorios:['Territórios','Área de atuação de cada vendedor e representante · só administrador'],
   config:['Configurações','Intervalos e tipos']
 };
 const TIPOS_MOV={
@@ -1187,6 +1217,7 @@ window.nav=function(p){
   if(!TITLES[p]) return;
   if(p==='config' && !podeConfig) p='veiculos';
   if(p==='cobli' && !podeCobli) p='veiculos';
+  if(p==='territorios' && !ehAdmin) p='veiculos';
   if(PAGINAS_GESTAO.indexOf(p)>=0 && !podeGestaoFrota()) p='veiculos';
   pagina=p;
   document.querySelectorAll('.page').forEach(function(el){ el.classList.remove('on'); });
@@ -3871,6 +3902,258 @@ window.cbBaixar=function(){
   }).catch(function(e){ alert('Não foi possível gerar a planilha: '+(e.message||e)); });
 };
 
+/* ===== TERRITÓRIOS (só administrador) =====
+   Cada vendedor/representante (comVendedores) tem uma ou mais áreas desenhadas
+   no mapa (comAreas: lista de cantos). A área selecionada fica editável:
+   arrasta canto, puxa o meio de uma borda para criar canto, botão direito no
+   canto apaga, arrasta a área inteira. Salva sozinho (1 s depois de mexer).
+   Os clientes da base aparecem na cor do vendedor da área onde estão; cinza =
+   sem área; contorno preto = em áreas de dois vendedores. */
+var tr={ vend:{}, areas:{}, carregou:false, lendo:false, sel:'', ocultos:{}, desenho:null,
+         mapa:null, objs:[], cliObjs:[], info:null, timers:{}, so:'todos' };
+var TR_CORES=['#e53935','#1e88e5','#43a047','#fb8c00','#8e24aa','#00897b','#d81b60','#6d4c41','#fdd835','#3949ab','#00acc1','#7cb342'];
+
+function trCarregar(depois){
+  if(tr.carregou){ depois && depois(); return; }
+  if(tr.lendo) return;
+  tr.lendo=true;
+  rzCliCarregar();
+  Promise.all([ getDocs(collection(dbC,'comVendedores')), getDocs(collection(dbC,'comAreas')) ])
+    .then(function(r){
+      tr.vend={}; r[0].docs.forEach(function(d){ tr.vend[d.id]=Object.assign({ id:d.id }, d.data()); });
+      tr.areas={}; r[1].docs.forEach(function(d){ tr.areas[d.id]=Object.assign({ id:d.id }, d.data()); });
+      tr.carregou=true; tr.lendo=false; depois && depois();
+    })
+    .catch(function(e){ tr.lendo=false; console.error('territórios:', e); alert('Não foi possível carregar os territórios: '+(e.code||e.message)); });
+}
+
+/* ---- geometria ---- */
+function trDentro(pt, pts){                       /* raio: ponto dentro do polígono */
+  var x=pt.lng, y=pt.lat, d=false;
+  for(var i=0, j=pts.length-1; i<pts.length; j=i++){
+    var xi=pts[i].lng, yi=pts[i].lat, xj=pts[j].lng, yj=pts[j].lat;
+    if(((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/((yj-yi)||1e-12)+xi)) d=!d;
+  }
+  return d;
+}
+/* dono(s) de cada cliente: vendedores cujas áreas contêm a posição */
+function trDonos(){
+  var out={}, areas=Object.keys(tr.areas).map(function(k){ return tr.areas[k]; }).filter(function(a){ return (a.pontos||[]).length>=3 && tr.vend[a.vendedorId]; });
+  Object.keys(rzCli.base||{}).forEach(function(id){
+    var pos=rzCliPos(id); if(!pos) return;
+    var v={};
+    areas.forEach(function(a){ if(trDentro(pos, a.pontos)) v[a.vendedorId]=1; });
+    out[id]={ pos:pos, vend:Object.keys(v) };
+  });
+  return out;
+}
+
+/* ---- painel ---- */
+function trPintar(){
+  var box=document.getElementById('tr-painel'); if(!box) return;
+  var donos=trDonos(), ids=Object.keys(donos), porV={}, semArea=0, duas=0;
+  ids.forEach(function(id){ var v=donos[id].vend; if(!v.length) semArea++; if(v.length>1) duas++; v.forEach(function(x){ porV[x]=(porV[x]||0)+1; }); });
+  var vs=Object.keys(tr.vend).map(function(k){ return tr.vend[k]; }).sort(function(a,b){ return String(a.nome).localeCompare(String(b.nome),'pt-BR'); });
+  var h='';
+  if(tr.desenho){
+    var vd=tr.vend[tr.desenho.vendedorId]||{};
+    h+='<div class="tr-desenho"><b>Desenhando área de '+esc(vd.nome||'')+'</b><br>Clique no mapa marcando os cantos da área ('+tr.desenho.pts.length+' até agora). Duplo clique ou <b>Concluir</b> para fechar.'
+      +'<div class="rz-linha" style="margin-top:8px"><button class="btn btn-sm" onclick="trConcluir()">Concluir</button><button class="btn btn-sm btn-ghost" onclick="trCancelarDesenho()">Cancelar</button>'
+      +(tr.desenho.pts.length?'<button class="btn btn-sm btn-ghost" onclick="trDesfazerPonto()">↶ Desfazer canto</button>':'')+'</div></div>';
+  }
+  h+='<div class="tr-resumo">'+ids.length+' clientes com posição · <span style="color:var(--amber)">'+semArea+' sem área</span>'+(duas?' · <span style="color:var(--red)">'+duas+' em 2+ vendedores</span>':'')+'</div>';
+  h+='<div class="rz-dias" style="margin-bottom:8px">'+[['todos','Todos os clientes'],['sem','Só sem área'],['duas','Só em 2+'],['nenhum','Esconder clientes']].map(function(x){
+      return '<button class="rz-dia'+(tr.so===x[0]?' on':'')+'" onclick="trFiltro(\''+x[0]+'\')">'+x[1]+'</button>'; }).join('')+'</div>';
+  h+='<div class="rz-linha"><button class="btn btn-sm" onclick="trVendedor()">+ Vendedor ou representante</button></div>';
+  if(!vs.length) h+='<div class="rz-cli-dica" style="padding:12px 2px">Cadastre o primeiro vendedor e depois desenhe a área dele no mapa.</div>';
+  vs.forEach(function(v){
+    var as=Object.keys(tr.areas).map(function(k){ return tr.areas[k]; }).filter(function(a){ return a.vendedorId===v.id; });
+    var oc=!!tr.ocultos[v.id];
+    h+='<div class="tr-vend'+(oc?' oculto':'')+'">'
+      +'<div class="tr-vend-cab"><span class="tr-cor" style="background:'+esc(v.cor||'#999')+'"></span>'
+      +'<div class="tr-vend-nome"><b>'+esc(v.nome||'(sem nome)')+'</b><small>'+(v.tipo==='representante'?'Representante':'Vendedor')+' · '+as.length+' área'+(as.length===1?'':'s')+' · '+(porV[v.id]||0)+' clientes</small></div>'
+      +'<button class="tr-ico" title="'+(oc?'Mostrar':'Esconder')+' no mapa" onclick="trOcultar(\''+v.id+'\')">'+(oc?'🙈':'👁')+'</button>'
+      +'<button class="tr-ico" title="Editar" onclick="trVendedor(\''+v.id+'\')">✎</button></div>'
+      +as.map(function(a){
+        var on=tr.sel===a.id;
+        return '<div class="tr-area'+(on?' on':'')+'" onclick="trSelecionar(\''+a.id+'\')"><span>'+(on?'✎ ':'')+esc(a.nome||'Área')+'</span>'
+          +'<small>'+(a.pontos||[]).length+' cantos'+(tr.timers[a.id]?' · salvando…':'')+'</small>'
+          +(on?'<div class="rz-linha" style="margin-top:6px" onclick="event.stopPropagation()"><input value="'+esc(a.nome||'')+'" placeholder="Nome da área" onchange="trRenomear(\''+a.id+'\',this.value)">'
+            +'<button class="btn btn-sm btn-ghost" onclick="trApagarArea(\''+a.id+'\')">🗑</button></div>'
+            +'<div class="tr-dica">Arraste os cantos · puxe o meio de uma borda para criar canto · botão direito num canto apaga · arraste a área para mover</div>':'')
+          +'</div>';
+      }).join('')
+      +'<button class="btn btn-sm btn-ghost tr-nova" onclick="trNovaArea(\''+v.id+'\')">+ Desenhar área</button>'
+      +'</div>';
+  });
+  box.innerHTML=h;
+}
+window.trFiltro=function(f){ tr.so=f; trPintar(); trClientes(); };
+window.trOcultar=function(id){ tr.ocultos[id]=!tr.ocultos[id]; if(tr.ocultos[id] && tr.sel && (tr.areas[tr.sel]||{}).vendedorId===id) tr.sel=''; trPintar(); trDesenhar(); };
+
+/* ---- vendedor: criar / editar / apagar ---- */
+window.trVendedor=function(id){
+  var v=id ? tr.vend[id] : { nome:'', tipo:'vendedor', cor:TR_CORES[Object.keys(tr.vend).length % TR_CORES.length] };
+  modal({ titulo:id?'Editar vendedor':'Novo vendedor ou representante', sub:'Cadastro dos territórios — não altera o ERP',
+    body:'<div class="fld"><label>Nome</label><input id="tr-v-nome" value="'+esc(v.nome||'')+'" maxlength="60"></div>'
+      +'<div class="fld"><label>Tipo</label><select id="tr-v-tipo"><option value="vendedor"'+(v.tipo!=='representante'?' selected':'')+'>Vendedor</option><option value="representante"'+(v.tipo==='representante'?' selected':'')+'>Representante</option></select></div>'
+      +'<div class="fld"><label>Cor da área no mapa</label><input id="tr-v-cor" type="color" value="'+esc(v.cor||'#e53935')+'" style="width:80px;height:36px;padding:2px"></div>'
+      +(id?'<div style="margin-top:6px"><button class="btn btn-sm btn-ghost" onclick="trApagarVendedor(\''+id+'\')">🗑 Apagar vendedor e as áreas dele</button></div>':''),
+    ok:'Salvar', onOk:function(){
+      var nome=document.getElementById('tr-v-nome').value.trim();
+      if(!nome){ alert('Informe o nome.'); return false; }
+      var dados={ nome:nome, tipo:document.getElementById('tr-v-tipo').value, cor:document.getElementById('tr-v-cor').value, atualizadoEm:agora(), atualizadoPor:sessaoEmail };
+      var pr=id ? updateDoc(doc(dbC,'comVendedores',id), dados).then(function(){ return id; })
+                : addDoc(collection(dbC,'comVendedores'), Object.assign({ criadoEm:agora() }, dados)).then(function(r){ return r.id; });
+      pr.then(function(nid){ tr.vend[nid]=Object.assign({ id:nid }, tr.vend[nid]||{}, dados); fecharModal(); trPintar(); trDesenhar(); })
+        .catch(function(e){ alert('Não foi possível salvar: '+(e.code||e.message)); });
+      return false;
+    } });
+};
+window.trApagarVendedor=function(id){
+  var v=tr.vend[id]; if(!v) return;
+  var as=Object.keys(tr.areas).filter(function(k){ return tr.areas[k].vendedorId===id; });
+  if(!confirm('Apagar '+v.nome+(as.length?' e as '+as.length+' área(s) dele':'')+'? Isso não se desfaz.')) return;
+  var b=writeBatch(dbC); b.delete(doc(dbC,'comVendedores',id)); as.forEach(function(k){ b.delete(doc(dbC,'comAreas',k)); });
+  b.commit().then(function(){ delete tr.vend[id]; as.forEach(function(k){ delete tr.areas[k]; }); if(as.indexOf(tr.sel)>=0) tr.sel=''; fecharModal(); trPintar(); trDesenhar(); })
+    .catch(function(e){ alert('Não foi possível apagar: '+(e.code||e.message)); });
+};
+
+/* ---- desenhar área nova ---- */
+window.trNovaArea=function(vid){
+  if(!tr.mapa){ alert('O mapa ainda está carregando.'); return; }
+  tr.sel=''; tr.ocultos[vid]=false;
+  tr.desenho={ vendedorId:vid, pts:[], linha:null };
+  tr.mapa.setOptions({ draggableCursor:'crosshair', disableDoubleClickZoom:true });
+  trPintar(); trDesenhar();
+};
+function trDesenhoAtualizar(){
+  var d=tr.desenho; if(!d) return;
+  if(d.linha) d.linha.setMap(null);
+  var cor=(tr.vend[d.vendedorId]||{}).cor||'#e53935';
+  d.linha=new google.maps.Polygon({ paths:d.pts, map:tr.mapa, strokeColor:cor, strokeWeight:2, fillColor:cor, fillOpacity:0.15, clickable:false });
+  trPintar();
+}
+window.trDesfazerPonto=function(){ if(tr.desenho){ tr.desenho.pts.pop(); trDesenhoAtualizar(); } };
+window.trCancelarDesenho=function(){
+  if(tr.desenho && tr.desenho.linha) tr.desenho.linha.setMap(null);
+  tr.desenho=null; if(tr.mapa) tr.mapa.setOptions({ draggableCursor:null, disableDoubleClickZoom:false });
+  trPintar();
+};
+window.trConcluir=function(){
+  var d=tr.desenho; if(!d) return;
+  if(d.pts.length<3){ alert('Marque pelo menos 3 cantos no mapa.'); return; }
+  var v=tr.vend[d.vendedorId]||{}, n=Object.keys(tr.areas).filter(function(k){ return tr.areas[k].vendedorId===d.vendedorId; }).length;
+  var dados={ vendedorId:d.vendedorId, nome:(v.nome||'Área')+' — área '+(n+1), pontos:d.pts.map(function(p){ return { lat:+p.lat.toFixed(6), lng:+p.lng.toFixed(6) }; }),
+              criadoEm:agora(), atualizadoEm:agora(), atualizadoPor:sessaoEmail };
+  addDoc(collection(dbC,'comAreas'), dados).then(function(r){
+    tr.areas[r.id]=Object.assign({ id:r.id }, dados);
+    trCancelarDesenho(); tr.sel=r.id; trPintar(); trDesenhar();
+  }).catch(function(e){ alert('Não foi possível salvar a área: '+(e.code||e.message)); });
+};
+
+/* ---- área existente: selecionar, editar, renomear, apagar ---- */
+window.trSelecionar=function(id){ if(tr.desenho) return; tr.sel=(tr.sel===id)?'':id; trPintar(); trDesenhar(); };
+window.trRenomear=function(id, nome){
+  var a=tr.areas[id]; if(!a) return; a.nome=String(nome||'').trim()||a.nome;
+  updateDoc(doc(dbC,'comAreas',id), { nome:a.nome, atualizadoEm:agora(), atualizadoPor:sessaoEmail })
+    .then(function(){ trPintar(); }).catch(function(e){ alert('Não foi possível renomear: '+(e.code||e.message)); });
+};
+window.trApagarArea=function(id){
+  var a=tr.areas[id]; if(!a || !confirm('Apagar a área "'+(a.nome||'')+'"? Isso não se desfaz.')) return;
+  deleteDoc(doc(dbC,'comAreas',id)).then(function(){ delete tr.areas[id]; if(tr.sel===id) tr.sel=''; trPintar(); trDesenhar(); })
+    .catch(function(e){ alert('Não foi possível apagar: '+(e.code||e.message)); });
+};
+/* mexeu na manta: guarda e salva 1 s depois do último movimento */
+function trMudou(id, poly){
+  var a=tr.areas[id]; if(!a) return;
+  a.pontos=poly.getPath().getArray().map(function(ll){ return { lat:+ll.lat().toFixed(6), lng:+ll.lng().toFixed(6) }; });
+  clearTimeout(tr.timers[id]);
+  tr.timers[id]=setTimeout(function(){
+    updateDoc(doc(dbC,'comAreas',id), { pontos:a.pontos, atualizadoEm:agora(), atualizadoPor:sessaoEmail })
+      .then(function(){ delete tr.timers[id]; trPintar(); trClientes(); })
+      .catch(function(e){ delete tr.timers[id]; alert('Não foi possível salvar a área: '+(e.code||e.message)); });
+  }, 1000);
+  trPintar();
+}
+
+/* ---- mapa ---- */
+function trMapaIniciar(){
+  var box=document.getElementById('tr-mapa'); if(!box || tr.mapa) return;
+  box.innerHTML='';
+  var b=rzBase();
+  tr.mapa=new google.maps.Map(box, { center:b?{ lat:b.lat, lng:b.lng }:{ lat:-30.03, lng:-51.2 }, zoom:9, gestureHandling:'greedy',
+    mapTypeControl:true, streetViewControl:false, fullscreenControl:true, clickableIcons:false });
+  tr.info=new google.maps.InfoWindow();
+  tr.mapa.addListener('click', function(e){
+    if(!tr.desenho) return;
+    tr.desenho.pts.push({ lat:e.latLng.lat(), lng:e.latLng.lng() }); trDesenhoAtualizar();
+  });
+  tr.mapa.addListener('dblclick', function(){ if(tr.desenho) setTimeout(trConcluir, 50); });
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape' && tr.desenho && pagina==='territorios') trCancelarDesenho(); });
+  trDesenhar();
+}
+function trDesenhar(){
+  if(!tr.mapa) return;
+  tr.objs.forEach(function(o){ o.setMap(null); }); tr.objs=[];
+  Object.keys(tr.areas).forEach(function(id){
+    var a=tr.areas[id], v=tr.vend[a.vendedorId];
+    if(!v || tr.ocultos[v.id] || (a.pontos||[]).length<3) return;
+    var on=tr.sel===id;
+    var pg=new google.maps.Polygon({ paths:a.pontos, map:tr.mapa, strokeColor:v.cor, strokeWeight:on?3:2, strokeOpacity:0.9,
+      fillColor:v.cor, fillOpacity:on?0.30:0.18, editable:on, draggable:on, zIndex:on?10:1 });
+    pg.addListener('click', function(){ if(!tr.desenho && tr.sel!==id) trSelecionar(id); });
+    if(on){
+      var p=pg.getPath();
+      ['set_at','insert_at','remove_at'].forEach(function(ev){ google.maps.event.addListener(p, ev, function(){ trMudou(id, pg); }); });
+      pg.addListener('dragend', function(){ trMudou(id, pg); });
+      pg.addListener('rightclick', function(e){
+        if(e.vertex==null) return;
+        if(p.getLength()<=3){ alert('A área precisa de pelo menos 3 cantos.'); return; }
+        p.removeAt(e.vertex);
+      });
+    }
+    tr.objs.push(pg);
+  });
+  trClientes();
+}
+function trClientes(){
+  if(!tr.mapa) return;
+  tr.cliObjs.forEach(function(o){ o.setMap(null); }); tr.cliObjs=[];
+  if(tr.so==='nenhum') return;
+  var donos=trDonos();
+  Object.keys(donos).forEach(function(id){
+    var d=donos[id], vis=d.vend.filter(function(x){ return !tr.ocultos[x]; });
+    if(tr.so==='sem' && d.vend.length) return;
+    if(tr.so==='duas' && d.vend.length<2) return;
+    var cor=d.vend.length ? ((tr.vend[d.vend[0]]||{}).cor||'#999') : '#9e9e9e';
+    if(d.vend.length && !vis.length) return;                                   /* vendedor escondido */
+    var mk=new google.maps.Marker({ position:d.pos, map:tr.mapa, zIndex:50,
+      icon:{ path:google.maps.SymbolPath.CIRCLE, scale:d.vend.length>1?6:4.5, fillColor:cor, fillOpacity:0.95,
+             strokeColor:d.vend.length>1?'#000':'#fff', strokeWeight:d.vend.length>1?2:1 } });
+    mk.addListener('click', function(){
+      var c=rzCli.base[id]||{};
+      tr.info.setContent('<div style="color:#222;font-size:12.5px;max-width:260px"><b>'+esc(c.n||'')+'</b><br>'+esc([c.e,c.c].filter(Boolean).join(' · '))
+        +'<br>'+(d.vend.length ? d.vend.map(function(x){ return '<span style="color:'+esc((tr.vend[x]||{}).cor||'#999')+'">●</span> '+esc((tr.vend[x]||{}).nome||''); }).join('<br>') : '<i>sem área de vendedor</i>')+'</div>');
+      tr.info.open(tr.mapa, mk);
+    });
+    tr.cliObjs.push(mk);
+  });
+}
+
+function renderTerritorios(){
+  if(!ehAdmin){ nav('veiculos'); return; }
+  trCarregar(function(){
+    trPintar();
+    var box=document.getElementById('tr-mapa');
+    if(!rzGChave()){ if(box) box.innerHTML='<div class="empty" style="padding:40px">O mapa de territórios usa o Google Maps. Ative a chave em Roteirizar → Google Maps.</div>'; return; }
+    rzGCarregar().then(function(){ trMapaIniciar(); trDesenhar(); })
+      .catch(function(){ if(box) box.innerHTML='<div class="empty" style="padding:40px">Não foi possível carregar o Google Maps.</div>'; });
+    /* a base de clientes chega depois: repinta quando estiver pronta */
+    var t=0, esp=setInterval(function(){ t++; if(rzCli.carregou || t>40){ clearInterval(esp); trPintar(); trClientes(); } }, 300);
+  });
+}
+
 function renderRoteirizar(){
   rzCliCarregar();
   var bApg=document.getElementById('rz-apagar-varias'); if(bApg) bApg.style.display=podeGestaoFrota()?'':'none';
@@ -3910,6 +4193,7 @@ function render(){
   else if(pagina==='rotas') renderRotas();
   else if(pagina==='roteirizar') renderRoteirizar();
   else if(pagina==='cobli') renderCobli();
+  else if(pagina==='territorios') renderTerritorios();
   else if(pagina==='config'){ renderConfig(); renderConfigCaixas(); }
 }
 window.render=render;
