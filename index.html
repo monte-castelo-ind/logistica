@@ -908,7 +908,7 @@ html[data-pal="vinho"][data-theme="light"]{
           <div class="rz-linha">
             <select id="rz-salvas" onchange="rzAbrir(this.value)"><option value="">Rotas salvas…</option></select>
             <button class="btn btn-sm btn-ghost" onclick="rzNova()">+ Nova</button>
-            <button class="btn btn-sm btn-ghost" id="rz-apagar-varias" onclick="rzApagarVarias()" style="display:none" title="Só administrador">🗑 Apagar rotas…</button>
+            <button class="btn btn-sm btn-ghost" id="rz-apagar-varias" onclick="rzApagarVarias()" style="display:none" title="Admin e gerência da frota">🗑 Apagar rotas…</button>
           </div>
           <div class="rz-compl" id="rz-compl" style="display:none"></div>
           <div class="rz-linha"><button class="btn btn-sm btn-ghost" id="rz-ver-bt" onclick="rzVerAbrir()" style="flex:1">🗺 Ver várias rotas</button></div>
@@ -946,7 +946,7 @@ html[data-pal="vinho"][data-theme="light"]{
             <button class="btn btn-sm" id="rz-tracar" onclick="rzTracar()" style="display:none">🛣 Traçar pelas ruas</button>
             <button class="btn btn-sm btn-ghost" onclick="rzGoogle()">Google Maps ↗</button>
             <button class="btn btn-sm btn-ghost" id="rz-salvar" onclick="rzSalvar()">💾 Salvar</button>
-            <button class="btn btn-sm btn-ghost" id="rz-apagar-uma" onclick="rzApagar()" title="Apagar a rota salva (só administrador)" style="display:none">🗑</button>
+            <button class="btn btn-sm btn-ghost" id="rz-apagar-uma" onclick="rzApagar()" title="Apagar a rota salva" style="display:none">🗑</button>
           </div>
           <div id="rz-msg" class="rz-msg"></div>
           <div id="rz-lista"></div>
@@ -2223,6 +2223,7 @@ function rzPintar(){
     var L=T.lin[i]||{}, st=RZ_ST[p.status]||RZ_ST.ok, sede=rzEhSede(p);
     if(p.status==='erro' && p.motivo==='bloqueado') st=['!','Busca recusada hoje (limite) — tente "procurar de novo" amanhã, ou use 📍'];
     if(p.status==='erro' && p.motivo==='semposicao') st=['!','Cliente ainda sem posição no mapa — use 📍 (fica guardado na ficha)'];
+    if(p.status==='erro' && p.motivo==='longe') st=['!','Posição caiu a mais de 400 km da sede — use 📍 Posicionar no mapa'];
     if(p.status==='escolher') st=['?','Mais de uma loja com essa razão social — escolha qual'];
     if(sede) st=['⌂','É a sede — início/fim da rota, não conta como parada'];
     return '<div class="rz-item'+(p.status==='erro'?' erro':'')+(sede?' sede':'')+(rzPosicionando===p.id?' pos':'')+'">'
@@ -2436,7 +2437,7 @@ window.rzSalvar=function(){
     .then(function(){ b.disabled=false; });
 };
 window.rzApagar=function(){
-  if(!ehAdmin){ alert('Só o administrador pode apagar rotas salvas.'); return; }
+  if(!podeGestaoFrota()){ alert('Só a gerência da frota pode apagar rotas.'); return; }
   if(!rzAberta){ rzNova(); return; }
   var r=rzSalvas.filter(function(x){ return x.firestoreId===rzAberta; })[0];
   if(!confirm('Apagar a rota "'+((r&&r.nome)||'')+'"? Isso não se desfaz.')) return;
@@ -2710,7 +2711,17 @@ function rzCliCarregar(){
 function rzCliN(){ return Object.keys(rzCli.base).length; }
 function rzCliPos(id){
   var f=rzFicha[id]; if(f && f.posManual && f.posManual.lat!=null) return f.posManual;
-  var c=rzCli.base[id]; return (c && c.la!=null && c.p!=='cidade') ? { lat:c.la, lng:c.lo } : null;
+  var c=rzCli.base[id]; if(!(c && c.la!=null && c.p!=='cidade')) return null;
+  var pos={ lat:c.la, lng:c.lo };
+  return rzPosPlausivel(pos) ? pos : null;      /* geocodificação que caiu em outro estado: não usa */
+}
+/* posição a mais de 400 km da sede é erro de conversão de endereço (rua de mesmo nome em outro estado) */
+var RZ_MAX_SEDE_KM=400;
+function rzPosPlausivel(pos){ var b=rzBase(); return !b || rzHav(b, pos)<=RZ_MAX_SEDE_KM; }
+/* posição em que dá para confiar para reconhecer o cliente pela proximidade */
+function rzCliPosExata(id){
+  var f=rzFicha[id]; if(f && f.posManual && f.posManual.lat!=null) return f.posManual;
+  var c=rzCli.base[id]; return (c && c.p==='ok') ? rzCliPos(id) : null;
 }
 function rzNormNome(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim(); }
 
@@ -2718,11 +2729,18 @@ function rzNormNome(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\
 function rzVincular(p){
   if(!rzCli.carregou || p.clienteId || p.semCliente || p.candidatos || p.lat==null) return;
   var marca=p.lat+','+p.lng+'|'+(p.nome||''); if(p._vinc===marca) return; p._vinc=marca;
-  var melhor=null, md=1e9;
-  Object.keys(rzCli.base).forEach(function(id){
-    var pos=rzCliPos(id); if(!pos) return;
-    var d=rzHav(p,pos); if(d<=RZ_RAIO_CLI_KM && d<md){ md=d; melhor=id; }
-  });
+  /* Só por proximidade quando AS DUAS posições são exatas: ponto aproximado
+     (centro da cidade, CEP geral) cai no mesmo lugar que vários clientes
+     aproximados, e antes ligava todos ao mesmo cliente. Empate = não escolhe. */
+  var melhor=null, md=1e9, segundo=1e9;
+  if(p.status==='ok' || p.status==='manual'){
+    Object.keys(rzCli.base).forEach(function(id){
+      var pos=rzCliPosExata(id); if(!pos) return;
+      var d=rzHav(p,pos); if(d>RZ_RAIO_CLI_KM) return;
+      if(d<md){ segundo=md; md=d; melhor=id; } else if(d<segundo) segundo=d;
+    });
+    if(melhor && segundo-md<0.03) melhor=null;      /* outro cliente a menos de 30 m de diferença: ambíguo */
+  }
   if(!melhor && p.nome){
     var n=rzNormNome(p.nome), achados=Object.keys(rzCli.base).filter(function(id){ return rzNormNome(rzCli.base[id].n)===n; });
     if(achados.length===1) melhor=achados[0];
@@ -2744,7 +2762,13 @@ function rzSubtitulo(p){
    passa a usar a nova. Ponto posicionado à mão NESTA rota não muda. */
 function rzSincClientes(){
   if(!rzCli.carregou || !rzPontos.length) return 0;
-  var n=0;
+  var n=0, longe=0;
+  /* ponto a mais de 400 km da sede (conversão de endereço que caiu em outro
+     estado): tira do mapa e pede para posicionar — senão estica a rota inteira */
+  rzPontos.forEach(function(p){
+    if(p.lat!=null && p.status!=='manual' && !rzPosPlausivel(p)){ p.lat=p.lng=null; p.status='erro'; p.motivo='longe'; longe++; }
+  });
+  if(longe){ rzMarcarSujo(); }
   rzPontos.forEach(function(p){
     if(!p.clienteId || p.status==='manual') return;
     var c=rzCli.base[p.clienteId], f=rzFicha[p.clienteId]||{}, pos=rzCliPos(p.clienteId); if(!pos) return;
@@ -2755,11 +2779,13 @@ function rzSincClientes(){
       p.status=st; p.motivo=null; n++;
     }
   });
-  if(n){
+  if(n || longe){
     rzMarcarSujo();
-    rzMsg(n+' parada'+(n===1?' atualizada':'s atualizadas')+' com a posição mais recente da base de clientes. Salve a rota para guardar.');
+    rzMsg((n?n+' parada'+(n===1?' atualizada':'s atualizadas')+' com a posição mais recente da base de clientes. ':'')
+      +(longe?longe+' parada'+(longe===1?'':'s')+' estava'+(longe===1?'':'m')+' a mais de 400 km da sede (endereço convertido errado) — posicione com 📍. ':'')
+      +'Salve a rota para guardar.');
   }
-  return n;
+  return n+longe;
 }
 /* ---- razão social colada → cliente da base ----
    Compara ignorando acento, pontuação, os sufixos de empresa (LTDA, ME, EPP,
@@ -3449,7 +3475,7 @@ window.rzApgTodas=function(){
 };
 window.rzApgFiltrar=function(el){ rzApg.filtro=el.value; rzApgPintar(); };
 window.rzApagarVarias=function(){
-  if(!ehAdmin){ alert('Só o administrador pode apagar várias rotas de uma vez.'); return; }
+  if(!podeGestaoFrota()){ alert('Só a gerência da frota pode apagar rotas.'); return; }
   if(!rzSalvas.length){ alert('Não há rotas salvas.'); return; }
   rzApg={ sel:{}, filtro:'' };
   modal({ titulo:'Apagar rotas salvas', sub:rzSalvas.length+' rota'+(rzSalvas.length===1?'':'s')+' salva'+(rzSalvas.length===1?'':'s')+' · marque as que quer apagar',
@@ -3782,8 +3808,8 @@ window.cbBaixar=function(){
 
 function renderRoteirizar(){
   rzCliCarregar();
-  var bApg=document.getElementById('rz-apagar-varias'); if(bApg) bApg.style.display=ehAdmin?'':'none';
-  var bUma=document.getElementById('rz-apagar-uma'); if(bUma) bUma.style.display=ehAdmin?'':'none';   /* apagar rota é só do admin (regra frotaRoteiros) */
+  var bApg=document.getElementById('rz-apagar-varias'); if(bApg) bApg.style.display=podeGestaoFrota()?'':'none';
+  var bUma=document.getElementById('rz-apagar-uma'); if(bUma) bUma.style.display=podeGestaoFrota()?'':'none';   /* apagar rota: admin e gerência (frotaMov) — regra frotaRoteiros */
   var cxT=document.getElementById('rz-tracos'); if(cxT) cxT.checked=rzTracos;
   if(!rzListou){ rzListar(); rzPintarDias(); }
   rzPintar(); rzDesenhar(!rzMapa);
