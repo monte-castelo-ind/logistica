@@ -587,6 +587,11 @@ html[data-pal="vinho"][data-theme="light"]{
 
 .rz-mira .leaflet-container,.rz-mira .leaflet-interactive{cursor:crosshair}
 .rz-bts button.rz-pos-on,.rz-base .btn.rz-pos-on{background:var(--primary);color:#fff;border-color:var(--primary)}
+
+.cb-tbl td{white-space:normal;vertical-align:top}
+.cb-tbl .cb-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.cb-tbl .cb-in{width:100%;min-width:90px;padding:4px 6px;font-size:12px}
+.cb-tbl td:nth-child(4) .cb-in{min-width:220px}
 </style>
 </head>
 <body>
@@ -631,6 +636,7 @@ html[data-pal="vinho"][data-theme="light"]{
     <button class="navbtn gestao-only" data-p="custos" onclick="nav('custos')"><span class="side-ico">◷</span><span class="lbl">Custos e consumo</span></button>
     <button class="navbtn gestao-only" data-p="rotas" onclick="nav('rotas')"><span class="side-ico">⌖</span><span class="lbl">Rotas</span></button>
     <button class="navbtn gestao-only" data-p="roteirizar" onclick="nav('roteirizar')"><span class="side-ico">⤳</span><span class="lbl">Roteirizar</span></button>
+    <button class="navbtn cobli-only" data-p="cobli" onclick="nav('cobli')" style="display:none"><span class="side-ico">⇪</span><span class="lbl">Cobli Conversor</span></button>
     <button class="navbtn config-only" data-p="config" onclick="nav('config')"><span class="side-ico">⚙</span><span class="lbl">Configurações</span></button>
     <div class="side-foot">
       <div class="uline">
@@ -955,6 +961,24 @@ html[data-pal="vinho"][data-theme="light"]{
     </div>
 
     <!-- CONFIG -->
+    <div class="page" id="page-cobli">
+      <div class="card" style="max-width:1100px;margin-bottom:14px">
+        <div class="klabel">1 · Cole os pedidos do carregamento</div>
+        <div class="fhint" style="margin:6px 0 10px">No ERP, abra o carregamento → aba <b>Pedidos</b>, selecione a lista inteira (de preferência com a linha de títulos), copie com Ctrl+C e cole aqui com Ctrl+V.</div>
+        <textarea id="cb-cola" rows="6" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:12px" placeholder="Pedido · Cliente · Nome completo · Documento · … · Cidade · Bairro · … · Ordem de entrega · Peso bruto" onpaste="setTimeout(cbConverter,50)"></textarea>
+        <div class="tools" style="margin-top:10px">
+          <button class="btn btn-sm" onclick="cbConverter()">Converter</button>
+          <button class="btn btn-sm btn-ghost" onclick="cbLimpar()">Limpar</button>
+          <span id="cb-resumo" style="font-size:12.5px;color:var(--muted)"></span>
+        </div>
+      </div>
+      <div class="card" style="max-width:1100px">
+        <div class="klabel">2 · Confira e baixe</div>
+        <div class="fhint" style="margin:6px 0 10px">Cada cliente vira uma parada (pedidos do mesmo cliente são juntados). O endereço vem da base de clientes do ERP; dá para corrigir direto na tabela. Depois, importe a planilha no Cobli e vincule ao motorista.</div>
+        <div class="tools" style="margin-bottom:10px"><button class="btn btn-sm" onclick="cbBaixar()">⬇ Baixar planilha do Cobli</button></div>
+        <div id="cb-tabela"></div>
+      </div>
+    </div>
     <div class="page" id="page-config">
       <div class="card caixas-only" style="max-width:860px;margin-bottom:14px">
         <div class="klabel">Pacotes por caixa</div>
@@ -1049,7 +1073,7 @@ var pagina='painel', sessaoEmail='', sessaoUid='', sessaoNome='', ehAdmin=false,
    frotaLanc — lança manutenção, óleo, km, abastecimento, pneu e checklist
    frotaMov  — o de cima, mais cadastrar veículo e documento
    role admin — o de cima, mais Configurações e importadores            */
-var podeCadastrar=false, podeCaixas=false, podeConfig=false;
+var podeCadastrar=false, podeCaixas=false, podeConfig=false, podeCobli=false;
 /* Painel e Custos são telas de gestão: quem só lança manutenção não precisa
    ver o gasto da frota inteira. */
 var PAGINAS_GESTAO=['painel','custos','rotas','roteirizar'];
@@ -1083,6 +1107,7 @@ const TITLES={
   custos:['Custos e consumo','R$/km, R$/litro e km/L por veículo'],
   rotas:['Rotas','O dia de cada veículo: saída, paradas e volta, pelo Cobli'],
   roteirizar:['Roteirizar','Monte a rota pelos endereços: melhor ordem, km, tempo e horário em cada parada'],
+  cobli:['Cobli Conversor','Pedidos do carregamento do ERP → planilha de endereços para importar no Cobli'],
   config:['Configurações','Intervalos e tipos']
 };
 const TIPOS_MOV={
@@ -1158,6 +1183,7 @@ window.togglePin=function(e){
 window.nav=function(p){
   if(!TITLES[p]) return;
   if(p==='config' && !podeConfig) p='veiculos';
+  if(p==='cobli' && !podeCobli) p='veiculos';
   if(PAGINAS_GESTAO.indexOf(p)>=0 && !podeGestaoFrota()) p='veiculos';
   pagina=p;
   document.querySelectorAll('.page').forEach(function(el){ el.classList.remove('on'); });
@@ -2381,7 +2407,9 @@ window.rzAbrir=function(id){
   document.getElementById('rz-modo').value=r.modo||(r.volta===false?'sede_ida':'sede_volta');   /* rotas antigas: pela caixinha "volta" */
   rzSujo=false; document.getElementById('rz-salvar').textContent='💾 Salvar';
   document.getElementById('rz-msg').textContent='';
-  rzPintarDias(); rzPintar(); rzDesenhar(true);
+  rzPintarDias();
+  rzSincClientes();
+  rzPintar(); rzDesenhar(true);
   rzPontos.filter(function(p){ return p.lat==null && p.status!=='erro'; }).forEach(rzBuscar);
 };
 window.rzSalvar=function(){
@@ -2670,6 +2698,7 @@ function rzCliCarregar(){
       rzAplicarNomes();                 /* nome editado pelo admin (ficha) por cima do nome do ERP */
       rzCli.carregou=true; rzCli.carregando=false;
       rzPontos.forEach(function(p){ p._vinc=''; });   /* tenta reconhecer de novo com a base carregada */
+      rzSincClientes();
       rzPintar(); rzDesenhar(false);
     })
     .catch(function(e){
@@ -2704,9 +2733,33 @@ function rzVincular(p){
 function rzTitulo(p){ var c=p.clienteId && rzCli.base[p.clienteId]; return p.nome || (c && c.n) || p.endereco; }
 /* linha de baixo: endereço digitado; para ponto de coordenada (Cobli) já reconhecido, a rua e o bairro do cliente */
 function rzSubtitulo(p){
+  /* ponto de cliente da base: mostra sempre o endereço ATUAL da base (rotas
+     antigas guardaram o texto do dia em que o ponto foi adicionado) */
   var c=p.clienteId && rzCli.base[p.clienteId];
-  if(c && c.e && /^Ponto\s-?\d/.test(p.endereco||'')) return [c.e, c.c].filter(Boolean).join(' · ');
+  if(c && (c.e || c.c)) return [c.e, c.c].filter(Boolean).join(' · ')+(c.r?' · rota '+c.r:'');
   return p.endereco;
+}
+/* Pontos de clientes acompanham a posição da base: quando o robô melhora a
+   posição de um cliente (ou a ficha ganha posição corrigida), a rota aberta
+   passa a usar a nova. Ponto posicionado à mão NESTA rota não muda. */
+function rzSincClientes(){
+  if(!rzCli.carregou || !rzPontos.length) return 0;
+  var n=0;
+  rzPontos.forEach(function(p){
+    if(!p.clienteId || p.status==='manual') return;
+    var c=rzCli.base[p.clienteId], f=rzFicha[p.clienteId]||{}, pos=rzCliPos(p.clienteId); if(!pos) return;
+    var st=(f.posManual && f.posManual.lat!=null) || (c && c.p==='ok') ? 'ok' : 'aprox';
+    var longe=p.lat==null || rzHav(p, pos)>0.03;
+    if(longe || p.status!==st){
+      if(longe){ p.lat=pos.lat; p.lng=pos.lng; }
+      p.status=st; p.motivo=null; n++;
+    }
+  });
+  if(n){
+    rzMarcarSujo();
+    rzMsg(n+' parada'+(n===1?' atualizada':'s atualizadas')+' com a posição mais recente da base de clientes. Salve a rota para guardar.');
+  }
+  return n;
 }
 /* ---- razão social colada → cliente da base ----
    Compara ignorando acento, pontuação, os sufixos de empresa (LTDA, ME, EPP,
@@ -3553,6 +3606,180 @@ window.rzClNome=function(id){
 /* ficha a partir da lista: o cliente não precisa estar numa rota */
 window.rzClFicha=function(id){ rzFichaAbrir('cli:'+id); };
 
+/* ===== COBLI CONVERSOR =====
+   Cola-se a lista "Pedidos do carregamento" do ERP (Eligo) e o app monta a
+   planilha que o Cobli importa: Nome Completo · CEP · Endereço · Bairro ·
+   Cidade (aba "Planilha1", igual ao modelo do Cobli).
+   O endereço completo vem da base do robô do ERP (logClientesEndereco), que
+   só o admin e quem tem a flag frotaCobli leem. O cliente é achado pela razão
+   social; lojas da mesma rede são desempatadas pela cidade e pelo bairro do
+   pedido. Pedidos do mesmo cliente viram uma parada só. */
+var cb={ linhas:[], base:null, end:null, idx:null, lendo:false, erro:'' };
+
+function cbCarregar(depois){
+  if(cb.base && cb.end){ depois && depois(); return; }
+  if(cb.lendo) return;
+  cb.lendo=true; cb.erro='';
+  Promise.all([ getDocs(collection(dbC,'logClientesMapa')), getDocs(collection(dbC,'logClientesEndereco')) ])
+    .then(function(r){
+      var base={}, end={};
+      r[0].docs.forEach(function(d){ var cl=(d.data()||{}).clientes; if(cl && typeof cl==='object') Object.keys(cl).forEach(function(k){ base[k]=cl[k]; }); });
+      r[1].docs.forEach(function(d){ var cl=(d.data()||{}).clientes; if(cl && typeof cl==='object') Object.keys(cl).forEach(function(k){ end[k]=cl[k]; }); });
+      cb.base=base; cb.end=end; cb.idx=null; cb.lendo=false;
+      depois && depois();
+    })
+    .catch(function(e){
+      console.error('cobli conversor:', e); cb.lendo=false;
+      cb.erro=(e.code==='permission-denied')
+        ? 'Sem permissão para ler os endereços dos clientes. Peça ao administrador a flag frotaCobli (e confira se as regras novas do Firestore foram publicadas).'
+        : 'Não foi possível carregar a base de clientes: '+(e.code||e.message);
+      renderCobli();
+    });
+}
+
+/* --- leitura do que foi colado do ERP (linhas separadas por TAB) --- */
+var CB_CAB={ pedido:'PEDIDO', cliente:'CLIENTE', nome:'NOME COMPLETO', doc:'DOCUMENTO', valor:'VALOR TOTAL', plano:'PLANO DE PAGAMENTO',
+             data:'DT PREVISAO', cidade:'CIDADE', bairro:'BAIRRO', obs:'OBSERVACOES', ordem:'ORDEM DE ENTREGA', peso:'PESO BRUTO' };
+function cbLer(texto){
+  var linhas=String(texto||'').replace(/\r/g,'').split('\n').map(function(l){ return l.split('\t').map(function(c){ return c.trim(); }); });
+  var pos=null;
+  /* com cabeçalho: posição de cada coluna pelo nome */
+  linhas.some(function(l){
+    var n=l.map(rzNormNome);
+    if(n.indexOf('PEDIDO')>=0 && n.indexOf('NOME COMPLETO')>=0){
+      pos={}; Object.keys(CB_CAB).forEach(function(k){ pos[k]=n.indexOf(CB_CAB[k]); }); return true;
+    }
+  });
+  var out=[];
+  linhas.forEach(function(l){
+    var p=pos;
+    if(!p){
+      /* sem cabeçalho: a coluna do documento (NFE…) serve de âncora */
+      var iDoc=-1; l.some(function(c,i){ if(/^NF/i.test(c)){ iDoc=i; return true; } });
+      if(iDoc<2) return;
+      p={ pedido:iDoc-3, cliente:iDoc-2, nome:iDoc-1, doc:iDoc, valor:iDoc+1, plano:iDoc+2, data:iDoc+3, cidade:iDoc+4, bairro:iDoc+5, obs:iDoc+6, ordem:iDoc+7, peso:iDoc+8 };
+    }
+    var g=function(k){ return (p[k]>=0 && p[k]<l.length) ? l[p[k]] : ''; };
+    if(!/^\d{3,}$/.test(g('pedido')) || !g('nome')) return;          /* cabeçalho, "Total", "1 a 14 de 14"… */
+    out.push({ pedido:g('pedido'), codErp:g('cliente'), nome:g('nome'), cidade:g('cidade'), bairro:g('bairro'),
+               data:g('data'), ordem:parseInt(g('ordem'),10), peso:parseFloat(String(g('peso')).replace(/\./g,'').replace(',','.'))||0 });
+  });
+  return out;
+}
+
+/* --- acha o cliente na base: razão social, depois cidade e bairro --- */
+function cbIdx(){
+  if(cb.idx) return cb.idx;
+  var ix={}; Object.keys(cb.base).forEach(function(id){ var n=cb.base[id].n||''; ix[id]={ a:rzNormNome(n), b:rzNormRazao(n) }; });
+  return (cb.idx=ix);
+}
+function cbBairroDe(id){
+  var a=cb.end[id]; if(a && a.bairro) return a.bairro;
+  var e=String((cb.base[id]||{}).e||''); return e.indexOf(' · ')>=0 ? e.split(' · ').pop() : '';
+}
+function cbAchar(r){
+  var ix=cbIdx(), ids=Object.keys(ix), A=rzNormNome(r.nome), B=rzNormRazao(r.nome), c=[];
+  if(A.length>=3){
+    c=ids.filter(function(id){ return ix[id].a===A; });
+    if(!c.length && B.length>=4) c=ids.filter(function(id){ return ix[id].b===B; });
+    if(!c.length && B.length>=8){ c=ids.filter(function(id){ var b=ix[id].b; return b.indexOf(B)>=0 || (b.length>=8 && B.indexOf(b)>=0); }); if(c.length>8) c=[]; }
+  }
+  if(c.length>1 && r.cidade){
+    var cid=rzNormNome(r.cidade), f=c.filter(function(id){ return rzNormNome((cb.end[id]||{}).cidade || cb.base[id].c)===cid; });
+    if(f.length) c=f;
+  }
+  if(c.length>1 && r.bairro){
+    var ba=rzNormNome(r.bairro), f2=c.filter(function(id){ return rzNormNome(cbBairroDe(id))===ba; });
+    if(f2.length) c=f2;
+  }
+  return c;
+}
+function cbAplicar(r, id){
+  var a=cb.end[id]||{}, c=cb.base[id]||{};
+  r.clienteId=id; r.cands=null;
+  var cep=String(a.cep||'').replace(/\D/g,'');
+  r.cep=cep.length===8 ? cep.slice(0,5)+'-'+cep.slice(5) : '';
+  r.endereco=a.end||'';
+  r.bairroOut=a.bairro||r.bairro||'';
+  r.cidadeOut=(a.cidade||c.c||r.cidade||'')+((a.cidade||c.c||r.cidade)?' - '+(a.uf||'RS'):'');
+  r.status=r.endereco && r.cep ? 'ok' : 'incompleto';
+}
+
+window.cbConverter=function(){
+  var txt=document.getElementById('cb-cola').value;
+  var lidas=cbLer(txt);
+  if(!lidas.length){ alert('Não encontrei pedidos no que foi colado. Copie a lista "Pedidos do carregamento" do ERP, de preferência com a linha de títulos.'); return; }
+  cbCarregar(function(){
+    /* pedidos do mesmo cliente (mesmo código do ERP) viram uma parada só */
+    var por={}, ordem=[];
+    lidas.forEach(function(r){
+      var k=r.codErp || (rzNormNome(r.nome)+'|'+rzNormNome(r.cidade)+'|'+rzNormNome(r.bairro));
+      if(!por[k]){ por[k]=Object.assign({ pedidos:[r.pedido] }, r); ordem.push(k); }
+      else { var o=por[k]; o.pedidos.push(r.pedido); o.peso+=r.peso; if(!isNaN(r.ordem) && (isNaN(o.ordem) || r.ordem<o.ordem)) o.ordem=r.ordem; }
+    });
+    cb.linhas=ordem.map(function(k){ return por[k]; });
+    cb.linhas.sort(function(a,b){ var x=isNaN(a.ordem)?1e9:a.ordem, y=isNaN(b.ordem)?1e9:b.ordem; return x-y; });
+    cb.linhas.forEach(function(r){
+      var c=cbAchar(r);
+      if(c.length===1) cbAplicar(r, c[0]);
+      else {
+        r.clienteId=null; r.cands=c.length>1?c:null; r.status=c.length>1?'escolher':'naoachou';
+        r.cep=''; r.endereco=''; r.bairroOut=r.bairro; r.cidadeOut=r.cidade?r.cidade+' - RS':'';
+      }
+    });
+    renderCobli();
+  });
+};
+window.cbEscolher=function(i, id){ var r=cb.linhas[i]; if(r && id){ cbAplicar(r, id); renderCobli(); } };
+window.cbEditar=function(i, campo, el){ var r=cb.linhas[i]; if(!r) return; r[campo]=el.value; if(r.endereco && r.cep && (r.status==='naoachou'||r.status==='incompleto'||r.status==='escolher')) r.status='manual'; cbResumo(); };
+window.cbLimpar=function(){ cb.linhas=[]; var t=document.getElementById('cb-cola'); if(t) t.value=''; renderCobli(); };
+
+function cbResumo(){
+  var el=document.getElementById('cb-resumo'); if(!el) return;
+  var n=cb.linhas.length, ok=cb.linhas.filter(function(r){ return r.status==='ok'||r.status==='manual'; }).length;
+  var ped=cb.linhas.reduce(function(a,r){ return a+r.pedidos.length; },0), peso=cb.linhas.reduce(function(a,r){ return a+r.peso; },0);
+  el.innerHTML=n ? '<b>'+n+'</b> parada'+(n===1?'':'s')+' ('+ped+' pedido'+(ped===1?'':'s')+') · '+peso.toLocaleString('pt-BR',{ maximumFractionDigits:1 })+' kg · '
+    +(ok===n ? '<span style="color:var(--green)">✓ todos com endereço</span>' : '<span style="color:var(--amber)">⚠ '+(n-ok)+' sem endereço completo — preencha antes de baixar</span>') : '';
+}
+
+function renderCobli(){
+  var box=document.getElementById('cb-tabela'); if(!box) return;
+  if(cb.erro){ box.innerHTML='<div class="rz-av esp" style="margin-top:10px">'+esc(cb.erro)+'</div>'; return; }
+  if(!cb.linhas.length){ box.innerHTML=''; cbResumo(); return; }
+  var ST={ ok:['✓','achado','var(--green)'], manual:['✎','preenchido à mão','var(--green)'], incompleto:['⚠','achado, sem endereço completo','var(--amber)'],
+           escolher:['?','mais de uma loja — escolha','var(--amber)'], naoachou:['✗','não achado na base — preencha','var(--red)'] };
+  box.innerHTML='<div class="tw"><div class="tscroll" style="max-height:62vh"><table class="cb-tbl"><thead><tr><th>#</th><th>Nome completo (ERP)</th><th>CEP</th><th>Endereço</th><th>Bairro</th><th>Cidade</th></tr></thead><tbody>'
+    +cb.linhas.map(function(r,i){
+      var st=ST[r.status]||ST.naoachou;
+      var esc2=function(c){ return '<input class="cb-in" value="'+esc(r[c]||'')+'" oninput="cbEditar('+i+',\''+c+'\',this)">'; };
+      return '<tr><td class="r">'+(isNaN(r.ordem)?'':r.ordem)+'</td>'
+        +'<td><b>'+esc(r.nome)+'</b><div class="cb-sub"><span style="color:'+st[2]+'">'+st[0]+' '+st[1]+'</span> · ped. '+esc(r.pedidos.join(', '))+' · '+r.peso.toLocaleString('pt-BR',{ maximumFractionDigits:1 })+' kg</div>'
+        +(r.status==='escolher' ? '<select class="cb-in" onchange="cbEscolher('+i+',this.value)"><option value="">Escolha a loja…</option>'
+            +r.cands.map(function(id){ var a=cb.end[id]||{}; return '<option value="'+id+'">'+esc([a.end, a.bairro, a.cidade].filter(Boolean).join(' · ') || (cb.base[id]||{}).e || '(sem endereço)')+'</option>'; }).join('')+'</select>' : '')
+        +'</td><td>'+esc2('cep')+'</td><td>'+esc2('endereco')+'</td><td>'+esc2('bairroOut')+'</td><td>'+esc2('cidadeOut')+'</td></tr>';
+    }).join('')+'</tbody></table></div></div>';
+  cbResumo();
+}
+
+window.cbBaixar=function(){
+  if(!cb.linhas.length){ alert('Cole e converta os pedidos primeiro.'); return; }
+  var falta=cb.linhas.filter(function(r){ return !(r.endereco && r.cep); });
+  if(falta.length && !confirm(falta.length+' parada'+(falta.length===1?' está':'s estão')+' sem endereço ou CEP:\n\n'
+      +falta.slice(0,10).map(function(r){ return '• '+r.nome; }).join('\n')+(falta.length>10?'\n…':'')
+      +'\n\nO Cobli pode não localizar essas paradas. Baixar mesmo assim?')) return;
+  carregarXLSX().then(function(){
+    var aoa=[[ 'Nome Completo', 'CEP', 'Endereço', 'Bairro', 'Cidade' ]].concat(cb.linhas.map(function(r){
+      return [ r.nome, r.cep||'', r.endereco||'', r.bairroOut||'', r.cidadeOut||'' ];
+    }));
+    var ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{ wch:44 }, { wch:12 }, { wch:58 }, { wch:22 }, { wch:26 }];
+    for(var i=2;i<=aoa.length;i++){ if(ws['B'+i]) ws['B'+i].t='s'; }           /* CEP como texto: não perde o zero nem o traço */
+    var wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Planilha1');
+    var d=(cb.linhas[0].data||'').split('/').reverse().join('-') || new Date().toISOString().slice(0,10);
+    XLSX.writeFile(wb, 'Cobli_'+d+'.xlsx');
+  }).catch(function(e){ alert('Não foi possível gerar a planilha: '+(e.message||e)); });
+};
+
 function renderRoteirizar(){
   rzCliCarregar();
   var bApg=document.getElementById('rz-apagar-varias'); if(bApg) bApg.style.display=ehAdmin?'':'none';
@@ -3573,6 +3800,8 @@ function render(){
   document.querySelectorAll('.caixas-only').forEach(function(el){ el.style.display=podeCaixas?'':'none'; });
   document.querySelectorAll('.config-only').forEach(function(el){ el.style.display=podeConfig?'':'none'; });
   document.querySelectorAll('.gestao-only').forEach(function(el){ el.style.display=podeGestaoFrota()?'':'none'; });
+  document.querySelectorAll('.cobli-only').forEach(function(el){ el.style.display=podeCobli?'':'none'; });
+  if(pagina==='cobli' && !podeCobli){ nav('veiculos'); return; }
   // a tela salva do último acesso não pode furar a restrição
   if(PAGINAS_GESTAO.indexOf(pagina)>=0 && !podeGestaoFrota()){ nav('veiculos'); return; }
   var np=pendencias().length;
@@ -3589,6 +3818,7 @@ function render(){
   else if(pagina==='custos') renderCustos();
   else if(pagina==='rotas') renderRotas();
   else if(pagina==='roteirizar') renderRoteirizar();
+  else if(pagina==='cobli') renderCobli();
   else if(pagina==='config'){ renderConfig(); renderConfigCaixas(); }
 }
 window.render=render;
@@ -7287,6 +7517,7 @@ function iniciarSessao(user){
     podeCaixas=(ehAdmin || d.frotaCaixas===true || d.frotaMov===true);
     podeConfig=(ehAdmin || podeCadastrar || podeCaixas);
     podeLancar=(podeCadastrar || d.frotaLanc===true);
+    podeCobli=(ehAdmin || d.frotaCobli===true);      /* Cobli Conversor: lê endereço completo dos clientes */
     liberar(d);
   }, function(err){ console.error('usuarios:',err); negar('Não foi possível carregar suas permissões: '+(err.code||err.message)); });
 }
