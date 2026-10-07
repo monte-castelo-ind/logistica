@@ -594,6 +594,7 @@ html[data-pal="vinho"][data-theme="light"]{
 .cb-tbl td:nth-child(3) .cb-in{min-width:220px}
 .cb-tbl td:nth-child(6) .cb-in{min-width:84px}
 .cb-tbl td:nth-child(8) .cb-in{min-width:150px}
+.cb-tbl td:nth-child(10) .cb-in{min-width:70px;text-align:right}
 </style>
 </head>
 <body>
@@ -3783,6 +3784,7 @@ window.cbConverter=function(){
     cb.linhas.sort(function(a,b){ var x=isNaN(a.ordem)?1e9:a.ordem, y=isNaN(b.ordem)?1e9:b.ordem; return x-y; });
     cb.linhas.forEach(function(r){
       r.telefone=''; r.instrucoes=r.nfs.length ? 'NF '+r.nfs.join(', ') : '';
+      r.carga=r.peso ? String(Math.round(r.peso*10)/10).replace('.',',') : '';
       var c=cbAchar(r);
       if(c.length===1) cbAplicar(r, c[0]);
       else {
@@ -3811,7 +3813,7 @@ function renderCobli(){
   if(!cb.linhas.length){ box.innerHTML=''; cbResumo(); return; }
   var ST={ ok:['✓','achado','var(--green)'], manual:['✎','preenchido à mão','var(--green)'], incompleto:['⚠','achado, sem endereço completo','var(--amber)'],
            escolher:['?','mais de uma loja — escolha','var(--amber)'], naoachou:['✗','não achado na base — preencha','var(--red)'] };
-  box.innerHTML='<div class="tw"><div class="tscroll" style="max-height:62vh"><table class="cb-tbl"><thead><tr><th>#</th><th>Cliente (ERP)</th><th>Rua e número</th><th>Bairro</th><th>Cidade</th><th>CEP</th><th>Telefone</th><th>Instruções</th><th>Janela de entrega</th></tr></thead><tbody>'
+  box.innerHTML='<div class="tw"><div class="tscroll" style="max-height:62vh"><table class="cb-tbl"><thead><tr><th>#</th><th>Cliente (ERP)</th><th>Rua e número</th><th>Bairro</th><th>Cidade</th><th>CEP</th><th>Telefone</th><th>Instruções</th><th>Janela de entrega</th><th>Carga (kg)</th></tr></thead><tbody>'
     +cb.linhas.map(function(r,i){
       var st=ST[r.status]||ST.naoachou;
       var esc2=function(c){ return '<input class="cb-in" value="'+esc(r[c]||'')+'" oninput="cbEditar('+i+',\''+c+'\',this)">'; };
@@ -3820,7 +3822,7 @@ function renderCobli(){
         +(r.status==='escolher' ? '<select class="cb-in" onchange="cbEscolher('+i+',this.value)"><option value="">Escolha a loja…</option>'
             +r.cands.map(function(id){ var a=cb.end[id]||{}; return '<option value="'+id+'">'+esc([a.end, a.bairro, a.cidade].filter(Boolean).join(' · ') || (cb.base[id]||{}).e || '(sem endereço)')+'</option>'; }).join('')+'</select>' : '')
         +'</td><td>'+esc2('endereco')+'</td><td>'+esc2('bairroOut')+'</td><td>'+esc2('cidadeOut')+'</td><td>'+esc2('cep')+'</td>'
-        +'<td>'+esc2('telefone')+'</td><td>'+esc2('instrucoes')+'</td><td>'+esc2('janela')+'</td></tr>';
+        +'<td>'+esc2('telefone')+'</td><td>'+esc2('instrucoes')+'</td><td>'+esc2('janela')+'</td><td>'+esc2('carga')+'</td></tr>';
     }).join('')+'</tbody></table></div></div>';
   cbResumo();
 }
@@ -3833,27 +3835,33 @@ window.cbBaixar=function(){
       +'\n\nO Cobli pode não localizar essas paradas. Baixar mesmo assim?')) return;
   carregarXLSX().then(function(){
     /* molde do Cobli: linha 1 = título; linha 2 = cabeçalho; dados a partir da linha 3 */
-    var CAB=[ 'CLIENTE', 'RUA E NÚMERO', 'BAIRRO', 'CIDADE', 'CEP', 'TELEFONE', 'INSTRUÇÕES', 'JANELA DE ENTREGA' ];
-    var aoa=[[ 'PLANILHA MODELO PARA ROTEIRIZAÇÃO', '', '', '', '', '', '', '' ], CAB].concat(cb.linhas.map(function(r){
-      return [ r.nome, r.endereco||'', r.bairroOut||'', r.cidadeOut||'', r.cep||'', r.telefone||'', r.instrucoes||'', r.janela||'' ];
+    var CAB=[ 'CLIENTE', 'RUA E NÚMERO', 'BAIRRO', 'CIDADE', 'CEP', 'TELEFONE', 'INSTRUÇÕES', 'JANELA DE ENTREGA', 'CARGA (KG)' ];
+    var kg=function(v){ var n=parseFloat(String(v||'').replace(/\./g,'').replace(',','.')); return isFinite(n) ? Math.round(n*10)/10 : ''; };
+    var aoa=[[ 'PLANILHA MODELO PARA ROTEIRIZAÇÃO', '', '', '', '', '', '', '', '' ], CAB].concat(cb.linhas.map(function(r){
+      return [ r.nome, r.endereco||'', r.bairroOut||'', r.cidadeOut||'', r.cep||'', r.telefone||'', r.instrucoes||'', r.janela||'', kg(r.carga) ];
     }));
     var ws=XLSX.utils.aoa_to_sheet(aoa);
-    ws['!merges']=[{ s:{ r:0, c:0 }, e:{ r:0, c:7 } }];
-    ws['!cols']=[{ wch:34 }, { wch:46 }, { wch:20 }, { wch:16 }, { wch:11 }, { wch:16 }, { wch:36 }, { wch:20 }];
+    ws['!merges']=[{ s:{ r:0, c:0 }, e:{ r:0, c:8 } }];
+    ws['!cols']=[{ wch:34 }, { wch:46 }, { wch:20 }, { wch:16 }, { wch:11 }, { wch:16 }, { wch:36 }, { wch:20 }, { wch:12 }];
     ws['!rows']=[{ hpt:26 }, { hpt:22 }];
     var borda={ top:{ style:'thin', color:{ rgb:'D9D9D9' } }, bottom:{ style:'thin', color:{ rgb:'D9D9D9' } },
                 left:{ style:'thin', color:{ rgb:'D9D9D9' } }, right:{ style:'thin', color:{ rgb:'D9D9D9' } } };
-    var cols='ABCDEFGH';
+    var cols='ABCDEFGHI';
     if(ws.A1) ws.A1.s={ font:{ bold:true, sz:16, color:{ rgb:'FFFFFF' } }, fill:{ fgColor:{ rgb:'0B1A5C' } }, alignment:{ horizontal:'center', vertical:'center' } };
-    for(var c=0;c<8;c++){
+    for(var c=0;c<9;c++){
       var h=ws[cols[c]+'2'];
       if(h) h.s={ font:{ bold:true, color:{ rgb:'0B1A5C' } }, fill:{ fgColor:{ rgb:'F2F4F8' } }, alignment:{ horizontal:'center', vertical:'center' }, border:borda };
     }
     for(var i=3;i<=aoa.length;i++){
-      for(var c2=0;c2<8;c2++){
+      for(var c2=0;c2<9;c2++){
         var k=cols[c2]+i;
         if(!ws[k]) ws[k]={ t:'s', v:'' };
-        ws[k].t='s';                                                     /* tudo como texto: CEP não perde o zero nem o traço */
+        if(c2===8){                                                      /* carga: número, para o Cobli somar */
+          if(ws[k].v==='' ){ ws[k]={ t:'s', v:'' }; } else { ws[k].t='n'; ws[k].z='0.0'; }
+          ws[k].s={ border:borda, alignment:{ vertical:'center', horizontal:'right' } };
+          continue;
+        }
+        ws[k].t='s';                                                     /* o resto como texto: CEP não perde o zero nem o traço */
         ws[k].s={ border:borda, alignment:{ vertical:'center', horizontal: c2===7 ? 'center' : 'left' } };
       }
     }
