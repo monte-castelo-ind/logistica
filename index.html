@@ -602,6 +602,7 @@ html[data-pal="vinho"][data-theme="light"]{
 .tr-mapa-card{padding:0;overflow:hidden}
 .tr-mapa{height:calc(100vh - 150px);min-height:460px}
 .tr-resumo{font-size:12.5px;color:var(--muted);margin-bottom:8px}
+.tr-parados{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted);margin:2px 0 8px;cursor:pointer}
 .tr-desenho{background:var(--card-2);border:1px solid var(--primary);border-radius:10px;padding:10px;font-size:12.5px;line-height:1.5;margin-bottom:10px}
 .tr-vend{border-top:1px solid var(--border);padding:10px 0}
 .tr-vend.oculto{opacity:.5}
@@ -3865,25 +3866,23 @@ window.cbBaixar=function(){
       +falta.slice(0,10).map(function(r){ return '• '+r.nome; }).join('\n')+(falta.length>10?'\n…':'')
       +'\n\nO Cobli pode não localizar essas paradas. Baixar mesmo assim?')) return;
   carregarXLSX().then(function(){
-    /* molde do Cobli: linha 1 = título; linha 2 = cabeçalho; dados a partir da linha 3 */
+    /* linha 1 = cabeçalho; dados a partir da linha 2 (sem o título do modelo do Cobli) */
     var CAB=[ 'CLIENTE', 'RUA E NÚMERO', 'BAIRRO', 'CIDADE', 'CEP', 'TELEFONE', 'INSTRUÇÕES', 'JANELA DE ENTREGA', 'CARGA (KG)' ];
     var kg=function(v){ var n=parseFloat(String(v||'').replace(/\./g,'').replace(',','.')); return isFinite(n) ? Math.round(n*10)/10 : ''; };
-    var aoa=[[ 'PLANILHA MODELO PARA ROTEIRIZAÇÃO', '', '', '', '', '', '', '', '' ], CAB].concat(cb.linhas.map(function(r){
+    var aoa=[CAB].concat(cb.linhas.map(function(r){
       return [ r.nome, r.endereco||'', r.bairroOut||'', r.cidadeOut||'', r.cep||'', r.telefone||'', r.instrucoes||'', r.janela||'', kg(r.carga) ];
     }));
     var ws=XLSX.utils.aoa_to_sheet(aoa);
-    ws['!merges']=[{ s:{ r:0, c:0 }, e:{ r:0, c:8 } }];
     ws['!cols']=[{ wch:34 }, { wch:46 }, { wch:20 }, { wch:16 }, { wch:11 }, { wch:16 }, { wch:36 }, { wch:20 }, { wch:12 }];
-    ws['!rows']=[{ hpt:26 }, { hpt:22 }];
+    ws['!rows']=[{ hpt:22 }];
     var borda={ top:{ style:'thin', color:{ rgb:'D9D9D9' } }, bottom:{ style:'thin', color:{ rgb:'D9D9D9' } },
                 left:{ style:'thin', color:{ rgb:'D9D9D9' } }, right:{ style:'thin', color:{ rgb:'D9D9D9' } } };
     var cols='ABCDEFGHI';
-    if(ws.A1) ws.A1.s={ font:{ bold:true, sz:16, color:{ rgb:'FFFFFF' } }, fill:{ fgColor:{ rgb:'0B1A5C' } }, alignment:{ horizontal:'center', vertical:'center' } };
     for(var c=0;c<9;c++){
-      var h=ws[cols[c]+'2'];
+      var h=ws[cols[c]+'1'];
       if(h) h.s={ font:{ bold:true, color:{ rgb:'0B1A5C' } }, fill:{ fgColor:{ rgb:'F2F4F8' } }, alignment:{ horizontal:'center', vertical:'center' }, border:borda };
     }
-    for(var i=3;i<=aoa.length;i++){
+    for(var i=2;i<=aoa.length;i++){
       for(var c2=0;c2<9;c2++){
         var k=cols[c2]+i;
         if(!ws[k]) ws[k]={ t:'s', v:'' };
@@ -3910,7 +3909,7 @@ window.cbBaixar=function(){
    Os clientes da base aparecem na cor do vendedor da área onde estão; cinza =
    sem área; contorno preto = em áreas de dois vendedores. */
 var tr={ vend:{}, areas:{}, carregou:false, lendo:false, sel:'', ocultos:{}, desenho:null,
-         mapa:null, objs:[], cliObjs:[], info:null, timers:{}, so:'todos' };
+         mapa:null, objs:[], cliObjs:[], info:null, timers:{}, so:'todos', dias:90, parados:false };
 var TR_CORES=['#e53935','#1e88e5','#43a047','#fb8c00','#8e24aa','#00897b','#d81b60','#6d4c41','#fdd835','#3949ab','#00acc1','#7cb342'];
 
 function trCarregar(depois){
@@ -3939,11 +3938,14 @@ function trDentro(pt, pts){                       /* raio: ponto dentro do polí
 /* dono(s) de cada cliente: vendedores cujas áreas contêm a posição */
 function trDonos(){
   var out={}, areas=Object.keys(tr.areas).map(function(k){ return tr.areas[k]; }).filter(function(a){ return (a.pontos||[]).length>=3 && tr.vend[a.vendedorId]; });
+  var limite=tr.dias ? new Date(Date.now()-tr.dias*864e5).toISOString().slice(0,10) : '';
   Object.keys(rzCli.base||{}).forEach(function(id){
     var pos=rzCliPos(id); if(!pos) return;
+    var u=String(rzCli.base[id].u||''), ativo=!limite || (u && u>=limite);
+    if(!ativo && !tr.parados) return;                       /* parado no período: fora da conta e do mapa */
     var v={};
     areas.forEach(function(a){ if(trDentro(pos, a.pontos)) v[a.vendedorId]=1; });
-    out[id]={ pos:pos, vend:Object.keys(v) };
+    out[id]={ pos:pos, vend:Object.keys(v), parado:!ativo };
   });
   return out;
 }
@@ -3951,8 +3953,9 @@ function trDonos(){
 /* ---- painel ---- */
 function trPintar(){
   var box=document.getElementById('tr-painel'); if(!box) return;
-  var donos=trDonos(), ids=Object.keys(donos), porV={}, semArea=0, duas=0;
+  var donos=trDonos(), ids=Object.keys(donos).filter(function(id){ return !donos[id].parado; }), porV={}, semArea=0, duas=0;
   ids.forEach(function(id){ var v=donos[id].vend; if(!v.length) semArea++; if(v.length>1) duas++; v.forEach(function(x){ porV[x]=(porV[x]||0)+1; }); });
+  var nParados=Object.keys(donos).length-ids.length;
   var vs=Object.keys(tr.vend).map(function(k){ return tr.vend[k]; }).sort(function(a,b){ return String(a.nome).localeCompare(String(b.nome),'pt-BR'); });
   var h='';
   if(tr.desenho){
@@ -3961,7 +3964,11 @@ function trPintar(){
       +'<div class="rz-linha" style="margin-top:8px"><button class="btn btn-sm" onclick="trConcluir()">Concluir</button><button class="btn btn-sm btn-ghost" onclick="trCancelarDesenho()">Cancelar</button>'
       +(tr.desenho.pts.length?'<button class="btn btn-sm btn-ghost" onclick="trDesfazerPonto()">↶ Desfazer canto</button>':'')+'</div></div>';
   }
-  h+='<div class="tr-resumo">'+ids.length+' clientes com posição · <span style="color:var(--amber)">'+semArea+' sem área</span>'+(duas?' · <span style="color:var(--red)">'+duas+' em 2+ vendedores</span>':'')+'</div>';
+  h+='<div class="rz-dias" style="margin-bottom:6px">'+[[30,'Compraram em 30 dias'],[90,'Em 90 dias'],[0,'Todos']].map(function(x){
+      return '<button class="rz-dia'+(tr.dias===x[0]?' on':'')+'" onclick="trPeriodo('+x[0]+')">'+x[1]+'</button>'; }).join('')+'</div>';
+  if(tr.dias) h+='<label class="tr-parados"><input type="checkbox" '+(tr.parados?'checked':'')+' onchange="trParados(this.checked)"> Mostrar no mapa, apagados, os que não compraram no período</label>';
+  h+='<div class="tr-resumo">'+ids.length+' clientes '+(tr.dias?'ativos (compraram em '+tr.dias+' dias)':'com posição')+' · <span style="color:var(--amber)">'+semArea+' sem área</span>'
+    +(duas?' · <span style="color:var(--red)">'+duas+' em 2+ vendedores</span>':'')+(tr.parados && nParados?' · '+nParados+' parados no mapa':'')+'</div>';
   h+='<div class="rz-dias" style="margin-bottom:8px">'+[['todos','Todos os clientes'],['sem','Só sem área'],['duas','Só em 2+'],['nenhum','Esconder clientes']].map(function(x){
       return '<button class="rz-dia'+(tr.so===x[0]?' on':'')+'" onclick="trFiltro(\''+x[0]+'\')">'+x[1]+'</button>'; }).join('')+'</div>';
   h+='<div class="rz-linha"><button class="btn btn-sm" onclick="trVendedor()">+ Vendedor ou representante</button></div>';
@@ -3989,6 +3996,8 @@ function trPintar(){
   box.innerHTML=h;
 }
 window.trFiltro=function(f){ tr.so=f; trPintar(); trClientes(); };
+window.trPeriodo=function(d){ tr.dias=d; if(!d) tr.parados=false; trPintar(); trClientes(); };
+window.trParados=function(on){ tr.parados=!!on; trPintar(); trClientes(); };
 window.trOcultar=function(id){ tr.ocultos[id]=!tr.ocultos[id]; if(tr.ocultos[id] && tr.sel && (tr.areas[tr.sel]||{}).vendedorId===id) tr.sel=''; trPintar(); trDesenhar(); };
 
 /* ---- vendedor: criar / editar / apagar ---- */
@@ -4163,16 +4172,19 @@ function trClientes(){
   var donos=trDonos();
   Object.keys(donos).forEach(function(id){
     var d=donos[id], vis=d.vend.filter(function(x){ return !tr.ocultos[x]; });
-    if(tr.so==='sem' && d.vend.length) return;
-    if(tr.so==='duas' && d.vend.length<2) return;
+    if(tr.so==='sem' && (d.vend.length || d.parado)) return;
+    if(tr.so==='duas' && (d.vend.length<2 || d.parado)) return;
     var cor=d.vend.length ? ((tr.vend[d.vend[0]]||{}).cor||'#999') : '#9e9e9e';
     if(d.vend.length && !vis.length) return;                                   /* vendedor escondido */
     var mk=new google.maps.Marker({ position:d.pos, map:tr.mapa, zIndex:50, clickable:!tr.desenho,
-      icon:{ path:google.maps.SymbolPath.CIRCLE, scale:d.vend.length>1?6:4.5, fillColor:cor, fillOpacity:0.95,
-             strokeColor:d.vend.length>1?'#000':'#fff', strokeWeight:d.vend.length>1?2:1 } });
+      icon: d.parado
+        ? { path:google.maps.SymbolPath.CIRCLE, scale:3.2, fillColor:cor, fillOpacity:0.3, strokeColor:cor, strokeOpacity:0.5, strokeWeight:1 }
+        : { path:google.maps.SymbolPath.CIRCLE, scale:d.vend.length>1?6:4.5, fillColor:cor, fillOpacity:0.95,
+            strokeColor:d.vend.length>1?'#000':'#fff', strokeWeight:d.vend.length>1?2:1 } });
     mk.addListener('click', function(){
       var c=rzCli.base[id]||{};
       tr.info.setContent('<div style="color:#222;font-size:12.5px;max-width:260px"><b>'+esc(c.n||'')+'</b><br>'+esc([c.e,c.c].filter(Boolean).join(' · '))
+        +(c.u?'<br><span style="color:'+(d.parado?'#b26a00':'#2e7d32')+'">Última compra: '+c.u.split('-').reverse().join('/')+(d.parado?' (parado no período)':'')+'</span>':'')
         +'<br>'+(d.vend.length ? d.vend.map(function(x){ return '<span style="color:'+esc((tr.vend[x]||{}).cor||'#999')+'">●</span> '+esc((tr.vend[x]||{}).nome||''); }).join('<br>') : '<i>sem área de vendedor</i>')+'</div>');
       tr.info.open(tr.mapa, mk);
     });
