@@ -417,6 +417,41 @@ tr.es-baixo td{background:rgba(245,176,19,.06)}
 .pbola:hover{transform:scale(1.12)}
 .pbola.on{border-color:var(--text);box-shadow:0 0 0 2px var(--bg)}
 
+
+/* --- Neutro: estilo de referência "clinical blueprint on frosted paper" ---
+   Diferente das outras paletas, esta também muda a forma (cantos em pílula,
+   cartões de 24px, bordas finas) — mas SÓ para quem a escolhe. Fontes e
+   tamanhos ficam os de sempre (Archivo / JetBrains Mono). As cores de status (âmbar, verde, vermelho, azul, roxo) seguem
+   valendo, porque carregam significado no trabalho. */
+html[data-pal="ui"]{
+  --bg:#0a0a0a; --card:#141414; --card-2:#1f1f1f; --text:#fafafa; --muted:#a3a3a3;
+  --border:#262626; --sidebar:#0f0f0f; --side-active:#262626; --side-active-text:#fafafa;
+  --primary:#fafafa; --amber:#f5b013; --green:#22c55e; --red:#f87171; --blue:#60a5fa; --purple:#a78bfa;
+  --shadow:0 0 0 1px rgba(255,255,255,.03);
+}
+html[data-pal="ui"][data-theme="light"]{
+  --bg:#f5f5f5; --card:#ffffff; --card-2:#f5f5f5; --text:#0a0a0a; --muted:#737373;
+  --border:#e5e5e5; --sidebar:#fafafa; --side-active:#ebebeb; --side-active-text:#0a0a0a;
+  --primary:#171717; --amber:#b45309; --green:#15803d; --red:#e7000b; --blue:#2563eb; --purple:#7c3aed;
+  --shadow:0 0 0 1px rgba(23,23,23,.05), 0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1);
+}
+html[data-pal="ui"] .card{border-radius:24px;padding:20px}
+html[data-pal="ui"] .modal{border-radius:24px}
+html[data-pal="ui"] .btn{border-radius:18px}
+html[data-pal="ui"][data-theme="dark"] .btn:not(.btn-ghost),
+html[data-pal="ui"][data-theme="dark"] .uav,
+html[data-pal="ui"][data-theme="dark"] .auth-card button,
+html[data-pal="ui"][data-theme="dark"] .rz-num,
+html[data-pal="ui"][data-theme="dark"] .rz-bts button.rz-pos-on,
+html[data-pal="ui"][data-theme="dark"] .rz-base .btn.rz-pos-on{color:#0a0a0a}
+html[data-pal="ui"] .btn-ghost{background:var(--card-2);border-color:transparent}
+html[data-pal="ui"] .btn-ghost:hover{border-color:var(--border)}
+html[data-pal="ui"] input,html[data-pal="ui"] select{border-radius:18px;border-color:transparent;background:var(--card-2)}
+html[data-pal="ui"] textarea{border-radius:14px;border-color:transparent;background:var(--card-2)}
+html[data-pal="ui"] input:focus,html[data-pal="ui"] select:focus,html[data-pal="ui"] textarea:focus{outline:none;border-color:var(--muted)}
+html[data-pal="ui"] .pill,html[data-pal="ui"] .chip,html[data-pal="ui"] .rz-dia{border-radius:18px}
+html[data-pal="ui"] .navbtn{border-radius:10px}
+
 /* --- Monte Castelo: preto industrial e laranja da marca --- */
 html[data-pal="mc"]{
   --bg:#141414; --card:#1E1E1E; --card-2:#282828; --text:#EDEDED; --muted:#8C8C8C;
@@ -663,7 +698,7 @@ html[data-pal="vinho"][data-theme="light"]{
     <button class="navbtn gestao-only" data-p="rotas" onclick="nav('rotas')"><span class="side-ico">⌖</span><span class="lbl">Rotas</span></button>
     <button class="navbtn gestao-only" data-p="roteirizar" onclick="nav('roteirizar')"><span class="side-ico">⤳</span><span class="lbl">Roteirizar</span></button>
     <button class="navbtn cobli-only" data-p="cobli" onclick="nav('cobli')" style="display:none"><span class="side-ico">⇪</span><span class="lbl">Cobli Conversor</span></button>
-    <button class="navbtn admin-only" data-p="territorios" onclick="nav('territorios')" style="display:none"><span class="side-ico">◩</span><span class="lbl">Territórios</span></button>
+    <button class="navbtn admin-only" data-p="territorios" onclick="nav('territorios')" style="display:none"><span class="side-ico">◈</span><span class="lbl">Territórios</span></button>
     <button class="navbtn config-only" data-p="config" onclick="nav('config')"><span class="side-ico">⚙</span><span class="lbl">Configurações</span></button>
     <div class="side-foot">
       <div class="uline">
@@ -679,6 +714,7 @@ html[data-pal="vinho"][data-theme="light"]{
           <button class="pbola" data-pal="ambar"   onclick="setPaleta('ambar')"   title="Âmbar" style="--a:#D9A441;--b:#16130F"></button>
           <button class="pbola" data-pal="indigo"  onclick="setPaleta('indigo')"  title="Índigo" style="--a:#7B6CF0;--b:#101120"></button>
           <button class="pbola" data-pal="vinho"   onclick="setPaleta('vinho')"   title="Vinho" style="--a:#C4544F;--b:#181113"></button>
+          <button class="pbola" data-pal="ui"      onclick="setPaleta('ui')"      title="Neutro (estilo novo, em teste)" style="--a:#171717;--b:#f5f5f5"></button>
         </div>
       </div>
       <div style="display:flex;gap:6px;padding:0 2px">
