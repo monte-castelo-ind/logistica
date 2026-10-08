@@ -3675,7 +3675,7 @@ window.rzClFicha=function(id){ rzFichaAbrir('cli:'+id); };
    só o admin e quem tem a flag frotaCobli leem. O cliente é achado pela razão
    social; lojas da mesma rede são desempatadas pela cidade e pelo bairro do
    pedido. Pedidos do mesmo cliente viram uma parada só. */
-var cb={ linhas:[], base:null, end:null, fichas:{}, idx:null, lendo:false, erro:'' };
+var cb={ linhas:[], base:null, end:null, fichas:{}, cods:{}, idx:null, lendo:false, erro:'' };
 
 function cbCarregar(depois){
   if(cb.base && cb.end){ depois && depois(); return; }
@@ -3691,6 +3691,10 @@ function cbCarregar(depois){
       getDocs(collection(dbC,'logClientesFicha'))
         .then(function(f){ var m={}; f.docs.forEach(function(d){ m[d.id]=d.data()||{}; }); cb.fichas=m; })
         .catch(function(){ cb.fichas={}; })
+        /* loja já escolhida antes para cada código de cliente do ERP (rede com várias lojas) */
+        .then(function(){ return getDocs(collection(dbC,'logClientesCodErp')); })
+        .then(function(c){ var m={}; if(c) c.docs.forEach(function(d){ var v=d.data()||{}; if(v.id) m[d.id]=v.id; }); cb.cods=m; })
+        .catch(function(){ cb.cods={}; })
         .then(function(){ depois && depois(); });
     })
     .catch(function(e){
@@ -3742,7 +3746,14 @@ function cbLer(texto){
     if(iData<0) return;
     r.data=seg[iData];
     var resto=seg.slice(iData+1);
-    if(resto.length && CB_RE.peso.test(resto[resto.length-1])){ r.peso=parseFloat(resto.pop().replace(/\./g,'').replace(',','.'))||0; }
+    /* o peso (4 casas) separa: antes dele cidade, bairro, obs e ordem; depois, se o ERP mostrar, endereço e número */
+    var iPeso=-1; for(var w=resto.length-1;w>=0;w--){ if(CB_RE.peso.test(resto[w])){ iPeso=w; break; } }
+    if(iPeso>=0){
+      r.peso=parseFloat(resto[iPeso].replace(/\./g,'').replace(',','.'))||0;
+      var cauda=resto.slice(iPeso+1); resto=resto.slice(0,iPeso);
+      if(cauda.length && /^(\d+\s?[A-Z]?|S\/?N)$/i.test(cauda[cauda.length-1])) r.numero=cauda.pop();
+      r.rua=cauda.join(' ');
+    }
     if(resto.length && CB_RE.num.test(resto[resto.length-1]) && resto[resto.length-1].length<=4){ r.ordem=parseInt(resto.pop(),10); }
     /* cidade: o maior começo que bate com uma cidade conhecida (nome quebrado em 2 linhas) */
     var nc=0;
@@ -3769,22 +3780,45 @@ function cbBairroDe(id){
   var a=cb.end[id]; if(a && a.bairro) return a.bairro;
   var e=String((cb.base[id]||{}).e||''); return e.indexOf(' · ')>=0 ? e.split(' · ').pop() : '';
 }
+/* número da casa do endereço da base ("AV X, 2925 - LOJA 3" → "2925") */
+function cbNumeroDe(id){ var m=String((cb.end[id]||{}).end||'').match(/,\s*(\d+)/); return m?m[1]:''; }
+function cbRuaNorm(t){ return rzNormNome(String(t||'').replace(/,.*$/,'')).replace(/^(RUA|R|AVENIDA|AV|ESTRADA|ESTR|RODOVIA|ROD|TRAVESSA|TV|ALAMEDA|AL)\s+/,''); }
 function cbAchar(r){
-  var ix=cbIdx(), ids=Object.keys(ix), A=rzNormNome(r.nome), B=rzNormRazao(r.nome), c=[];
-  if(A.length>=3){
-    c=ids.filter(function(id){ return ix[id].a===A; });
-    if(!c.length && B.length>=4) c=ids.filter(function(id){ return ix[id].b===B; });
-    if(!c.length && B.length>=8){ c=ids.filter(function(id){ var b=ix[id].b; return b.indexOf(B)>=0 || (b.length>=8 && B.indexOf(b)>=0); }); if(c.length>8) c=[]; }
+  var lista=cbAcharNome(r), c=lista.slice();
+  r.lojas=lista.length>1 ? lista : null;                         /* rede: deixa trocar a loja na tabela */
+  /* 1) loja já escolhida antes para este código de cliente do ERP */
+  if(r.codErp && cb.cods[r.codErp] && cb.base[cb.cods[r.codErp]]){ r.lembrada=true; return [cb.cods[r.codErp]]; }
+  /* 2) endereço e número do pedido, quando o ERP mostra essas colunas */
+  if(c.length>1 && r.numero){
+    var num=String(r.numero).replace(/\D/g,''), rua=cbRuaNorm(r.rua);
+    var f=c.filter(function(id){ return cbNumeroDe(id)===num; });
+    if(f.length>1 && rua) f=f.filter(function(id){ var x=cbRuaNorm((cb.end[id]||{}).end); return x && (x.indexOf(rua)>=0 || rua.indexOf(x)>=0); });
+    if(f.length===1) return f;
   }
+  /* 3) cidade e bairro do pedido */
   if(c.length>1 && r.cidade){
-    var cid=rzNormNome(r.cidade), f=c.filter(function(id){ return rzNormNome((cb.end[id]||{}).cidade || cb.base[id].c)===cid; });
-    if(f.length) c=f;
+    var cid=rzNormNome(r.cidade), f1=c.filter(function(id){ return rzNormNome((cb.end[id]||{}).cidade || cb.base[id].c)===cid; });
+    if(f1.length) c=f1;
   }
   if(c.length>1 && r.bairro){
     var ba=rzNormNome(r.bairro), f2=c.filter(function(id){ return rzNormNome(cbBairroDe(id))===ba; });
     if(f2.length) c=f2;
   }
   return c;
+}
+function cbAcharNome(r){
+  var ix=cbIdx(), ids=Object.keys(ix), A=rzNormNome(r.nome), B=rzNormRazao(r.nome), c=[];
+  if(A.length>=3){
+    c=ids.filter(function(id){ return ix[id].a===A; });
+    if(!c.length && B.length>=4) c=ids.filter(function(id){ return ix[id].b===B; });
+    if(!c.length && B.length>=8){ c=ids.filter(function(id){ var b=ix[id].b; return b.indexOf(B)>=0 || (b.length>=8 && B.indexOf(b)>=0); }); if(c.length>8) c=[]; }
+  }
+  /* lojas da rede: só as da mesma cidade do pedido (se houver alguma), em ordem de endereço */
+  if(c.length>1 && r.cidade){
+    var cid=rzNormNome(r.cidade), f=c.filter(function(id){ return rzNormNome((cb.end[id]||{}).cidade || cb.base[id].c)===cid; });
+    if(f.length) c=f;
+  }
+  return c.sort(function(x,y){ return String((cb.end[x]||{}).end||'').localeCompare(String((cb.end[y]||{}).end||''),'pt-BR'); });
 }
 function cbAplicar(r, id){
   var a=cb.end[id]||{}, c=cb.base[id]||{};
@@ -3822,18 +3856,30 @@ window.cbConverter=function(){
       else {
         r.clienteId=null; r.cands=c.length>1?c:null; r.status=c.length>1?'escolher':'naoachou';
         r.cep=''; r.endereco=''; r.bairroOut=r.bairro; r.cidadeOut=r.cidade||''; r.janela='';
+        if(r.rua){                                               /* reserva: o endereço que veio no próprio pedido */
+          r.endereco=r.rua+(r.numero?', '+r.numero:'');
+          if(r.status==='naoachou') r.status='pedido';
+        }
       }
     });
     renderCobli();
   });
 };
-window.cbEscolher=function(i, id){ var r=cb.linhas[i]; if(r && id){ cbAplicar(r, id); renderCobli(); } };
+window.cbEscolher=function(i, id){
+  var r=cb.linhas[i]; if(!r || !id) return;
+  cbAplicar(r, id); r.lembrada=true; renderCobli();
+  if(!r.codErp) return;
+  cb.cods[r.codErp]=id;
+  /* lembra: da próxima vez, este código de cliente do ERP já vem nesta loja */
+  setDoc(doc(dbC,'logClientesCodErp', String(r.codErp)), { id:id, nome:r.nome, atualizadoEm:agora(), atualizadoPor:sessaoEmail })
+    .catch(function(e){ console.warn('lembrar loja:', e); });
+};
 window.cbEditar=function(i, campo, el){ var r=cb.linhas[i]; if(!r) return; r[campo]=el.value; if(r.endereco && r.cep && (r.status==='naoachou'||r.status==='incompleto'||r.status==='escolher')) r.status='manual'; cbResumo(); };
 window.cbLimpar=function(){ cb.linhas=[]; var t=document.getElementById('cb-cola'); if(t) t.value=''; renderCobli(); };
 
 function cbResumo(){
   var el=document.getElementById('cb-resumo'); if(!el) return;
-  var n=cb.linhas.length, ok=cb.linhas.filter(function(r){ return r.status==='ok'||r.status==='manual'; }).length;
+  var n=cb.linhas.length, ok=cb.linhas.filter(function(r){ return r.status==='ok'||r.status==='manual'||r.status==='pedido'; }).length;
   var ped=cb.linhas.reduce(function(a,r){ return a+r.pedidos.length; },0), peso=cb.linhas.reduce(function(a,r){ return a+r.peso; },0);
   el.innerHTML=n ? '<b>'+n+'</b> parada'+(n===1?'':'s')+' ('+ped+' pedido'+(ped===1?'':'s')+') · '+peso.toLocaleString('pt-BR',{ maximumFractionDigits:1 })+' kg · '
     +(ok===n ? '<span style="color:var(--green)">✓ todos com endereço</span>' : '<span style="color:var(--amber)">⚠ '+(n-ok)+' sem endereço completo — preencha antes de baixar</span>') : '';
@@ -3844,15 +3890,18 @@ function renderCobli(){
   if(cb.erro){ box.innerHTML='<div class="rz-av esp" style="margin-top:10px">'+esc(cb.erro)+'</div>'; return; }
   if(!cb.linhas.length){ box.innerHTML=''; cbResumo(); return; }
   var ST={ ok:['✓','achado','var(--green)'], manual:['✎','preenchido à mão','var(--green)'], incompleto:['⚠','achado, sem endereço completo','var(--amber)'],
+           pedido:['≈','endereço do pedido (sem CEP)','var(--green)'],
            escolher:['?','mais de uma loja — escolha','var(--amber)'], naoachou:['✗','não achado na base — preencha','var(--red)'] };
   box.innerHTML='<div class="tw"><div class="tscroll" style="max-height:62vh"><table class="cb-tbl"><thead><tr><th>#</th><th>Cliente (ERP)</th><th>Rua e número</th><th>Bairro</th><th>Cidade</th><th>CEP</th><th>Telefone</th><th>Instruções</th><th>Janela de entrega</th><th>Carga (kg)</th></tr></thead><tbody>'
     +cb.linhas.map(function(r,i){
       var st=ST[r.status]||ST.naoachou;
+      if(r.status==='ok' && r.lojas && r.lojas.length>1) st=['✓', r.lembrada?'loja lembrada':'loja da rede — confira', r.lembrada?'var(--green)':'var(--amber)'];
       var esc2=function(c){ return '<input class="cb-in" value="'+esc(r[c]||'')+'" oninput="cbEditar('+i+',\''+c+'\',this)">'; };
       return '<tr><td class="r">'+(isNaN(r.ordem)?'':r.ordem)+'</td>'
         +'<td><b>'+esc(r.nome)+'</b><div class="cb-sub"><span style="color:'+st[2]+'">'+st[0]+' '+st[1]+'</span> · ped. '+esc(r.pedidos.join(', '))+' · '+r.peso.toLocaleString('pt-BR',{ maximumFractionDigits:1 })+' kg</div>'
-        +(r.status==='escolher' ? '<select class="cb-in" onchange="cbEscolher('+i+',this.value)"><option value="">Escolha a loja…</option>'
-            +r.cands.map(function(id){ var a=cb.end[id]||{}; return '<option value="'+id+'">'+esc([a.end, a.bairro, a.cidade].filter(Boolean).join(' · ') || (cb.base[id]||{}).e || '(sem endereço)')+'</option>'; }).join('')+'</select>' : '')
+        +((r.lojas && r.lojas.length>1) ? '<select class="cb-in" title="Lojas desta rede — a escolha fica lembrada para este código de cliente" onchange="cbEscolher('+i+',this.value)">'
+            +(r.clienteId?'':'<option value="">Escolha a loja…</option>')
+            +r.lojas.map(function(id){ var a=cb.end[id]||{}; return '<option value="'+id+'"'+(id===r.clienteId?' selected':'')+'>'+esc([a.end, a.bairro, a.cidade].filter(Boolean).join(' · ') || (cb.base[id]||{}).e || '(sem endereço)')+'</option>'; }).join('')+'</select>' : '')
         +'</td><td>'+esc2('endereco')+'</td><td>'+esc2('bairroOut')+'</td><td>'+esc2('cidadeOut')+'</td><td>'+esc2('cep')+'</td>'
         +'<td>'+esc2('telefone')+'</td><td>'+esc2('instrucoes')+'</td><td>'+esc2('janela')+'</td><td>'+esc2('carga')+'</td></tr>';
     }).join('')+'</tbody></table></div></div>';
@@ -3861,8 +3910,8 @@ function renderCobli(){
 
 window.cbBaixar=function(){
   if(!cb.linhas.length){ alert('Cole e converta os pedidos primeiro.'); return; }
-  var falta=cb.linhas.filter(function(r){ return !(r.endereco && r.cep); });
-  if(falta.length && !confirm(falta.length+' parada'+(falta.length===1?' está':'s estão')+' sem endereço ou CEP:\n\n'
+  var falta=cb.linhas.filter(function(r){ return !r.endereco; });
+  if(falta.length && !confirm(falta.length+' parada'+(falta.length===1?' está':'s estão')+' sem endereço:\n\n'
       +falta.slice(0,10).map(function(r){ return '• '+r.nome; }).join('\n')+(falta.length>10?'\n…':'')
       +'\n\nO Cobli pode não localizar essas paradas. Baixar mesmo assim?')) return;
   carregarXLSX().then(function(){
