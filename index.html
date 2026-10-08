@@ -653,6 +653,47 @@ html[data-pal="vinho"][data-theme="light"]{
 .tr-area input{flex:1;min-width:0}
 .tr-dica{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4}
 .tr-nova{margin:6px 0 0 24px}
+
+/* ===== menu no topo ===== */
+.mtopo{display:none}
+html[data-menu="topo"] .side{display:none}
+html[data-menu="topo"] .shell>main{margin-left:0}
+html[data-menu="topo"] .mtopo{display:block;position:sticky;top:0;z-index:60;height:60px;
+  background:color-mix(in srgb, var(--sidebar) 88%, transparent);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
+  border-bottom:1px solid var(--border)}
+html[data-menu="topo"] .topbar .frota-mov{display:none!important}
+.mtopo-in{height:60px;display:flex;align-items:center;gap:26px;padding:0 26px}
+.mtopo-marca{display:flex;align-items:center;gap:10px;cursor:pointer;flex:0 0 auto}
+.mtopo-logo{width:120px;height:34px;background-position:left center!important}
+.mtopo-cap{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);border-left:1px solid var(--border);padding-left:10px}
+.mtopo-nav{display:flex;align-items:center;gap:2px;flex:1;min-width:0}
+.mlink{background:none;border:0;color:var(--muted);font:500 13.5px inherit;font-family:inherit;padding:8px 13px;border-radius:9999px;cursor:pointer;
+  display:inline-flex;gap:5px;align-items:center;letter-spacing:.01em;white-space:nowrap}
+.mlink .lbl{opacity:1}
+.mlink:hover,.mgrupo:hover>.mlink,.mgrupo.aberto>.mlink,.mlink.on{color:var(--text)}
+.mlink.on{background:var(--card-2)}
+.mcar{font-size:10px;opacity:.7}
+.mgrupo{position:relative}
+.mdrop{display:none;position:absolute;top:calc(100% + 10px);left:0;min-width:230px;background:var(--card);border:1px solid var(--border);
+  border-radius:12px;padding:6px;box-shadow:0 14px 34px rgba(0,0,0,.32);z-index:70}
+.mdrop::before{content:'';position:absolute;top:-12px;left:0;right:0;height:12px}
+@media(hover:hover){ .mgrupo:hover>.mdrop{display:block} }
+.mgrupo.aberto>.mdrop{display:block}
+.mdrop .navbtn{width:100%}
+.mdrop .navbtn .lbl{opacity:1}
+.mdrop-dir{left:auto;right:0;min-width:240px}
+.mtopo-dir{display:flex;align-items:center;gap:12px;flex:0 0 auto}
+.mpill{border-radius:9999px;padding:8px 18px;font:600 13px inherit;font-family:inherit;cursor:pointer;white-space:nowrap}
+.mpill-fill{background:var(--text);color:var(--bg);border:1px solid var(--text)}
+.mpill-fill:hover{opacity:.88}
+.mtopo-av{border:0;cursor:pointer}
+.mtopo-quem{padding:8px 10px 4px}
+.mtopo-quem b{display:block;font-size:13px}
+.mtopo-quem small{color:var(--muted);font-size:11.5px}
+@media(max-width:900px){
+  html[data-menu="topo"] .mtopo{display:none}
+  html[data-menu="topo"] .side{display:flex}
+}
 </style>
 </head>
 <body>
@@ -679,6 +720,26 @@ html[data-pal="vinho"][data-theme="light"]{
 </div>
 
 <div id="app">
+<header class="mtopo" id="mtopo">
+  <div class="mtopo-in">
+    <div class="mtopo-marca" onclick="nav('veiculos')" title="Frota"><div class="mtopo-logo brand-logo-box"></div><span class="mtopo-cap">Frota</span></div>
+    <div class="mtopo-nav" id="mtopoNav"></div>
+    <div class="mtopo-dir">
+      <button class="mpill mpill-fill frota-mov" onclick="abrirLanc('km')">+ Lançar</button>
+      <div class="mgrupo" id="mtopoUserG">
+        <button class="uav mtopo-av" id="mtopoAv" onclick="mtopoAbrir(event,'mtopoUserG')" title="Conta, paleta e tema">?</button>
+        <div class="mdrop mdrop-dir" id="mtopoUser">
+          <div class="mtopo-quem"><b id="mtopoNome">—</b><small id="mtopoPapel">—</small></div>
+          <div class="paleta-lab" style="margin:8px 8px 6px">Paleta</div>
+          <div class="paleta-row" id="mtopoPaleta" style="padding:0 8px 8px"></div>
+          <button class="navbtn" onclick="toggleTema()"><span class="side-ico">◐</span><span class="lbl">Claro / escuro</span></button>
+          <button class="navbtn" onclick="setMenuTopo(false)"><span class="side-ico">▥</span><span class="lbl">Voltar ao menu lateral</span></button>
+          <button class="navbtn" onclick="sair()"><span class="side-ico">⎋</span><span class="lbl">Sair</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
 <div class="shell">
   <nav class="side" id="sidebar">
     <button class="pinbtn" onclick="togglePin(event)" title="Fixar menu aberto">◨</button>
@@ -716,6 +777,7 @@ html[data-pal="vinho"][data-theme="light"]{
           <button class="pbola" data-pal="vinho"   onclick="setPaleta('vinho')"   title="Vinho" style="--a:#C4544F;--b:#181113"></button>
           <button class="pbola" data-pal="ui"      onclick="setPaleta('ui')"      title="Neutro (estilo novo, em teste)" style="--a:#171717;--b:#f5f5f5"></button>
         </div>
+        <button class="btn btn-sm btn-ghost" onclick="setMenuTopo(true)" style="width:100%;margin-top:8px" title="Trocar o menu lateral por uma barra no topo">⇡ Menu no topo</button>
       </div>
       <div style="display:flex;gap:6px;padding:0 2px">
         <button class="btn btn-sm btn-ghost" onclick="toggleTema()" style="flex:1;padding:7px 0" title="Claro / escuro">◐</button>
@@ -1208,6 +1270,7 @@ function applyTheme(t){ document.documentElement.setAttribute('data-theme',t); t
    regra de layout muda, entao dá para trocar à vontade sem quebrar nada.
    Vale para o tema escuro e para o claro. */
 window.setPaleta=function(p){
+  setTimeout(function(){ if(window.menuTopoAtualizar) menuTopoAtualizar(); },0);
   if(p) document.documentElement.setAttribute('data-pal', p);
   else  document.documentElement.removeAttribute('data-pal');
   try{ localStorage.setItem('mc_frota_pal', p||''); }catch(e){}
@@ -4301,7 +4364,80 @@ function renderRoteirizar(){
 
 window.rzMarcarSujoCampo=function(){ rzMarcarSujo(); };
 
+
+/* ===== MENU NO TOPO (opcional, por pessoa) =====
+   Barra fixa de 60px no estilo de referência: logo à esquerda, grupos no
+   meio (abrem ao passar o mouse ou ao tocar), "+ Lançar" em pílula e a conta
+   à direita. Os itens são CÓPIAS dos botões do menu lateral: mesmas
+   permissões (as classes gestao-only, cobli-only… continuam valendo) e mesmos
+   cliques. Escolha guardada em mc_frota_menu. Em tela estreita volta o lateral. */
+var MTOPO_GRUPOS=[
+  { nome:'Frota', ps:['painel','veiculos','mov','chk','docs','estoque','custos'] },
+  { nome:'Expedição', ps:['caixas','cobli'] },
+  { nome:'Rotas', ps:['rotas','roteirizar','territorios'] },
+  { ps:['config'] }
+];
+function mtopoMontar(){
+  var box=document.getElementById('mtopoNav'); if(!box || box.childElementCount) return;
+  MTOPO_GRUPOS.forEach(function(g){
+    if(!g.nome){                                   /* item solto (Configurações) */
+      g.ps.forEach(function(p){
+        var o=document.querySelector('#sidebar .navbtn[data-p="'+p+'"]'); if(!o) return;
+        var c=o.cloneNode(true); c.classList.add('mlink'); c.classList.remove('navbtn'); c.setAttribute('data-mp',p);
+        var ic=c.querySelector('.side-ico'); if(ic) ic.remove();
+        box.appendChild(c);
+      });
+      return;
+    }
+    var gr=document.createElement('div'); gr.className='mgrupo'; gr.id='mtopoG_'+g.nome;
+    gr.innerHTML='<button class="mlink" onclick="mtopoAbrir(event,\''+gr.id+'\')">'+esc(g.nome)+' <span class="mcar">▾</span></button><div class="mdrop"></div>';
+    var dr=gr.querySelector('.mdrop');
+    g.ps.forEach(function(p){
+      var o=document.querySelector('#sidebar .navbtn[data-p="'+p+'"]'); if(o) dr.appendChild(o.cloneNode(true));
+    });
+    box.appendChild(gr);
+  });
+  var pal=document.getElementById('mtopoPaleta'), orig=document.querySelector('#sidebar .paleta-row');
+  if(pal && orig) Array.prototype.forEach.call(orig.querySelectorAll('.pbola'), function(b){ pal.appendChild(b.cloneNode(true)); });
+}
+window.mtopoAbrir=function(ev, id){
+  ev.stopPropagation();
+  var g=document.getElementById(id); if(!g) return;
+  var abre=!g.classList.contains('aberto');
+  document.querySelectorAll('.mgrupo.aberto').forEach(function(x){ x.classList.remove('aberto'); });
+  if(abre) g.classList.add('aberto');
+};
+document.addEventListener('click', function(e){
+  if(!e.target.closest || !e.target.closest('.mdrop') || e.target.closest('.navbtn')) document.querySelectorAll('.mgrupo.aberto').forEach(function(x){ x.classList.remove('aberto'); });
+});
+/* grupos sem nenhuma tela liberada somem; o grupo da tela aberta fica marcado */
+window.menuTopoAtualizar=function(){
+  if(document.documentElement.getAttribute('data-menu')!=='topo') return;
+  mtopoMontar();
+  document.querySelectorAll('#mtopoNav .mgrupo').forEach(function(g){
+    var itens=g.querySelectorAll('.mdrop .navbtn'), vis=0, on=false;
+    itens.forEach(function(b){ if(b.style.display!=='none'){ vis++; if(b.classList.contains('on')) on=true; } });
+    g.style.display=vis?'':'none';
+    g.querySelector('.mlink').classList.toggle('on', on);
+  });
+  document.querySelectorAll('#mtopoNav .mlink[data-mp]').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-mp')===pagina); });
+  var av=document.getElementById('uavatar'), n=document.getElementById('uname'), r=document.getElementById('urole');
+  if(av) document.getElementById('mtopoAv').textContent=av.textContent;
+  if(n) document.getElementById('mtopoNome').textContent=n.textContent;
+  if(r) document.getElementById('mtopoPapel').textContent=r.textContent;
+  var p=document.documentElement.getAttribute('data-pal')||'';
+  document.querySelectorAll('#mtopoPaleta .pbola').forEach(function(b){ b.classList.toggle('on', (b.getAttribute('data-pal')||'')===p); });
+};
+window.setMenuTopo=function(on){
+  if(on) document.documentElement.setAttribute('data-menu','topo'); else document.documentElement.removeAttribute('data-menu');
+  try{ localStorage.setItem('mc_frota_menu', on?'topo':''); }catch(e){}
+  document.querySelectorAll('.mgrupo.aberto').forEach(function(x){ x.classList.remove('aberto'); });
+  menuTopoAtualizar();
+};
+(function(){ try{ if(localStorage.getItem('mc_frota_menu')==='topo') document.documentElement.setAttribute('data-menu','topo'); }catch(e){} })();
+
 function render(){
+  setTimeout(function(){ if(window.menuTopoAtualizar) menuTopoAtualizar(); },0);
   if(!veiculos && !movs) return;
   if(ultimaCarga) document.getElementById('freshness').textContent='Dados de '+ultimaCarga;
   document.querySelectorAll('.frota-mov').forEach(function(el){ el.style.display=podeLancar?'':'none'; });
