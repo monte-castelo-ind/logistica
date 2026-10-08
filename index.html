@@ -2,10 +2,10 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<script>(function(){try{var h=document.documentElement,m=localStorage.getItem('mc_frota_tema');
+<script>(function(){try{var h=document.documentElement,m=localStorage.getItem('mc_tema');
 if(m==='escuro'){h.setAttribute('data-theme','dark');h.setAttribute('data-pal','ui');}
-else{h.setAttribute('data-theme','light');var p=localStorage.getItem('mc_frota_pal');if(p)h.setAttribute('data-pal',p);}
-if(localStorage.getItem('mc_frota_menu')!=='lateral')h.setAttribute('data-menu','topo');}catch(e){}})();</script>
+else{h.setAttribute('data-theme','light');var p=localStorage.getItem('mc_pal');if(p)h.setAttribute('data-pal',p);}
+if(localStorage.getItem('mc_menu')!=='lateral')h.setAttribute('data-menu','topo');}catch(e){}})();</script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Frota · Monte Castelo</title>
@@ -1299,35 +1299,35 @@ function diasAte(dt){ if(!dt) return null; return diasEntre(hoje(), dt); }
    CLARO (padrão): a paleta escolhida nas bolinhas (verde, se ninguém escolheu).
    ESCURO (lua ☾): sempre o preto da paleta Neutro. A paleta do claro fica
    guardada e volta ao sair do escuro. Escolher uma bolinha volta para o claro.
-   Chaves: mc_frota_tema ('claro'|'escuro') e mc_frota_pal (paleta do claro). */
+   Chaves: mc_tema ('claro'|'escuro') e mc_pal (paleta do claro). */
 function modoAtual(){ return document.documentElement.getAttribute('data-theme')==='dark' ? 'escuro' : 'claro'; }
 function aplicarModo(m){
   var h=document.documentElement;
   if(m==='escuro'){ h.setAttribute('data-theme','dark'); h.setAttribute('data-pal','ui'); }
   else {
     h.setAttribute('data-theme','light');
-    var p=''; try{ p=localStorage.getItem('mc_frota_pal')||''; }catch(e){}
+    var p=''; try{ p=localStorage.getItem('mc_pal')||''; }catch(e){}
     if(p) h.setAttribute('data-pal',p); else h.removeAttribute('data-pal');
   }
-  try{ localStorage.setItem('mc_frota_tema', m); }catch(e){}
+  try{ localStorage.setItem('mc_tema', m); }catch(e){}
   marcarPaletas();
   var lua=document.getElementById('mtopoLua');
   if(lua){ lua.textContent = m==='escuro' ? '☀' : '☾'; lua.title = m==='escuro' ? 'Voltar ao modo claro' : 'Modo escuro'; }
   setTimeout(function(){ if(window.menuTopoAtualizar) menuTopoAtualizar(); },0);
 }
 function marcarPaletas(){
-  var p=''; try{ p=localStorage.getItem('mc_frota_pal')||''; }catch(e){}
+  var p=''; try{ p=localStorage.getItem('mc_pal')||''; }catch(e){}
   var escuro=modoAtual()==='escuro';
   document.querySelectorAll('.pbola').forEach(function(b){ b.classList.toggle('on', !escuro && (b.getAttribute('data-pal')||'')===p); });
 }
 window.applyTheme=function(t){ aplicarModo(t==='dark' ? 'escuro' : 'claro'); };
 window.toggleTema=function(){ aplicarModo(modoAtual()==='escuro' ? 'claro' : 'escuro'); };
 window.setPaleta=function(p){
-  try{ localStorage.setItem('mc_frota_pal', p||''); }catch(e){}
+  try{ localStorage.setItem('mc_pal', p||''); }catch(e){}
   aplicarModo('claro');
 };
 (function(){
-  var m='claro'; try{ if(localStorage.getItem('mc_frota_tema')==='escuro') m='escuro'; }catch(e){}
+  var m='claro'; try{ if(localStorage.getItem('mc_tema')==='escuro') m='escuro'; }catch(e){}
   aplicarModo(m);
   document.addEventListener('DOMContentLoaded', function(){ aplicarModo(modoAtual()); });
 })();
@@ -4411,7 +4411,7 @@ window.rzMarcarSujoCampo=function(){ rzMarcarSujo(); };
    meio (abrem ao passar o mouse ou ao tocar), "+ Lançar" em pílula e a conta
    à direita. Os itens são CÓPIAS dos botões do menu lateral: mesmas
    permissões (as classes gestao-only, cobli-only… continuam valendo) e mesmos
-   cliques. É o PADRÃO: só vira menu lateral quem escolher (mc_frota_menu =
+   cliques. É o PADRÃO: só vira menu lateral quem escolher (mc_menu =
    'lateral'). Em tela estreita volta o lateral. */
 var MTOPO_GRUPOS=[
   { nome:'Frota', ps:['painel','veiculos','mov','chk','docs','estoque','custos'] },
@@ -4472,11 +4472,11 @@ window.menuTopoAtualizar=function(){
 };
 window.setMenuTopo=function(on){
   if(on) document.documentElement.setAttribute('data-menu','topo'); else document.documentElement.removeAttribute('data-menu');
-  try{ localStorage.setItem('mc_frota_menu', on?'topo':'lateral'); }catch(e){}
+  try{ localStorage.setItem('mc_menu', on?'topo':'lateral'); }catch(e){}
   document.querySelectorAll('.mgrupo.aberto').forEach(function(x){ x.classList.remove('aberto'); });
   menuTopoAtualizar();
 };
-(function(){ try{ if(localStorage.getItem('mc_frota_menu')!=='lateral') document.documentElement.setAttribute('data-menu','topo'); }catch(e){} })();
+(function(){ try{ if(localStorage.getItem('mc_menu')!=='lateral') document.documentElement.setAttribute('data-menu','topo'); }catch(e){} })();
 
 function render(){
   setTimeout(function(){ if(window.menuTopoAtualizar) menuTopoAtualizar(); },0);
