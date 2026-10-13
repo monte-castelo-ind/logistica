@@ -2,8 +2,9 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<script>/* Visual padrão da Logística: grafite e laranja, menu lateral com seções (igual para todos) */
-document.documentElement.setAttribute('data-theme','dark');document.documentElement.setAttribute('data-pal','brasa');</script>
+<script>/* Visual da Logística: grafite e laranja (escuro, padrão) ou a versão clara; menu lateral com seções */
+(function(){var m='escuro';try{if(localStorage.getItem('mc_frota_modo')==='claro')m='claro';}catch(e){}
+document.documentElement.setAttribute('data-theme',m==='claro'?'light':'dark');document.documentElement.setAttribute('data-pal','brasa');})();</script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Frota · Monte Castelo</title>
@@ -36,8 +37,8 @@ html[data-theme="light"]{
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{font-family:'Archivo',system-ui,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.45}
-.mono{font-family:'JetBrains Mono',monospace}
-.num{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
+.mono{font-family:'Archivo',system-ui,sans-serif}
+.num{font-family:'Archivo',system-ui,sans-serif;font-variant-numeric:tabular-nums}
 button{font-family:inherit;cursor:pointer}
 input,select,textarea{font-family:inherit;font-size:13px;background:var(--card-2);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:9px 11px;width:100%}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)}
@@ -80,7 +81,7 @@ textarea{resize:vertical;min-height:60px}
 .navbtn.on{background:var(--side-active);color:var(--side-active-text);font-weight:600}
 .navbtn .cnt{margin-left:auto;background:var(--amber);color:#1a1400;font-size:10.5px;font-weight:700;
   min-width:18px;height:18px;line-height:18px;border-radius:9px;padding:0 5px;text-align:center;
-  font-family:'JetBrains Mono',monospace}
+  font-family:'Archivo',system-ui,sans-serif}
 .chk-item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)}
 .chk-item:last-child{border-bottom:none}
 .chk-op{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
@@ -142,13 +143,13 @@ tbody tr:hover{background:var(--card-2)}
 .cxdrop:hover,.cxdrop.hot{border-color:var(--primary);background:var(--card-2)}
 .cxdrop b{display:block;font-size:15px;margin-bottom:4px}
 .cxdrop span{font-size:12px;color:var(--muted)}
-.cxbig{font-size:40px;font-weight:800;line-height:1;color:var(--primary);font-family:'JetBrains Mono',monospace}
-td.cx-n{text-align:right;font-family:'JetBrains Mono',monospace}
-td.cx-cx{text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--green);font-size:14px}
-td.cx-sb{text-align:right;font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--amber)}
+.cxbig{font-size:40px;font-weight:800;line-height:1;color:var(--primary);font-family:'Archivo',system-ui,sans-serif}
+td.cx-n{text-align:right;font-family:'Archivo',system-ui,sans-serif}
+td.cx-cx{text-align:right;font-family:'Archivo',system-ui,sans-serif;font-weight:700;color:var(--green);font-size:14px}
+td.cx-sb{text-align:right;font-family:'Archivo',system-ui,sans-serif;font-weight:600;color:var(--amber)}
 td.cx-zero{color:var(--muted)!important;font-weight:400}
 tr.cx-falta td{background:rgba(245,176,19,.08)}
-input.cx-rat{width:62px;text-align:right;font-family:'JetBrains Mono',monospace;padding:5px 7px}
+input.cx-rat{width:62px;text-align:right;font-family:'Archivo',system-ui,sans-serif;padding:5px 7px}
 input.cx-rat.cx-kg{width:132px}
 .cx-tag{font-size:10px;font-weight:700;color:var(--amber);letter-spacing:.3px}
 .mixg{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 15px;margin-bottom:13px}
@@ -161,7 +162,7 @@ input.cx-rat.cx-kg{width:132px}
 .mixbar{position:relative;height:26px;background:rgba(255,255,255,.06);border-radius:7px;overflow:hidden;margin-bottom:9px}
 .mixfill{height:100%;background:linear-gradient(90deg,#4f8ab5,#7FB3D5);transition:width .18s}
 .mixnum{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-        font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;letter-spacing:.5px}
+        font-family:'Archivo',system-ui,sans-serif;font-size:13px;font-weight:700;letter-spacing:.5px}
 .mixvazio{font-size:12px;color:var(--muted);text-align:center;padding:5px 0}
 .mixlab{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.3px;margin:11px 0 7px;text-transform:uppercase}
 .mixchips{display:flex;flex-wrap:wrap;gap:7px}
@@ -170,8 +171,8 @@ input.cx-rat.cx-kg{width:132px}
       padding:9px 12px;font-family:inherit;font-size:13px;cursor:pointer;min-height:40px}
 .chip:hover{border-color:#7FB3D5}
 .chip:active{transform:scale(.97)}
-.chip .cod{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)}
-.chip b{font-family:'JetBrains Mono',monospace;color:#7FB3D5}
+.chip .cod{font-family:'Archivo',system-ui,sans-serif;font-size:11px;color:var(--muted)}
+.chip b{font-family:'Archivo',system-ui,sans-serif;color:#7FB3D5}
 .chip-in{background:rgba(86,135,168,.16);border-color:rgba(86,135,168,.45)}
 .chip-in .x{color:var(--red);font-weight:700;font-size:15px;margin-left:2px}
 .chip-un{background:rgba(245,176,19,.08);border-color:rgba(245,176,19,.32)}
@@ -182,7 +183,7 @@ input.cx-rat.cx-kg{width:132px}
        background:rgba(86,135,168,.10);border:1px solid rgba(86,135,168,.32);border-radius:9px;
        color:var(--text);font-family:inherit;font-size:12.5px;padding:9px 11px;margin-bottom:6px;cursor:pointer}
 .mixcx:hover{border-color:var(--red)}
-.mixcxid{font-family:'JetBrains Mono',monospace;font-weight:700;color:#7FB3D5;font-size:12px}
+.mixcxid{font-family:'Archivo',system-ui,sans-serif;font-weight:700;color:#7FB3D5;font-size:12px}
 .mixcxi{color:var(--text)}
 .cx-alerta{background:rgba(242,106,106,.12);border:2px solid var(--red);border-radius:12px;
             padding:15px 17px;margin:14px 0}
@@ -196,7 +197,7 @@ input.cx-rat.cx-kg{width:132px}
 .cobli-l{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:9px;padding-top:9px;
          border-top:1px dashed var(--border);font-size:11.5px;color:var(--muted)}
 .cobli-l span{white-space:nowrap}
-.cobli-t{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;letter-spacing:.6px;
+.cobli-t{font-family:'Archivo',system-ui,sans-serif;font-size:9px;font-weight:700;letter-spacing:.6px;
          color:#7FB3D5;border:1px solid rgba(86,135,168,.42);border-radius:5px;padding:1px 5px}
 .cobli-d{margin-left:auto;font-size:10.5px;opacity:.75}
 .cobli-aviso{margin-bottom:12px}
@@ -206,7 +207,7 @@ input.cx-rat.cx-kg{width:132px}
 .es-oleo{background:rgba(245,176,19,.14);color:var(--amber);border:1px solid rgba(245,176,19,.36)}
 .es-entrada{background:rgba(28,204,71,.14);color:var(--green);border:1px solid rgba(28,204,71,.34)}
 .es-saida{background:rgba(242,106,106,.14);color:var(--red);border:1px solid rgba(242,106,106,.34)}
-.es-saldo{text-align:right;font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:700}
+.es-saldo{text-align:right;font-family:'Archivo',system-ui,sans-serif;font-size:15px;font-weight:700}
 .es-saldo span{font-family:'Archivo',sans-serif;font-size:10px;font-weight:400;color:var(--muted)}
 .es-vermelho{color:var(--red)}
 .es-ambar{color:var(--amber)}
@@ -231,7 +232,7 @@ tr.es-baixo td{background:rgba(245,176,19,.06)}
 .nv-box input{width:100%;background:var(--card-2,#232323);border:1px solid var(--border);
               color:var(--text);border-radius:8px;padding:10px 11px;font-family:inherit;font-size:14px}
 .nv-box input:focus{outline:2px solid var(--red);outline-offset:-1px;border-color:var(--red)}
-.nv-box #nv-q{font-family:'JetBrains Mono',monospace;max-width:130px}
+.nv-box #nv-q{font-family:'Archivo',system-ui,sans-serif;max-width:130px}
 .nv-hint{font-size:11px;color:var(--muted);margin:5px 0 15px;line-height:1.45}
 .nv-btns{display:flex;justify-content:flex-end;gap:9px;margin-top:19px}
 .naovai td{opacity:.5}
@@ -250,7 +251,7 @@ tr.es-baixo td{background:rgba(245,176,19,.06)}
 .mixsum b{font-size:14.5px}
 .mixseta{display:inline-block;color:#7FB3D5;font-size:18px;line-height:1;transition:transform .15s}
 .mixdet[open] .mixseta{transform:rotate(90deg)}
-.mixqt{font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:700;color:#7FB3D5;
+.mixqt{font-family:'Archivo',system-ui,sans-serif;font-size:11.5px;font-weight:700;color:#7FB3D5;
        background:rgba(86,135,168,.14);border:1px solid rgba(86,135,168,.35);border-radius:20px;padding:2px 10px}
 .mixdet-i{font-size:12px;color:var(--muted)}
 .mixdet .mixcx{margin:0 15px 6px}
@@ -272,7 +273,7 @@ tr.es-baixo td{background:rgba(245,176,19,.06)}
              min-height:78px}
 .cxbox-fita{position:absolute;left:50%;transform:translateX(-50%);bottom:0;width:78px;height:8px;
             background:rgba(168,126,77,.28);border-radius:3px 3px 0 0}
-.cxbox-n{font-family:'JetBrains Mono',monospace;font-size:21px;font-weight:700;
+.cxbox-n{font-family:'Archivo',system-ui,sans-serif;font-size:21px;font-weight:700;
          color:#D6A664;margin-bottom:10px}
 .cxbox-n span{font-family:'Archivo',sans-serif;font-size:12px;font-weight:400;color:var(--muted)}
 .cxbox-vaziotxt{text-align:center;color:var(--muted);font-size:13px;font-weight:600;padding:14px 0 8px;line-height:1.7}
@@ -283,14 +284,14 @@ tr.es-baixo td{background:rgba(245,176,19,.06)}
         border-radius:2px;position:relative;flex:none}
 .cxmini::after{content:'';position:absolute;left:50%;top:-1.5px;transform:translateX(-50%);
                width:4px;height:1.5px;background:rgba(168,126,77,.75)}
-.mixcont{font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;color:#7FB3D5;margin-bottom:9px}
+.mixcont{font-family:'Archivo',system-ui,sans-serif;font-size:22px;font-weight:700;color:#7FB3D5;margin-bottom:9px}
 .mixcont span{font-family:'Archivo',sans-serif;font-size:12px;font-weight:400;color:var(--muted)}
 .mixfechar{margin-top:11px;width:100%}
-.chip .pctag{font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--muted);
+.chip .pctag{font-family:'Archivo',system-ui,sans-serif;font-size:9.5px;color:var(--muted);
              border:1px solid var(--border);border-radius:5px;padding:1px 4px;margin-left:3px}
 .cx-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 .cx-chip{display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 11px;font-size:12.5px}
-.cx-chip b{font-family:'JetBrains Mono',monospace;font-size:13px}
+.cx-chip b{font-family:'Archivo',system-ui,sans-serif;font-size:13px}
 .cx-chip span{color:var(--muted);font-size:11.5px}
 .cx-chip button{background:none;border:none;color:var(--muted);font-size:16px;line-height:1;padding:0 2px;cursor:pointer}
 .cx-chip button:hover{color:var(--red)}
@@ -307,14 +308,14 @@ tr.es-baixo td{background:rgba(245,176,19,.06)}
   #cx-print .ptot{ display:flex; gap:26px; border-top:2px solid #000; border-bottom:2px solid #000;
                    padding:7px 0; margin-bottom:10px }
   #cx-print .ptot div{ font-size:11px }
-  #cx-print .ptot b{ display:block; font-size:22px; font-family:'JetBrains Mono',monospace; line-height:1.1 }
+  #cx-print .ptot b{ display:block; font-size:22px; font-family:'Archivo',system-ui,sans-serif; line-height:1.1 }
   /* Tarja dos produtos acompanhados de perto. Fica logo abaixo dos totais,
      com moldura, para o conferente achar sem varrer a tabela. */
   #cx-print .pdest{ display:flex; gap:0; border:2px solid #000; margin-bottom:9px }
   #cx-print .pdest > div{ flex:1 1 0; padding:5px 8px; border-right:1px solid #000 }
   #cx-print .pdest > div:last-child{ border-right:none }
   #cx-print .pdest .pd-cx{ font-size:22px; font-weight:700; line-height:1.1;
-                           font-family:'JetBrains Mono',monospace }
+                           font-family:'Archivo',system-ui,sans-serif }
   #cx-print .pdest .pd-un{ font-size:11px !important; font-weight:400;
                            margin-left:4px; color:#333 !important;
                            font-family:Arial,sans-serif !important }
@@ -324,7 +325,7 @@ tr.es-baixo td{background:rgba(245,176,19,.06)}
   #cx-print th{ text-align:left; border-bottom:1.5px solid #000; padding:4px 5px; font-size:9.5px;
                 text-transform:uppercase; letter-spacing:.4px; background:none; position:static }
   #cx-print td{ border-bottom:.5px solid #bbb; padding:4px 5px; white-space:normal }
-  #cx-print .r{ text-align:right; font-family:'JetBrains Mono',monospace }
+  #cx-print .r{ text-align:right; font-family:'Archivo',system-ui,sans-serif }
   #cx-print .cxn{ font-weight:700; font-size:13px }
   #cx-print tr{ page-break-inside:avoid }
   #cx-print thead{ display:table-header-group }
@@ -362,7 +363,7 @@ tr.es-baixo td{background:rgba(245,176,19,.06)}
 .warnwrap.has{display:block}
 .warnbtn{position:relative;background:none;border:none;padding:3px 5px;line-height:1;font-size:17px;color:var(--amber);border-radius:8px}
 .warnbtn:hover{background:rgba(245,176,19,.12)}
-.warnbadge{position:absolute;top:-2px;right:-4px;background:var(--amber);color:#1a1400;font-size:9.5px;font-weight:700;min-width:14px;height:14px;line-height:14px;border-radius:8px;padding:0 3px;text-align:center;font-family:'JetBrains Mono',monospace}
+.warnbadge{position:absolute;top:-2px;right:-4px;background:var(--amber);color:#1a1400;font-size:9.5px;font-weight:700;min-width:14px;height:14px;line-height:14px;border-radius:8px;padding:0 3px;text-align:center;font-family:'Archivo',system-ui,sans-serif}
 .warnpop{display:none;position:absolute;top:calc(100% + 8px);right:0;width:340px;max-width:78vw;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);z-index:90;overflow:hidden;text-align:left;max-height:70vh;overflow-y:auto}
 .warnwrap:hover .warnpop,.warnwrap.open .warnpop{display:block}
 .warnpop-h{padding:9px 13px;border-bottom:1px solid var(--border);font-size:10.5px;font-weight:700;letter-spacing:.6px;color:var(--muted);text-transform:uppercase}
@@ -385,15 +386,15 @@ tr.es-baixo td{background:rgba(245,176,19,.06)}
 .veic{border:1px solid var(--border);border-radius:13px;padding:14px;background:var(--card);box-shadow:var(--shadow);cursor:pointer}
 .veic:hover{border-color:var(--primary)}
 .veic.inativo{opacity:.55}
-.placa{font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;letter-spacing:.6px}
+.placa{font-family:'Archivo',system-ui,sans-serif;font-size:15px;font-weight:600;letter-spacing:.6px}
 .vmod{font-size:12px;color:var(--muted);margin-top:1px}
-.vkm{font-family:'JetBrains Mono',monospace;font-size:19px;font-weight:700;text-align:right}
+.vkm{font-family:'Archivo',system-ui,sans-serif;font-size:19px;font-weight:700;text-align:right}
 .vbar{height:5px;border-radius:3px;background:var(--card-2);overflow:hidden;margin-top:9px}
 .vbar i{display:block;height:100%}
 .vlin{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-top:5px}
 .mini{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:11px;padding-top:10px;border-top:1px dashed var(--border)}
 .mini div{font-size:11px;color:var(--muted)}
-.mini b{display:block;font-size:13px;color:var(--text);font-family:'JetBrains Mono',monospace}
+.mini b{display:block;font-size:13px;color:var(--text);font-family:'Archivo',system-ui,sans-serif}
 @media(max-width:900px){
   .shell{flex-direction:column}
   .side,.side:hover,.side.pin{width:100%;height:auto;position:static;flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:10px;gap:6px;align-items:center;box-shadow:none;transition:none}
@@ -542,7 +543,7 @@ html[data-pal="vinho"][data-theme="light"]{
 /* mapa sempre no visual claro do OpenStreetMap, mesmo no tema escuro — invertido
    para escuro ficava marrom e difícil de ler (decisão do João) */
 .rt-mapa .leaflet-container{background:#f2efe9;font-family:inherit}
-.rt-pino{width:22px;height:22px;border-radius:50%;color:#fff;font:700 11px/22px 'JetBrains Mono',monospace;text-align:center;
+.rt-pino{width:22px;height:22px;border-radius:50%;color:#fff;font:700 11px/22px 'Archivo',system-ui,sans-serif;text-align:center;
   border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45)}
 .rt-pino.base{border-radius:6px}
 .rt-cor{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:6px}
@@ -583,7 +584,7 @@ html[data-pal="vinho"][data-theme="light"]{
 .rz-item.sede .rz-num{background:#343a40}
 .rz-item.sede .rz-t{text-decoration:line-through}
 .rz-item.pos{background:var(--card-2);border-radius:9px}
-.rz-num{flex:0 0 24px;height:24px;border-radius:50%;background:var(--primary);color:#fff;font:700 11px/24px 'JetBrains Mono',monospace;text-align:center}
+.rz-num{flex:0 0 24px;height:24px;border-radius:50%;background:var(--primary);color:#fff;font:700 11px/24px 'Archivo',system-ui,sans-serif;text-align:center}
 .rz-info{flex:1;min-width:0}
 .rz-t{font-size:13px;font-weight:600;overflow-wrap:anywhere}
 .rz-s{font-size:11.5px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
@@ -776,6 +777,26 @@ html[data-pal="brasa"] .side::-webkit-scrollbar{display:none}
 @media(max-width:900px){
   .side-sec,.cobli-card{display:none!important}
 }
+
+/* ===== Logística: versão CLARA do grafite e laranja ===== */
+html[data-pal="brasa"][data-theme="light"]{
+  --bg:#f3f3f5; --card:#ffffff; --card-2:#f0f0f3; --text:#17171a; --muted:#6c6c76;
+  --border:#e2e2e7; --sidebar:#ffffff; --side-active:#ff6a13; --side-active-text:#ffffff;
+  --primary:#ff6a13; --amber:#b7791f; --green:#1f8a5b; --red:#d64541; --blue:#2f6fd6; --purple:#7a5af0;
+  --shadow:0 1px 2px rgba(20,20,40,.04),0 8px 24px rgba(20,20,40,.05);
+}
+html[data-pal="brasa"][data-theme="light"] input,html[data-pal="brasa"][data-theme="light"] select,html[data-pal="brasa"][data-theme="light"] textarea{background:#ffffff}
+html[data-pal="brasa"][data-theme="light"] .btn:not(.btn-ghost){box-shadow:0 6px 16px rgba(255,106,19,.22)}
+html[data-pal="brasa"][data-theme="light"] .side:hover:not(.pin){box-shadow:14px 0 40px rgba(20,20,40,.14)}
+.luabtn{width:34px;height:34px;border-radius:50%;border:1px solid var(--border);background:var(--card);color:var(--text);
+  font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.luabtn:hover{border-color:var(--primary)}
+
+/* Logística: uma fonte só (Archivo), nos dois modos. Números com a mesma
+   largura (tabulares) para colunas de km, valores e anos ficarem alinhadas. */
+html[data-pal="brasa"] body{font-variant-numeric:tabular-nums}
+html[data-pal="brasa"] .mono{letter-spacing:.02em}
+html[data-pal="brasa"] .placa{letter-spacing:.06em}
 </style>
 </head>
 <body>
@@ -871,6 +892,7 @@ html[data-pal="brasa"] .side::-webkit-scrollbar{display:none}
           <button class="warnbtn" id="warnBtn" onclick="toggleAvisos(event)" title="Pendências">&#9888;<span class="warnbadge" id="warnBadge">0</span></button>
           <div class="warnpop" id="warnPop"></div>
         </div>
+        <button class="luabtn" id="fLua" onclick="toggleTema()" title="Modo claro" aria-label="Modo claro">☀</button>
         <div id="freshness" style="font-size:11px;color:var(--muted)"></div>
       </div>
     </div>
@@ -1172,7 +1194,7 @@ html[data-pal="brasa"] .side::-webkit-scrollbar{display:none}
       <div class="card" style="max-width:1100px;margin-bottom:14px">
         <div class="klabel">1 · Cole os pedidos do carregamento</div>
         <div class="fhint" style="margin:6px 0 10px">No ERP, abra o carregamento → aba <b>Pedidos</b>, selecione a lista inteira (de preferência com a linha de títulos), copie com Ctrl+C e cole aqui com Ctrl+V.</div>
-        <textarea id="cb-cola" rows="6" style="width:100%;font-family:'JetBrains Mono',monospace;font-size:12px" placeholder="Pedido · Cliente · Nome completo · Documento · … · Cidade · Bairro · … · Ordem de entrega · Peso bruto" onpaste="setTimeout(cbConverter,50)"></textarea>
+        <textarea id="cb-cola" rows="6" style="width:100%;font-family:'Archivo',system-ui,sans-serif;font-size:12px" placeholder="Pedido · Cliente · Nome completo · Documento · … · Cidade · Bairro · … · Ordem de entrega · Peso bruto" onpaste="setTimeout(cbConverter,50)"></textarea>
         <div class="tools" style="margin-top:10px">
           <button class="btn btn-sm" onclick="cbConverter()">Converter</button>
           <button class="btn btn-sm btn-ghost" onclick="cbLimpar()">Limpar</button>
@@ -1348,12 +1370,14 @@ function diasAte(dt){ if(!dt) return null; return diasEntre(hoje(), dt); }
    Chaves: mc_tema ('claro'|'escuro') e mc_pal (paleta do claro). */
 function modoAtual(){ return document.documentElement.getAttribute('data-theme')==='dark' ? 'escuro' : 'claro'; }
 function aplicarModo(m){
-  /* a Logística tem visual fixo (grafite e laranja): não segue o claro/escuro nem as paletas dos outros apps */
+  /* Logística: grafite e laranja no escuro (padrão) ou a versão clara; escolha própria
+     (mc_frota_modo), separada do claro/escuro dos outros apps */
   var h=document.documentElement;
-  h.setAttribute('data-theme','dark'); h.setAttribute('data-pal','brasa'); h.removeAttribute('data-menu');
+  h.setAttribute('data-theme', m==='claro' ? 'light' : 'dark'); h.setAttribute('data-pal','brasa'); h.removeAttribute('data-menu');
+  try{ localStorage.setItem('mc_frota_modo', m==='claro'?'claro':'escuro'); }catch(e){}
   marcarPaletas();
-  var lua=document.getElementById('mtopoLua');
-  if(lua){ lua.textContent = m==='escuro' ? '☀' : '☾'; lua.title = m==='escuro' ? 'Voltar ao modo claro' : 'Modo escuro'; }
+  var lua=document.getElementById('fLua');
+  if(lua){ lua.textContent = m==='claro' ? '☾' : '☀'; lua.title = m==='claro' ? 'Modo escuro' : 'Modo claro'; lua.setAttribute('aria-label', lua.title); }
   setTimeout(function(){ if(window.menuTopoAtualizar) menuTopoAtualizar(); },0);
 }
 function marcarPaletas(){
@@ -1368,7 +1392,7 @@ window.setPaleta=function(p){
   aplicarModo('claro');
 };
 (function(){
-  var m='claro'; try{ if(localStorage.getItem('mc_tema')==='escuro') m='escuro'; }catch(e){}
+  var m='escuro'; try{ if(localStorage.getItem('mc_frota_modo')==='claro') m='claro'; }catch(e){}
   aplicarModo(m);
   document.addEventListener('DOMContentLoaded', function(){ aplicarModo(modoAtual()); });
 })();
