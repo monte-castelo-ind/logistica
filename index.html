@@ -3865,26 +3865,24 @@ function cbLer(texto){
   var fim=t.length;
   t.some(function(x,k){ if(/^total$/i.test(x)){ fim=k; return true; } });   /* linha "Total" e o rodapé "1 a 14 de 14" */
   t=t.slice(0,fim);
-  var docs=[]; t.forEach(function(x,k){ if(CB_RE.doc.test(x)) docs.push(k); });
+  /* Cada pedido começa com: nº do pedido (5+ dígitos), código do cliente e o
+     nome (com letras). Não depende da nota fiscal: carga do dia seguinte ainda
+     não tem nota, e a coluna Documento vem vazia. */
+  var LETRA=/[A-Za-zÀ-ÿ]/, PLANO=/^(BOLETO|A VISTA|À VISTA|AVISTA|PIX|DEPOSITO|DEPÓSITO|CHEQUE|CART[AÃ]O|DINHEIRO|PRAZO)\b/i;
+  var inicios=[];
+  for(var k=0;k+2<t.length;k++){
+    if(/^\d{5,}$/.test(t[k]) && /^\d{1,7}$/.test(t[k+1]) && LETRA.test(t[k+2]) && !CB_RE.doc.test(t[k+2])) inicios.push(k);
+  }
   var cidades=cbCidadesConhecidas(), out=[];
-  /* começo de cada pedido: anda para trás do documento juntando o nome até achar o código do cliente e o pedido */
-  var inicio=docs.map(function(d){
-    var k=d-1, nome=[];
-    while(k>=0 && !CB_RE.num.test(t[k])){ nome.unshift(t[k]); k--; }
-    var cli=k>=0?t[k]:'', ped=(k-1>=0 && CB_RE.num.test(t[k-1]))?t[k-1]:'';
-    return { k:ped?k-1:k, pedido:ped, codErp:cli, nome:nome.join(' ') };
-  });
-  docs.forEach(function(d,n){
-    var ini=inicio[n]; if(!ini.pedido || !ini.nome) return;
-    var ate=n+1<docs.length ? inicio[n+1].k : t.length;
-    var seg=t.slice(d+1, ate);
-    var nf=(String(t[d]).match(/(\d{3,})/)||[])[1]||'';
-    var r={ pedido:ini.pedido, codErp:ini.codErp, nome:ini.nome, nf:nf, cidade:'', bairro:'', data:'', ordem:NaN, peso:0 };
-    var k=0;
-    if(seg[k] && CB_RE.valor.test(seg[k])) k++;                                   /* valor */
-    var iData=-1; for(var q=k;q<seg.length;q++){ if(CB_RE.data.test(seg[q])){ iData=q; break; } }
-    if(iData<0) return;
-    r.data=seg[iData];
+  inicios.forEach(function(ini, n){
+    var ate=n+1<inicios.length ? inicios[n+1] : t.length;
+    var seg=t.slice(ini+2, ate), p=0, nome=[];
+    while(p<seg.length && !CB_RE.doc.test(seg[p]) && !CB_RE.valor.test(seg[p]) && !CB_RE.data.test(seg[p]) && !(nome.length && PLANO.test(seg[p]))){ nome.push(seg[p]); p++; }
+    var nf='';
+    if(p<seg.length && CB_RE.doc.test(seg[p])){ nf=(String(seg[p]).match(/(\d{3,})/)||[])[1]||''; p++; }
+    var iData=-1; for(var q=p;q<seg.length;q++){ if(CB_RE.data.test(seg[q])){ iData=q; break; } }
+    if(!nome.length || iData<0) return;
+    var r={ pedido:t[ini], codErp:t[ini+1], nome:nome.join(' '), nf:nf, cidade:'', bairro:'', data:seg[iData], ordem:NaN, peso:0 };
     var resto=seg.slice(iData+1);
     /* o peso (4 casas) separa: antes dele cidade, bairro, obs e ordem; depois, se o ERP mostrar, endereço e número */
     var iPeso=-1; for(var w=resto.length-1;w>=0;w--){ if(CB_RE.peso.test(resto[w])){ iPeso=w; break; } }
@@ -3989,7 +3987,7 @@ window.cbConverter=function(){
     cb.linhas=ordem.map(function(k){ return por[k]; });
     cb.linhas.sort(function(a,b){ var x=isNaN(a.ordem)?1e9:a.ordem, y=isNaN(b.ordem)?1e9:b.ordem; return x-y; });
     cb.linhas.forEach(function(r){
-      r.telefone=''; r.instrucoes=r.nfs.length ? 'NF '+r.nfs.join(', ') : '';
+      r.telefone=''; r.instrucoes=r.nfs.length ? 'NF '+r.nfs.join(', ') : 'Pedido '+r.pedidos.join(', ');   /* carga sem nota ainda: vai o nº do pedido */
       r.carga=r.peso ? String(Math.round(r.peso*10)/10).replace('.',',') : '';
       var c=cbAchar(r);
       if(c.length===1) cbAplicar(r, c[0]);
