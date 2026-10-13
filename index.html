@@ -797,6 +797,44 @@ html[data-pal="brasa"][data-theme="light"] .side:hover:not(.pin){box-shadow:14px
 html[data-pal="brasa"] body{font-variant-numeric:tabular-nums}
 html[data-pal="brasa"] .mono{letter-spacing:.02em}
 html[data-pal="brasa"] .placa{letter-spacing:.06em}
+
+/* ===== Rotas de hoje (Cobli) ===== */
+#rhBox{margin-bottom:18px}
+.rh-cab{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.rh-cab h2{font-size:16px;margin:0}
+.rh-sub{font-size:12.5px;color:var(--muted)}
+.rh-err{color:var(--red)}
+.rh-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;align-items:start}
+.rh-card{padding:16px;border-radius:16px}
+.rh-top{display:flex;align-items:center;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.rh-ico{width:38px;height:38px;flex:0 0 38px;border-radius:50%;background:var(--card-2);display:flex;align-items:center;justify-content:center;font-size:16px}
+.rh-tit{flex:1;min-width:0;display:flex;flex-direction:column}
+.rh-tit b{font-size:14.5px;line-height:1.25}
+.rh-tit span{font-size:12px;color:var(--muted)}
+.rh-badge{font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:999px;white-space:nowrap}
+.rh-neutro{background:var(--card-2);color:var(--text)}
+.rh-ok{background:color-mix(in srgb,var(--green) 16%,transparent);color:var(--green)}
+.rh-alerta{background:color-mix(in srgb,var(--primary) 16%,transparent);color:var(--primary)}
+.rh-erro{background:color-mix(in srgb,var(--red) 16%,transparent);color:var(--red)}
+.rh-info{background:color-mix(in srgb,var(--blue) 16%,transparent);color:var(--blue)}
+.rh-lin{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--muted);margin:6px 0}
+.rh-lin b{color:var(--text)}
+.rh-num{white-space:nowrap}
+.rh-bar{position:relative;height:5px;border-radius:99px;background:var(--card-2);margin:10px 0 12px}
+.rh-bar div{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:linear-gradient(90deg,color-mix(in srgb,var(--primary) 25%,transparent),var(--primary));box-shadow:0 0 12px color-mix(in srgb,var(--primary) 60%,transparent)}
+.rh-bar i{position:absolute;top:50%;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:#ffd2b5;box-shadow:0 0 10px 2px color-mix(in srgb,var(--primary) 70%,transparent)}
+.rh-txt{font-size:12.5px;color:var(--muted);margin-top:4px;line-height:1.4}
+.rh-txt b{color:var(--text)}
+.rh-pe{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--border);margin-top:12px;padding-top:12px;font-size:12.5px;color:var(--muted)}
+.rh-pe b{color:var(--text)}
+.rh-lista{margin-top:12px;max-height:320px;overflow:auto;border-top:1px solid var(--border);padding-top:6px}
+.rh-par{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px}
+.rh-pos{width:22px;flex:0 0 22px;text-align:center;color:var(--muted)}
+.rh-pnome{flex:1;min-width:0;display:flex;flex-direction:column}
+.rh-pnome b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rh-pnome small{color:var(--muted);font-size:11px}
+.rh-hora{color:var(--muted);font-size:11.5px}
+.rh-chip{font-size:11px;font-weight:600;padding:3px 8px;border-radius:999px;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -899,6 +937,7 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
 
     <!-- PAINEL -->
     <div class="page on" id="page-painel">
+      <div id="rhBox"></div>
       <div class="tools">
         <select id="pn-per" onchange="render()">
           <option value="30" selected>Últimos 30 dias</option>
@@ -1317,6 +1356,7 @@ var estoque=[], estoqueMov=[];
 /* telemetria do Cobli: um documento por placa, gravado pelo robo do Actions.
    O app so le — a regra do Firestore bloqueia escrita de propósito. */
 var telemetria={}, telemetriaMeta=null;
+var rotasHoje={}, rotasHojeMeta=null, rhAbertas={};   /* andamento das rotas de hoje (robô do Cobli) */
 var veiculos=[], movs=[], docs=[], cfg={ oleoKm:10000, oleoMeses:6, revisaoKm:20000, revisaoMeses:12,
   diasAviso:30, kmParadoDias:15, desvioPct:15, tipos:[] };
 var modelosChk={}, checklists=[];
@@ -4998,7 +5038,60 @@ function _barras(itens, total, cor){
     '</div>';
   }).join('');
 }
+
+/* ===== ROTAS DE HOJE (Cobli) =====
+   Cartões no topo do Painel. O robô "Cobli - rotas de hoje" lê o andamento das
+   rotas no Cobli a cada 10 min e grava em frotaRotasHoje. Entrega feita = o
+   motorista concluiu no app ou o Cobli registrou a visita pela posição. */
+function dataLocalHoje(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function rhHora(ms){ if(!ms) return '—'; var d=new Date(ms); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+var RH_ST={ PLANNED:['Planejada','neutro'], IN_PROGRESS:['Na rua','neutro'], DELAYED:['Atrasada','alerta'],
+  EXECUTED:['Concluída','ok'], PARTIALLY_EXECUTED:['Parcial','alerta'], UNEXECUTED:['Não executada','alerta'] };
+var RH_SIT={ feita:['Entregue','ok'], local:['No local','info'], falhou:['Não entregue','erro'], pendente:['Pendente','neutro'] };
+window.rhAlternar=function(id){ rhAbertas[id]=!rhAbertas[id]; renderRotasHoje(); };
+function renderRotasHoje(){
+  var box=document.getElementById('rhBox'); if(!box) return;
+  var lista=Object.keys(rotasHoje).map(function(k){ return Object.assign({ id:k }, rotasHoje[k]); });
+  if(!lista.length){
+    box.innerHTML='<div class="rh-cab"><h2>Rotas de hoje</h2><span class="rh-sub">'+(rotasHojeMeta?'Nenhuma rota de hoje no Cobli · consultado às '+esc(rhHora(Date.parse(rotasHojeMeta.atualizadoEm))):'Aguardando o robô do Cobli')+'</span></div>';
+    return;
+  }
+  var ordem={ IN_PROGRESS:0, DELAYED:0, PLANNED:1, PARTIALLY_EXECUTED:2, UNEXECUTED:2, EXECUTED:3 };
+  lista.sort(function(a,b){ return ((ordem[a.status]!=null?ordem[a.status]:1)-(ordem[b.status]!=null?ordem[b.status]:1)) || String(a.nome).localeCompare(String(b.nome),'pt-BR',{numeric:true}); });
+  var tot=0, feitas=0, falhas=0; lista.forEach(function(r){ tot+=r.total||0; feitas+=r.feitas||0; falhas+=r.falhas||0; });
+  var at=rotasHojeMeta&&rotasHojeMeta.atualizadoEm?Date.parse(rotasHojeMeta.atualizadoEm):0, velho=at&&(Date.now()-at>40*60000);
+  var h='<div class="rh-cab"><h2>Rotas de hoje</h2><span class="rh-sub">'+lista.length+' rota'+(lista.length>1?'s':'')+' · <b>'+feitas+'</b> de '+tot+' entregas'
+    +(falhas?' · <span class="rh-err">'+falhas+' não entregue'+(falhas>1?'s':'')+'</span>':'')
+    +' · <span'+(velho?' class="rh-err"':'')+'>Cobli às '+esc(rhHora(at))+(velho?' (desatualizado)':'')+'</span></span></div><div class="rh-grid">';
+  lista.forEach(function(r){
+    var st=RH_ST[r.status]||[r.status||'—','neutro'], pct=r.total?Math.round(r.feitas/r.total*100):0;
+    var faltam=(r.pendentes||0)+(r.local||0);
+    var linha = r.agora ? 'Agora no cliente: <b>'+esc(r.agora.nome)+'</b>'+(r.agora.bairro?' · '+esc(r.agora.bairro):'')
+      : r.proxima ? 'Próxima: <b>'+esc(r.proxima.nome)+'</b>'+(r.proxima.bairro?' · '+esc(r.proxima.bairro):'')
+      : r.ultima ? 'Última entrega: <b>'+esc(r.ultima.nome)+'</b> às '+esc(rhHora(r.ultima.chegada)) : 'Sem entregas registradas ainda';
+    var volta = r.fimReal ? 'Rota encerrada às <b>'+esc(rhHora(r.fimReal))+'</b>' : 'Volta prevista: <b>'+esc(rhHora(r.fimPlan))+'</b>';
+    h+='<div class="card rh-card"><div class="rh-top"><span class="rh-ico">⛟</span><div class="rh-tit"><b>'+esc(r.nome)+'</b><span>'+esc([r.motorista,r.placa].filter(Boolean).join(' · ')||'—')+'</span></div>'
+      +'<span class="rh-badge rh-'+st[1]+'">'+esc(st[0])+'</span></div>'
+      +'<div class="rh-lin"><span>Entregas <b>('+pct+'%)</b></span><span class="rh-num"><b>'+(r.feitas||0)+' / '+(r.total||0)+'</b> clientes</span></div>'
+      +'<div class="rh-bar"><div style="width:'+pct+'%"></div>'+(pct>0&&pct<100?'<i style="left:'+pct+'%"></i>':'')+'</div>'
+      +'<div class="rh-lin"><span>'+(faltam?'Faltam <b>'+faltam+'</b> cliente'+(faltam>1?'s':''):'Todas as paradas atendidas')
+        +(r.falhas?' · <span class="rh-err">'+r.falhas+' não entregue'+(r.falhas>1?'s':'')+'</span>':'')+'</span>'
+        +(r.distPlanKm?'<span class="rh-num">'+String(r.distPlanKm).replace('.',',')+' km planejados</span>':'')+'</div>'
+      +'<div class="rh-txt">'+linha+'</div>'
+      +'<div class="rh-pe"><span>'+volta+'</span><button class="btn btn-sm" onclick="rhAlternar(\''+esc(r.id)+'\')">'+(rhAbertas[r.id]?'Fechar':'Ver paradas')+'</button></div>';
+    if(rhAbertas[r.id]){
+      h+='<div class="rh-lista">'+(r.paradas||[]).map(function(p){
+        var s2=RH_SIT[p.sit]||RH_SIT.pendente;
+        return '<div class="rh-par"><span class="rh-pos">'+(p.pos!=null?p.pos:'')+'</span><span class="rh-pnome"><b>'+esc(p.nome||'—')+'</b><small>'+esc([p.bairro,p.cidade].filter(Boolean).join(' · '))+'</small></span>'
+          +'<span class="rh-hora">'+(p.chegada?esc(rhHora(p.chegada)):'')+'</span><span class="rh-chip rh-'+s2[1]+'">'+s2[0]+'</span></div>';
+      }).join('')+'</div>';
+    }
+    h+='</div>';
+  });
+  box.innerHTML=h+'</div>';
+}
 function renderPainel(){
+  renderRotasHoje();
   // tipos de veículo no filtro
   var tipos={}; veiculos.forEach(function(v){ if(v.tipo) tipos[v.tipo]=1; });
   pintarSel('pn-tipo', Object.keys(tipos).sort().map(function(t){ return [t,t]; }), 'Todos os tipos de veículo');
@@ -8306,6 +8399,11 @@ function liberar(d){
   ouvir('frotaDocs', collection(dbC,'frotaDocs'), function(s){
     docs=s.docs.map(function(x){ return Object.assign({ firestoreId:x.id }, x.data()); });
     render();
+  });
+  ouvir('frotaRotasHoje', query(collection(dbC,'frotaRotasHoje'), where('data','==',dataLocalHoje())), function(s){
+    rotasHoje={}; rotasHojeMeta=null;
+    s.docs.forEach(function(x){ if(x.id==='_meta') rotasHojeMeta=x.data(); else rotasHoje[x.id]=x.data(); });
+    if(pagina==='painel') renderRotasHoje();
   });
   ouvir('frotaTelemetria', collection(dbC,'frotaTelemetria'), function(s){
     telemetria={}; telemetriaMeta=null;
