@@ -5107,6 +5107,11 @@ function _barras(itens, total, cor){
    rotas no Cobli a cada 10 min e grava em frotaRotasHoje. Entrega feita = o
    motorista concluiu no app ou o Cobli registrou a visita pela posição. */
 function dataLocalHoje(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+/* Semana corrente (segunda a domingo), no formato AAAA-MM-DD do robô */
+function rhIso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function rhSemana(){ var d=new Date(); d.setHours(12,0,0,0); var dw=(d.getDay()+6)%7; var ini=new Date(d); ini.setDate(d.getDate()-dw); var fim=new Date(ini); fim.setDate(ini.getDate()+6); return [rhIso(ini), rhIso(fim)]; }
+var RH_DIAS=['dom','seg','ter','qua','qui','sex','sáb'];
+function rhDia(iso){ if(!iso) return ''; var p=iso.split('-'), d=new Date(+p[0],+p[1]-1,+p[2]); return (iso===dataLocalHoje()?'hoje':RH_DIAS[d.getDay()])+' '+p[2]+'/'+p[1]; }
 function rhHora(ms){ if(!ms) return '—'; var d=new Date(ms); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 var RH_ST={ PLANNED:['Planejada','neutro'], IN_PROGRESS:['Na rua','neutro'], DELAYED:['Atrasada','alerta'],
   EXECUTED:['Concluída','ok'], PARTIALLY_EXECUTED:['Parcial','alerta'], UNEXECUTED:['Não executada','alerta'] };
@@ -5152,8 +5157,8 @@ function rhCartao(r){
     : r.proxima ? 'Próxima: <b>'+esc(r.proxima.nome)+'</b>'+(r.proxima.bairro?' · '+esc(r.proxima.bairro):'')
     : r.ultima ? 'Última entrega: <b>'+esc(r.ultima.nome)+'</b> às '+esc(rhHora(r.ultima.chegada)) : 'Sem entregas registradas ainda';
   var volta = r.fimReal ? (r.filial?'Rotas encerradas às ':'Rota encerrada às ')+'<b>'+esc(rhHora(r.fimReal))+'</b>' : 'Volta prevista: <b>'+esc(rhHora(r.fimPlan))+'</b>';
-  var sub=[r.motorista,r.placa].filter(Boolean).join(' · ')+(r.filial?' · '+r.qtdRotas+' rota'+(r.qtdRotas>1?'s':''):'');
-  var h='<div class="card rh-card'+(r.filial?' rh-filial':'')+'"><div class="rh-top"><span class="rh-ico">'+(r.filial?'⇄':'⛟')+'</span><div class="rh-tit"><b>'+esc(r.nome)+'</b><span>'+esc(sub||'—')+'</span></div>'
+  var sub=(r.ehFilial&&r.data?rhDia(r.data)+' · ':'')+[r.motorista,r.placa].filter(Boolean).join(' · ')+(r.filial?' · '+r.qtdRotas+' rota'+(r.qtdRotas>1?'s':''):'');
+  var h='<div class="card rh-card'+(r.filial||r.ehFilial?' rh-filial':'')+'"><div class="rh-top"><span class="rh-ico">'+(r.filial?'⇄':'⛟')+'</span><div class="rh-tit"><b>'+esc(r.nome)+'</b><span>'+esc(sub||'—')+'</span></div>'
     +'<span class="rh-badge rh-'+st[1]+'">'+esc(st[0])+'</span></div>'
     +'<div class="rh-lin"><span>Entregas <b>('+pct+'%)</b></span><span class="rh-num"><b>'+(r.feitas||0)+' / '+(r.total||0)+'</b> clientes</span></div>'
     +'<div class="rh-bar"><div style="width:'+pct+'%"></div>'+(pct>0&&pct<100?'<i style="left:'+pct+'%"></i>':'')+'</div>'
@@ -5192,26 +5197,35 @@ var RH_ORDEM={ IN_PROGRESS:0, DELAYED:0, PLANNED:1, PARTIALLY_EXECUTED:2, UNEXEC
 function rhOrdenar(lista){
   return lista.sort(function(a,b){ return ((RH_ORDEM[a.status]!=null?RH_ORDEM[a.status]:1)-(RH_ORDEM[b.status]!=null?RH_ORDEM[b.status]:1)) || String(a.nome).localeCompare(String(b.nome),'pt-BR',{numeric:true}); });
 }
-function rhSecao(titulo, lista, t, extra){
+function rhSecao(titulo, lista, t, extra, vazio){
   return '<section class="rh-sec'+(extra||'')+'"><div class="rh-sec-cab"><h3>'+esc(titulo)+'</h3><span class="rh-sec-n">'+t.rotas+' rota'+(t.rotas===1?'':'s')+'</span>'
     +'<span class="rh-sec-prog"><span><b>'+t.feitas+'</b> de '+t.total+' entregas</span><span class="rh-sec-bar"><i style="width:'+t.pct+'%"></i></span><b>'+t.pct+'%</b></span></div>'
-    +'<div class="rh-grid">'+(lista.length?lista.map(rhCartao).join(''):'<div class="rh-sub">Nenhuma rota hoje.</div>')+'</div></section>';
+    +'<div class="rh-grid">'+(lista.length?lista.map(rhCartao).join(''):'<div class="rh-sub">'+(vazio||'Nenhuma rota hoje.')+'</div>')+'</div></section>';
 }
 function renderRotasHoje(){
   var box=document.getElementById('rhBox'); if(!box) return;
-  var todas=Object.keys(rotasHoje).map(function(k){ return Object.assign({ id:k }, rotasHoje[k]); });
+  /* Matriz: só as rotas de hoje. Filial: todas as rotas da semana (seg–dom),
+     concluídas ou não. */
+  var hoje=dataLocalHoje(), sem=rhSemana();
+  var placasFilial={}; RH_FILIAIS.forEach(function(f){ placasFilial[f.placa]=f; });
+  var matriz=[], filial=[];
+  Object.keys(rotasHoje).forEach(function(k){
+    var r=Object.assign({ id:k }, rotasHoje[k]);
+    if(placasFilial[r.placa]){ if(r.data>=sem[0] && r.data<=sem[1]){ r.ehFilial=true; filial.push(r); } }
+    else if(r.data===hoje) matriz.push(r);
+  });
+  var todas=matriz.concat(filial);
   var at=rotasHojeMeta&&rotasHojeMeta.atualizadoEm?Date.parse(rotasHojeMeta.atualizadoEm):0, velho=at&&(Date.now()-at>40*60000);
   var quando='<span'+(velho?' class="rh-err"':'')+'>atualizado do Cobli às '+esc(rhHora(at))+(velho?' (desatualizado)':'')+'</span>';
   if(!todas.length){
     box.innerHTML='<div class="rh-cab"><h2>Rotas de hoje</h2><span class="rh-sub">'+(rotasHojeMeta?'Nenhuma rota de hoje no Cobli · '+quando:'Aguardando o robô do Cobli')+'</span></div>';
     return;
   }
-  /* separa Matriz e Filial pela placa do caminhão */
-  var placasFilial={}; RH_FILIAIS.forEach(function(f){ placasFilial[f.placa]=f; });
-  var matriz=[], filial=[];
-  todas.forEach(function(r){ (placasFilial[r.placa]?filial:matriz).push(r); });
-  rhOrdenar(matriz); rhOrdenar(filial);
-  var tg=rhSomar(todas), tm=rhSomar(matriz), tf=rhSomar(filial);
+  rhOrdenar(matriz);
+  /* filial em ordem de dia (seg → dom) */
+  filial.sort(function(a,b){ return String(a.data).localeCompare(String(b.data)) || String(a.nome).localeCompare(String(b.nome),'pt-BR',{numeric:true}); });
+  /* quadros do topo contam só o dia (Matriz + Filial de hoje) */
+  var tg=rhSomar(matriz.concat(filial.filter(function(r){ return r.data===hoje; }))), tm=rhSomar(matriz), tf=rhSomar(filial);
 
   /* cabeçalho: quatro quadros, um número em cada */
   var chips=[];
@@ -5229,7 +5243,7 @@ function renderRotasHoje(){
     +'</div>';
   /* Matriz em cima; divisória; Filial embaixo */
   h+=rhSecao('Matriz', matriz, tm);
-  if(filial.length) h+='<hr class="rh-div">'+rhSecao(RH_FILIAIS[0].nome, filial, tf, ' rh-sec-filial');
+  h+='<hr class="rh-div">'+rhSecao(RH_FILIAIS[0].nome+' · semana '+rhDia(sem[0]).replace(/^\S+ /,'')+' a '+rhDia(sem[1]).replace(/^\S+ /,''), filial, tf, ' rh-sec-filial', 'Nenhuma rota da filial nesta semana.');
   box.innerHTML=h;
 }
 function renderPainel(){
@@ -8542,7 +8556,7 @@ function liberar(d){
     docs=s.docs.map(function(x){ return Object.assign({ firestoreId:x.id }, x.data()); });
     render();
   });
-  ouvir('frotaRotasHoje', query(collection(dbC,'frotaRotasHoje'), where('data','==',dataLocalHoje())), function(s){
+  ouvir('frotaRotasHoje', query(collection(dbC,'frotaRotasHoje'), where('data','>=',rhSemana()[0]), where('data','<=',rhSemana()[1])), function(s){
     rotasHoje={}; rotasHojeMeta=null;
     s.docs.forEach(function(x){ if(x.id==='_meta') rotasHojeMeta=x.data(); else rotasHoje[x.id]=x.data(); });
     if(pagina==='painel') renderRotasHoje();
