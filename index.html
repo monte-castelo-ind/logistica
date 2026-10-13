@@ -857,6 +857,47 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
 .rh-rota{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:10px 0 4px}
 @media(max-width:1100px){ .rh-colunas{grid-template-columns:minmax(0,1fr)} }
 @media(max-width:700px){ .rh-res-num{grid-template-columns:repeat(2,minmax(0,1fr))} .rh-res-minis{grid-template-columns:minmax(0,1fr)} }
+
+/* rotas de hoje: pontos da rota */
+.rh-pontos{margin-top:12px;border-top:1px solid var(--border);padding-top:4px}
+.rh-ponto{display:flex;gap:10px;padding:8px 10px;margin:6px 0;border-radius:10px;font-size:12.5px;background:var(--card-2)}
+.rh-ponto b{font-weight:600}
+.rh-ponto ul{margin:4px 0 0;padding-left:16px;color:var(--muted)}
+.rh-ponto li{margin:2px 0}
+.rh-ponto li b{color:var(--text)}
+.rh-ponto small{color:var(--muted)}
+.rh-p-ico{width:18px;flex:0 0 18px;text-align:center;font-weight:700}
+.rh-p-erro{background:color-mix(in srgb,var(--red) 12%,var(--card-2))} .rh-p-erro .rh-p-ico{color:var(--red)}
+.rh-p-alerta{background:color-mix(in srgb,var(--primary) 10%,var(--card-2))} .rh-p-alerta .rh-p-ico{color:var(--primary)}
+.rh-p-info .rh-p-ico{color:var(--blue)}
+.rh-p-ok .rh-p-ico{color:var(--green)}
+.rh-hora{display:flex;flex-direction:column;align-items:flex-end;line-height:1.2}
+.rh-hora em{font-style:normal;font-size:10.5px;color:var(--muted)}
+.rh-hora em.rh-demora{color:var(--primary);font-weight:700}
+
+/* rotas de hoje: cabeçalho em quadros e seções empilhadas */
+.rh-kpis{display:grid;grid-template-columns:minmax(0,1.4fr) repeat(3,minmax(0,1fr));gap:14px;margin-bottom:22px}
+.rh-kpi{padding:16px 18px;border-radius:16px;display:flex;flex-direction:column;gap:4px}
+.rh-kpi-lab{font-size:12px;color:var(--muted);font-weight:500}
+.rh-kpi-val{font-size:30px;font-weight:700;line-height:1.1;letter-spacing:-.01em}
+.rh-kpi-val small{font-size:18px;font-weight:600;color:var(--muted);margin-left:2px}
+.rh-kpi-sub{font-size:12.5px;color:var(--muted)}
+.rh-kpi-sub b{color:var(--text)}
+.rh-kpi .rh-bar{margin:10px 0 0}
+.rh-kpi-erro .rh-kpi-val{color:var(--red)}
+.rh-kpi-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.rh-sec{margin-bottom:6px}
+.rh-sec-cab{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.rh-sec-cab h3{font-size:14px;margin:0;text-transform:uppercase;letter-spacing:.08em}
+.rh-sec-n{font-size:12.5px;color:var(--muted)}
+.rh-sec-prog{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted)}
+.rh-sec-prog b{color:var(--text)}
+.rh-sec-bar{position:relative;width:140px;height:5px;border-radius:99px;background:var(--card-2);overflow:hidden}
+.rh-sec-bar i{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:var(--primary)}
+.rh-div{border:0;border-top:1px solid var(--border);margin:22px 0 18px}
+.rh-sec-filial .rh-card{border-color:color-mix(in srgb,var(--primary) 35%,var(--border))}
+@media(max-width:1000px){ .rh-kpis{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media(max-width:560px){ .rh-kpis{grid-template-columns:minmax(0,1fr)} .rh-sec-prog{margin-left:0;width:100%} }
 </style>
 </head>
 <body>
@@ -5071,31 +5112,38 @@ var RH_ST={ PLANNED:['Planejada','neutro'], IN_PROGRESS:['Na rua','neutro'], DEL
   EXECUTED:['Concluída','ok'], PARTIALLY_EXECUTED:['Parcial','alerta'], UNEXECUTED:['Não executada','alerta'] };
 var RH_SIT={ feita:['Entregue','ok'], local:['No local','info'], falhou:['Não entregue','erro'], pendente:['Pendente','neutro'] };
 window.rhAlternar=function(id){ rhAbertas[id]=!rhAbertas[id]; renderRotasHoje(); };
-/* Caminhões de filial: um cartão só, somando todas as rotas do dia daquele
-   veículo (ele leva a carga de várias rotas). Placa no formato do robô. */
+/* Caminhões de filial: as rotas deles vão para a seção da filial (um cartão
+   por rota, como na Matriz). Placa no formato do robô. */
 var RH_FILIAIS=[{ placa:'IYW7I66', nome:'Filial · Cruz Alta' }];
-var RH_PESO={ DELAYED:5, UNEXECUTED:4, IN_PROGRESS:3, PARTIALLY_EXECUTED:2, PLANNED:1, EXECUTED:0 };
-function rhJuntar(rotas, nome){
-  /* soma as rotas de um caminhão num cartão só */
-  var ativas=rotas.slice().sort(function(a,b){ return (a.inicioPlan||0)-(b.inicioPlan||0); });
-  var r={ id:'filial:'+(rotas[0]&&rotas[0].placa||nome), nome:nome, filial:true, qtdRotas:rotas.length,
-    motorista:(ativas.map(function(x){ return x.motorista; }).filter(Boolean)[0])||'', placa:rotas[0]?rotas[0].placa:'',
-    total:0, feitas:0, local:0, falhas:0, pendentes:0, distPlanKm:0, paradas:[], status:'EXECUTED', fimPlan:0, fimReal:0, agora:null, proxima:null, ultima:null };
-  var todasFim=true;
-  ativas.forEach(function(x){
-    r.total+=x.total||0; r.feitas+=x.feitas||0; r.local+=x.local||0; r.falhas+=x.falhas||0; r.pendentes+=x.pendentes||0;
-    r.distPlanKm+=x.distPlanKm||0;
-    if((RH_PESO[x.status]||0)>(RH_PESO[r.status]||0)) r.status=x.status;
-    if((x.fimPlan||0)>r.fimPlan) r.fimPlan=x.fimPlan;
-    if(x.fimReal){ if(x.fimReal>r.fimReal) r.fimReal=x.fimReal; } else todasFim=false;
-    if(!r.agora && x.agora) r.agora=x.agora;
-    if(!r.proxima && x.proxima) r.proxima=x.proxima;
-    if(x.ultima && (!r.ultima || (x.ultima.chegada||0)>(r.ultima.chegada||0))) r.ultima=x.ultima;
-    (x.paradas||[]).forEach(function(p){ r.paradas.push(Object.assign({ rota:x.nome }, p)); });
-  });
-  if(!todasFim) r.fimReal=0;
-  r.distPlanKm=Math.round(r.distPlanKm*10)/10;
-  return r;
+/* Pontos da rota: o que merece atenção, calculado das paradas.
+   Limites: demora no cliente > RH_DEMORA_MIN; chegada > RH_ATRASO_MIN depois do previsto. */
+var RH_DEMORA_MIN=15, RH_ATRASO_MIN=30;
+function rhMin(ms){ var m=Math.round((ms||0)/60000); return m>=60 ? Math.floor(m/60)+'h'+(m%60?String(m%60).padStart(2,'0'):'') : m+' min'; }
+function rhPontos(r){
+  var ps=r.paradas||[], out=[], lim=RH_DEMORA_MIN*60000;
+  var nomeP=function(p){ return esc(p.nome||'—')+(r.filial&&p.rota?' <small>('+esc(p.rota)+')</small>':''); };
+  var falhas=ps.filter(function(p){ return p.sit==='falhou'; });
+  if(falhas.length) out.push(['erro','✕', falhas.length+' não entregue'+(falhas.length>1?'s':''),
+    falhas.map(function(p){ return nomeP(p)+' — '+(p.obs?'“'+esc(p.obs)+'”':'<i>motivo ainda não disponível</i>'); })]);
+  var dem=ps.filter(function(p){ return (p.dur||0)>lim; }).sort(function(a,b){ return b.dur-a.dur; });
+  if(dem.length) out.push(['alerta','⏱', dem.length+' cliente'+(dem.length>1?'s':'')+' com mais de '+RH_DEMORA_MIN+' min',
+    dem.map(function(p){ return nomeP(p)+' — <b>'+rhMin(p.dur)+'</b>'+(p.espera>60000?' (espera '+rhMin(p.espera)+')':''); })]);
+  var atr=ps.filter(function(p){ return p.chegada && p.prev && (p.chegada-p.prev)>RH_ATRASO_MIN*60000; }).sort(function(a,b){ return (b.chegada-b.prev)-(a.chegada-a.prev); });
+  if(atr.length) out.push(['alerta','⌛', atr.length+' chegada'+(atr.length>1?'s':'')+' mais de '+RH_ATRASO_MIN+' min depois do previsto',
+    atr.slice(0,6).map(function(p){ return nomeP(p)+' — previsto '+rhHora(p.prev)+', chegou '+rhHora(p.chegada)+' (<b>+'+rhMin(p.chegada-p.prev)+'</b>)'; })]);
+  var fora=ps.filter(function(p){ return p.chegada && p.jan && p.jan.length && !p.jan.some(function(j){ return p.chegada>=j[0] && p.chegada<=j[1]; }); });
+  if(fora.length) out.push(['alerta','◷', fora.length+' entrega'+(fora.length>1?'s':'')+' fora da janela de horário',
+    fora.map(function(p){ return nomeP(p)+' — janela '+p.jan.map(function(j){ return rhHora(j[0])+'–'+rhHora(j[1]); }).join(', ')+', chegou '+rhHora(p.chegada); })]);
+  var feitas=ps.filter(function(p){ return p.chegada && p.sit!=='pendente'; }).sort(function(a,b){ return a.chegada-b.chegada; });
+  var trocas=0; for(var i=1;i<feitas.length;i++){ if((feitas[i].rota||'')===(feitas[i-1].rota||'') && feitas[i].pos<feitas[i-1].pos) trocas++; }
+  if(trocas) out.push(['info','⇅', trocas+' parada'+(trocas>1?'s':'')+' fora da ordem planejada', []]);
+  var comDur=ps.filter(function(p){ return p.dur>0; });
+  if(comDur.length){
+    var soma=comDur.reduce(function(a,p){ return a+p.dur; },0);
+    out.push(['ok','◔', 'Tempo médio no cliente: '+rhMin(soma/comDur.length)+' · total parado: '+rhMin(soma), []]);
+  }
+  if(!out.length) out.push(['ok','✓','Nada fora do normal até agora',[]]);
+  return out;
 }
 function rhCartao(r){
   var st=RH_ST[r.status]||[r.status||'—','neutro'], pct=r.total?Math.round(r.feitas/r.total*100):0;
@@ -5113,69 +5161,76 @@ function rhCartao(r){
       +(r.falhas?' · <span class="rh-err">'+r.falhas+' não entregue'+(r.falhas>1?'s':'')+'</span>':'')+'</span>'
       +(r.distPlanKm?'<span class="rh-num">'+String(r.distPlanKm).replace('.',',')+' km planejados</span>':'')+'</div>'
     +'<div class="rh-txt">'+linha+'</div>'
-    +'<div class="rh-pe"><span>'+volta+'</span><button class="btn btn-sm" onclick="rhAlternar(\''+esc(r.id)+'\')">'+(rhAbertas[r.id]?'Fechar':'Ver paradas')+'</button></div>';
+    +'<div class="rh-pe"><span>'+volta+'</span><button class="btn btn-sm" onclick="rhAlternar(\''+esc(r.id)+'\')">'+(rhAbertas[r.id]?'Fechar':'Resumo e paradas')+'</button></div>';
   if(rhAbertas[r.id]){
     var rotaAtual=null;
+    h+='<div class="rh-pontos"><div class="rh-rota">Pontos da rota</div>'+rhPontos(r).map(function(pt){
+      return '<div class="rh-ponto rh-p-'+pt[0]+'"><span class="rh-p-ico">'+pt[1]+'</span><div><b>'+pt[2]+'</b>'
+        +(pt[3].length?'<ul>'+pt[3].map(function(x){ return '<li>'+x+'</li>'; }).join('')+'</ul>':'')+'</div></div>';
+    }).join('')+'</div>';
     h+='<div class="rh-lista">'+(r.paradas||[]).map(function(p){
       var s2=RH_SIT[p.sit]||RH_SIT.pendente, cab='';
       if(r.filial && p.rota!==rotaAtual){ rotaAtual=p.rota; cab='<div class="rh-rota">'+esc(p.rota||'Rota')+'</div>'; }
       return cab+'<div class="rh-par"><span class="rh-pos">'+(p.pos!=null?p.pos:'')+'</span><span class="rh-pnome"><b>'+esc(p.nome||'—')+'</b><small>'+esc([p.bairro,p.cidade].filter(Boolean).join(' · '))+'</small></span>'
-        +'<span class="rh-hora">'+(p.chegada?esc(rhHora(p.chegada)):'')+'</span><span class="rh-chip rh-'+s2[1]+'">'+s2[0]+'</span></div>';
+        +'<span class="rh-hora">'+(p.chegada?esc(rhHora(p.chegada)):'')+(p.dur>0?'<em class="'+(p.dur>RH_DEMORA_MIN*60000?'rh-demora':'')+'">'+rhMin(p.dur)+'</em>':'')+'</span><span class="rh-chip rh-'+s2[1]+'">'+s2[0]+'</span></div>';
     }).join('')+'</div>';
   }
   return h+'</div>';
 }
 function rhSomar(lista){
-  var t={ rotas:lista.length, total:0, feitas:0, falhas:0, faltam:0, rua:0, atras:0, fim:0 };
+  var t={ rotas:lista.length, total:0, feitas:0, falhas:0, faltam:0, rua:0, atras:0, fim:0, plan:0 };
   lista.forEach(function(r){
     t.total+=r.total||0; t.feitas+=r.feitas||0; t.falhas+=r.falhas||0; t.faltam+=(r.pendentes||0)+(r.local||0);
     if(r.status==='DELAYED') t.atras++; else if(r.status==='IN_PROGRESS') t.rua++;
+    else if(r.status==='PLANNED') t.plan++;
     else if(r.status==='EXECUTED'||r.status==='PARTIALLY_EXECUTED'||r.status==='UNEXECUTED') t.fim++;
   });
   t.pct=t.total?Math.round(t.feitas/t.total*100):0;
   return t;
 }
-function rhMini(nome, t){
-  return '<div class="rh-mini"><div class="rh-lin"><span><b>'+esc(nome)+'</b> · '+t.rotas+' rota'+(t.rotas===1?'':'s')+'</span><span class="rh-num"><b>'+t.feitas+' / '+t.total+'</b> ('+t.pct+'%)</span></div>'
-    +'<div class="rh-bar rh-bar-fina"><div style="width:'+t.pct+'%"></div></div></div>';
+var RH_ORDEM={ IN_PROGRESS:0, DELAYED:0, PLANNED:1, PARTIALLY_EXECUTED:2, UNEXECUTED:2, EXECUTED:3 };
+function rhOrdenar(lista){
+  return lista.sort(function(a,b){ return ((RH_ORDEM[a.status]!=null?RH_ORDEM[a.status]:1)-(RH_ORDEM[b.status]!=null?RH_ORDEM[b.status]:1)) || String(a.nome).localeCompare(String(b.nome),'pt-BR',{numeric:true}); });
+}
+function rhSecao(titulo, lista, t, extra){
+  return '<section class="rh-sec'+(extra||'')+'"><div class="rh-sec-cab"><h3>'+esc(titulo)+'</h3><span class="rh-sec-n">'+t.rotas+' rota'+(t.rotas===1?'':'s')+'</span>'
+    +'<span class="rh-sec-prog"><span><b>'+t.feitas+'</b> de '+t.total+' entregas</span><span class="rh-sec-bar"><i style="width:'+t.pct+'%"></i></span><b>'+t.pct+'%</b></span></div>'
+    +'<div class="rh-grid">'+(lista.length?lista.map(rhCartao).join(''):'<div class="rh-sub">Nenhuma rota hoje.</div>')+'</div></section>';
 }
 function renderRotasHoje(){
   var box=document.getElementById('rhBox'); if(!box) return;
   var todas=Object.keys(rotasHoje).map(function(k){ return Object.assign({ id:k }, rotasHoje[k]); });
   var at=rotasHojeMeta&&rotasHojeMeta.atualizadoEm?Date.parse(rotasHojeMeta.atualizadoEm):0, velho=at&&(Date.now()-at>40*60000);
-  var quando='<span'+(velho?' class="rh-err"':'')+'>Cobli às '+esc(rhHora(at))+(velho?' (desatualizado)':'')+'</span>';
+  var quando='<span'+(velho?' class="rh-err"':'')+'>atualizado do Cobli às '+esc(rhHora(at))+(velho?' (desatualizado)':'')+'</span>';
   if(!todas.length){
     box.innerHTML='<div class="rh-cab"><h2>Rotas de hoje</h2><span class="rh-sub">'+(rotasHojeMeta?'Nenhuma rota de hoje no Cobli · '+quando:'Aguardando o robô do Cobli')+'</span></div>';
     return;
   }
-  /* separa Matriz (um cartão por rota) e Filiais (um cartão por caminhão) */
+  /* separa Matriz e Filial pela placa do caminhão */
   var placasFilial={}; RH_FILIAIS.forEach(function(f){ placasFilial[f.placa]=f; });
-  var matriz=[], porFilial={};
-  todas.forEach(function(r){ var f=placasFilial[r.placa]; if(f){ (porFilial[f.placa]=porFilial[f.placa]||[]).push(r); } else matriz.push(r); });
-  var ordem={ IN_PROGRESS:0, DELAYED:0, PLANNED:1, PARTIALLY_EXECUTED:2, UNEXECUTED:2, EXECUTED:3 };
-  matriz.sort(function(a,b){ return ((ordem[a.status]!=null?ordem[a.status]:1)-(ordem[b.status]!=null?ordem[b.status]:1)) || String(a.nome).localeCompare(String(b.nome),'pt-BR',{numeric:true}); });
-  var filiais=RH_FILIAIS.filter(function(f){ return porFilial[f.placa]; }).map(function(f){ return rhJuntar(porFilial[f.placa], f.nome); });
-  var filialRotas=[]; Object.keys(porFilial).forEach(function(k){ filialRotas=filialRotas.concat(porFilial[k]); });
+  var matriz=[], filial=[];
+  todas.forEach(function(r){ (placasFilial[r.placa]?filial:matriz).push(r); });
+  rhOrdenar(matriz); rhOrdenar(filial);
+  var tg=rhSomar(todas), tm=rhSomar(matriz), tf=rhSomar(filial);
 
-  var tg=rhSomar(todas), tm=rhSomar(matriz), tf=rhSomar(filialRotas);
-  /* resumo das duas juntas */
+  /* cabeçalho: quatro quadros, um número em cada */
+  var chips=[];
+  if(tg.rua) chips.push('<span class="rh-chip rh-neutro">'+tg.rua+' na rua</span>');
+  if(tg.atras) chips.push('<span class="rh-chip rh-alerta">'+tg.atras+' atrasada'+(tg.atras>1?'s':'')+'</span>');
+  if(tg.plan) chips.push('<span class="rh-chip rh-neutro">'+tg.plan+' a sair</span>');
+  if(tg.fim) chips.push('<span class="rh-chip rh-ok">'+tg.fim+' encerrada'+(tg.fim>1?'s':'')+'</span>');
   var h='<div class="rh-cab"><h2>Rotas de hoje</h2><span class="rh-sub">'+quando+'</span></div>'
-    +'<div class="card rh-resumo"><div class="rh-res-num">'
-    +'<div><span>Entregas feitas</span><b>'+tg.feitas+' <small>/ '+tg.total+'</small></b><em>'+tg.pct+'% do dia</em></div>'
-    +'<div><span>Faltam</span><b>'+tg.faltam+'</b><em>clientes</em></div>'
-    +'<div><span>Não entregues</span><b'+(tg.falhas?' class="rh-err"':'')+'>'+tg.falhas+'</b><em>clientes</em></div>'
-    +'<div><span>Rotas</span><b>'+tg.rotas+'</b><em>'+[tg.rua?tg.rua+' na rua':'',tg.atras?'<span class="rh-err">'+tg.atras+' atrasada'+(tg.atras>1?'s':'')+'</span>':'',tg.fim?tg.fim+' encerrada'+(tg.fim>1?'s':''):''].filter(Boolean).join(' · ')+'</em></div>'
-    +'</div><div class="rh-bar"><div style="width:'+tg.pct+'%"></div>'+(tg.pct>0&&tg.pct<100?'<i style="left:'+tg.pct+'%"></i>':'')+'</div>'
-    +'<div class="rh-res-minis">'+rhMini('Matriz', tm)+(filialRotas.length?rhMini('Filial · Cruz Alta', tf):'')+'</div></div>';
-  /* Matriz e Filial lado a lado */
-  h+='<div class="rh-colunas'+(filiais.length?'':' rh-so-matriz')+'">'
-    +'<section class="rh-col"><div class="rh-col-cab"><h3>Matriz</h3><span>'+tm.rotas+' rota'+(tm.rotas===1?'':'s')+' · '+tm.feitas+' de '+tm.total+' entregas</span></div>'
-    +'<div class="rh-grid">'+(matriz.length?matriz.map(rhCartao).join(''):'<div class="rh-sub">Nenhuma rota da Matriz hoje.</div>')+'</div></section>';
-  if(filiais.length){
-    h+='<section class="rh-col rh-col-filial"><div class="rh-col-cab"><h3>Filial · Cruz Alta</h3><span>'+tf.rotas+' rota'+(tf.rotas===1?'':'s')+' · '+tf.feitas+' de '+tf.total+' entregas</span></div>'
-      +'<div class="rh-grid rh-grid-1">'+filiais.map(rhCartao).join('')+'</div></section>';
-  }
-  box.innerHTML=h+'</div>';
+    +'<div class="rh-kpis">'
+    +'<div class="card rh-kpi rh-kpi-dest"><span class="rh-kpi-lab">Entregas do dia</span><div class="rh-kpi-val">'+tg.pct+'<small>%</small></div>'
+      +'<span class="rh-kpi-sub"><b>'+tg.feitas+'</b> de '+tg.total+' clientes</span><div class="rh-bar"><div style="width:'+tg.pct+'%"></div></div></div>'
+    +'<div class="card rh-kpi"><span class="rh-kpi-lab">Faltam</span><div class="rh-kpi-val">'+tg.faltam+'</div><span class="rh-kpi-sub">clientes a visitar</span></div>'
+    +'<div class="card rh-kpi'+(tg.falhas?' rh-kpi-erro':'')+'"><span class="rh-kpi-lab">Não entregues</span><div class="rh-kpi-val">'+tg.falhas+'</div><span class="rh-kpi-sub">'+(tg.falhas?'veja os motivos em cada rota':'nenhuma até agora')+'</span></div>'
+    +'<div class="card rh-kpi"><span class="rh-kpi-lab">Rotas</span><div class="rh-kpi-val">'+tg.rotas+'</div><div class="rh-kpi-chips">'+chips.join('')+'</div></div>'
+    +'</div>';
+  /* Matriz em cima; divisória; Filial embaixo */
+  h+=rhSecao('Matriz', matriz, tm);
+  if(filial.length) h+='<hr class="rh-div">'+rhSecao(RH_FILIAIS[0].nome, filial, tf, ' rh-sec-filial');
+  box.innerHTML=h;
 }
 function renderPainel(){
   renderRotasHoje();
