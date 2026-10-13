@@ -839,10 +839,9 @@ html[data-pal="brasa"] .side::-webkit-scrollbar{display:none}
     <button class="navbtn" data-p="estoque" onclick="nav('estoque')"><span class="side-ico">◉</span><span class="lbl">Pneus e óleos</span></button>
     <button class="navbtn gestao-only" data-p="custos" onclick="nav('custos')"><span class="side-ico">◷</span><span class="lbl">Custos e consumo</span></button>
     <div class="side-sec lbl">Expedição</div>
-    <button class="navbtn" data-p="caixas" onclick="nav('caixas')"><span class="side-ico">▤</span><span class="lbl">Caixas</span></button>
+    <button class="navbtn" data-p="caixas" onclick="nav('caixas')"><span class="side-ico">▤</span><span class="lbl">Caixas Conversor</span></button>
     <button class="navbtn cobli-only" data-p="cobli" onclick="nav('cobli')" style="display:none"><span class="side-ico">⇪</span><span class="lbl">Cobli Conversor</span></button>
     <div class="side-sec lbl">Rotas</div>
-    <button class="navbtn gestao-only" data-p="rotas" onclick="nav('rotas')"><span class="side-ico">⌖</span><span class="lbl">Rotas</span></button>
     <button class="navbtn gestao-only" data-p="roteirizar" onclick="nav('roteirizar')"><span class="side-ico">⤳</span><span class="lbl">Roteirizar</span></button>
     <button class="navbtn admin-only" data-p="territorios" onclick="nav('territorios')" style="display:none"><span class="side-ico">◈</span><span class="lbl">Territórios</span></button>
     <div class="side-sec lbl">Ajustes</div>
@@ -1310,7 +1309,7 @@ const TITLES={
   mov:['Lançamentos','Odômetro, abastecimento, óleo, manutenção e pneu'],
   chk:['Checklist','Inspeção semanal por tipo de veículo'],
   docs:['Documentos','IPVA, licenciamento, seguro, CNH'],
-  caixas:['Conversão de caixas','O PDF do carregamento vira número de caixas'],
+  caixas:['Caixas Conversor','O PDF do carregamento vira número de caixas'],
   estoque:['Pneus e óleos','Estoque da oficina — o que tem em casa'],
   custos:['Custos e consumo','R$/km, R$/litro e km/L por veículo'],
   rotas:['Rotas','O dia de cada veículo: saída, paradas e volta, pelo Cobli'],
@@ -8360,7 +8359,8 @@ window.sair=function(){ signOut(auth).catch(function(e){ console.warn(e); }); };
 document.addEventListener('keydown', function(e){
   if(e.key==='Escape' && document.querySelector('#modal-host .mask')){ e.preventDefault(); fecharModal(); }
 });
-try{ var lp=localStorage.getItem('mc_frota_page'); if(lp&&TITLES[lp]) setTimeout(function(){ nav(lp); },0); }catch(e){}
+try{ var lp=localStorage.getItem('mc_frota_page'); if(lp==='rotas') lp='roteirizar';   /* a tela Rotas saiu do menu */
+     if(lp&&TITLES[lp]) setTimeout(function(){ nav(lp); },0); }catch(e){}
 // nav() já barra as telas de gestão, então a página salva não abre indevidamente
 </script>
 <script src="https://monte-castelo-ind.github.io/voltar.js"></script>
