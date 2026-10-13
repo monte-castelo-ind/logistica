@@ -2,10 +2,8 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<script>(function(){try{var h=document.documentElement,m=localStorage.getItem('mc_tema');
-if(m==='escuro'){h.setAttribute('data-theme','dark');h.setAttribute('data-pal','ui');}
-else{h.setAttribute('data-theme','light');var p=localStorage.getItem('mc_pal');if(p)h.setAttribute('data-pal',p);}
-if(localStorage.getItem('mc_menu')!=='lateral')h.setAttribute('data-menu','topo');}catch(e){}})();</script>
+<script>/* Visual padrão da Logística: grafite e laranja, menu lateral com seções (igual para todos) */
+document.documentElement.setAttribute('data-theme','dark');document.documentElement.setAttribute('data-pal','brasa');</script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Frota · Monte Castelo</title>
@@ -724,6 +722,45 @@ html[data-menu="topo"] .topbar .frota-mov{display:none!important}
   html[data-menu="topo"] .mtopo{display:none}
   html[data-menu="topo"] .side{display:flex}
 }
+
+/* ===== Visual padrão da Logística: grafite e laranja =====
+   Igual para todos. Menu lateral sempre aberto (250px), com seções; item
+   ativo em laranja preenchido. Cores de status separadas do laranja da
+   marca (pendente em âmbar-amarelado, para não confundir com o laranja). */
+html[data-pal="brasa"]{
+  --bg:#0f0f11; --card:#19191c; --card-2:#222226; --text:#f1f1f3; --muted:#8d8d95;
+  --border:#2a2a2f; --sidebar:#151517; --side-active:#ff6a13; --side-active-text:#ffffff;
+  --primary:#ff6a13; --amber:#e8b33f; --green:#3fbf86; --red:#f0605a; --blue:#5aa9ff; --purple:#a78bfa;
+  --shadow:none;
+}
+html[data-pal="brasa"] body{background:var(--bg)}
+html[data-pal="brasa"] .card{border-radius:16px;border-color:var(--border)}
+html[data-pal="brasa"] .btn{border-radius:10px}
+html[data-pal="brasa"] .btn:not(.btn-ghost){box-shadow:0 6px 18px rgba(255,106,19,.25)}
+html[data-pal="brasa"] input,html[data-pal="brasa"] select,html[data-pal="brasa"] textarea{background:#121214;border-color:var(--border);border-radius:10px}
+html[data-pal="brasa"] input:focus,html[data-pal="brasa"] select:focus,html[data-pal="brasa"] textarea:focus{border-color:#ff6a13}
+html[data-pal="brasa"] .mtopo,html[data-pal="brasa"] .pinbtn,html[data-pal="brasa"] .mc-topo-btn{display:none!important}
+.side-sec{display:flex;align-items:center;gap:10px;padding:12px 8px 4px;font-size:12px;color:var(--muted);white-space:nowrap}
+.side-sec::after{content:'';flex:1;height:1px;background:var(--border)}
+.cobli-card{margin:10px 2px 12px;padding:12px 14px;border-radius:14px;background:var(--card);border:1px solid var(--border);display:flex;flex-direction:column;gap:6px}
+.cobli-card b{font-size:13.5px}
+.cobli-card span{font-size:11.5px;color:var(--muted);line-height:1.45;white-space:normal}
+.cobli-card .btn{margin-top:6px;width:100%}
+@media(min-width:901px){
+  html[data-pal="brasa"] .side,html[data-pal="brasa"] .side:hover,html[data-pal="brasa"] .side.pin{width:250px;padding:22px 14px;box-shadow:none}
+  html[data-pal="brasa"] .shell>main,html[data-pal="brasa"] .side ~ main,html[data-pal="brasa"] .side.pin ~ main{margin-left:250px}
+  html[data-pal="brasa"] .side .lbl{opacity:1}
+  html[data-pal="brasa"] .side-logo .brand-logo-box{display:block}
+  html[data-pal="brasa"] .side-logo .brand-cap{display:block;text-align:left;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:4px}
+  html[data-pal="brasa"] .side-logo .logo-mini{display:none}
+  html[data-pal="brasa"] .side > *{flex-shrink:0}             /* nada é espremido: se não couber, o menu rola */
+  html[data-pal="brasa"] .navbtn{min-height:38px;border-radius:10px;padding:8px 12px;gap:12px}
+  html[data-pal="brasa"] .navbtn.on{background:#ff6a13;color:#ffffff;box-shadow:0 6px 20px rgba(255,106,19,.35)}
+  html[data-pal="brasa"] .side-foot{margin-top:auto}
+}
+@media(max-width:900px){
+  .side-sec,.cobli-card{display:none!important}
+}
 </style>
 </head>
 <body>
@@ -778,40 +815,35 @@ html[data-menu="topo"] .topbar .frota-mov{display:none!important}
       <div class="brand-logo-box"></div>
       <div class="brand-cap">Frota</div>
     </div>
+    <div class="side-sec lbl">Menu</div>
     <button class="navbtn on gestao-only" data-p="painel" onclick="nav('painel')"><span class="side-ico">◷</span><span class="lbl">Painel</span></button>
     <button class="navbtn" data-p="veiculos" onclick="nav('veiculos')"><span class="side-ico">⛟</span><span class="lbl">Veículos</span></button>
     <button class="navbtn" data-p="mov" onclick="nav('mov')"><span class="side-ico">⇅</span><span class="lbl">Lançamentos</span></button>
     <button class="navbtn" data-p="chk" onclick="nav('chk')"><span class="side-ico">☑</span><span class="lbl">Checklist</span><span class="cnt" id="cntChk" style="display:none">0</span></button>
     <button class="navbtn" data-p="docs" onclick="nav('docs')"><span class="side-ico">▣</span><span class="lbl">Documentos</span></button>
-    <button class="navbtn" data-p="caixas" onclick="nav('caixas')"><span class="side-ico">▤</span><span class="lbl">Caixas</span></button>
     <button class="navbtn" data-p="estoque" onclick="nav('estoque')"><span class="side-ico">◉</span><span class="lbl">Pneus e óleos</span></button>
     <button class="navbtn gestao-only" data-p="custos" onclick="nav('custos')"><span class="side-ico">◷</span><span class="lbl">Custos e consumo</span></button>
+    <div class="side-sec lbl">Expedição</div>
+    <button class="navbtn" data-p="caixas" onclick="nav('caixas')"><span class="side-ico">▤</span><span class="lbl">Caixas</span></button>
+    <button class="navbtn cobli-only" data-p="cobli" onclick="nav('cobli')" style="display:none"><span class="side-ico">⇪</span><span class="lbl">Cobli Conversor</span></button>
+    <div class="side-sec lbl">Rotas</div>
     <button class="navbtn gestao-only" data-p="rotas" onclick="nav('rotas')"><span class="side-ico">⌖</span><span class="lbl">Rotas</span></button>
     <button class="navbtn gestao-only" data-p="roteirizar" onclick="nav('roteirizar')"><span class="side-ico">⤳</span><span class="lbl">Roteirizar</span></button>
-    <button class="navbtn cobli-only" data-p="cobli" onclick="nav('cobli')" style="display:none"><span class="side-ico">⇪</span><span class="lbl">Cobli Conversor</span></button>
     <button class="navbtn admin-only" data-p="territorios" onclick="nav('territorios')" style="display:none"><span class="side-ico">◈</span><span class="lbl">Territórios</span></button>
+    <div class="side-sec lbl">Ajustes</div>
     <button class="navbtn config-only" data-p="config" onclick="nav('config')"><span class="side-ico">⚙</span><span class="lbl">Configurações</span></button>
     <div class="side-foot">
+      <div class="cobli-card cobli-only" style="display:none">
+        <b>Carga para o Cobli</b>
+        <span>Pedidos do ERP → planilha com endereços.</span>
+        <button class="btn" onclick="nav('cobli')">Abrir conversor</button>
+      </div>
       <div class="uline">
         <div class="uav" id="uavatar">?</div>
         <div class="lbl" style="min-width:0"><div class="uname" id="uname">—</div><div class="urole" id="urole">—</div></div>
       </div>
-      <div class="paleta-box lbl">
-        <div class="paleta-lab">Paleta</div>
-        <div class="paleta-row">
-          <button class="pbola" data-pal=""        onclick="setPaleta('')"        title="Verde (original)" style="--a:#2fae7d;--b:#0f111a"></button>
-          <button class="pbola" data-pal="mc"      onclick="setPaleta('mc')"      title="Monte Castelo" style="--a:#F26B1F;--b:#1A1A1A"></button>
-          <button class="pbola" data-pal="aco"     onclick="setPaleta('aco')"     title="Aço" style="--a:#4C8FBF;--b:#12161C"></button>
-          <button class="pbola" data-pal="ambar"   onclick="setPaleta('ambar')"   title="Âmbar" style="--a:#D9A441;--b:#16130F"></button>
-          <button class="pbola" data-pal="indigo"  onclick="setPaleta('indigo')"  title="Índigo" style="--a:#7B6CF0;--b:#101120"></button>
-          <button class="pbola" data-pal="vinho"   onclick="setPaleta('vinho')"   title="Vinho" style="--a:#C4544F;--b:#181113"></button>
-          <button class="pbola" data-pal="ui"      onclick="setPaleta('ui')"      title="Neutro (estilo novo, em teste)" style="--a:#171717;--b:#f5f5f5"></button>
-        </div>
-        <button class="btn btn-sm btn-ghost" onclick="setMenuTopo(true)" style="width:100%;margin-top:8px" title="Trocar o menu lateral por uma barra no topo">⇡ Menu no topo</button>
-      </div>
       <div style="display:flex;gap:6px;padding:0 2px">
-        <button class="btn btn-sm btn-ghost" onclick="toggleTema()" style="flex:1;padding:7px 0" title="Claro / escuro">◐</button>
-        <button class="btn btn-sm btn-ghost lbl" onclick="sair()" style="flex:2">Sair</button>
+        <button class="btn btn-sm btn-ghost" onclick="sair()" style="flex:1">Sair</button>
       </div>
     </div>
   </nav>
@@ -1302,14 +1334,9 @@ function diasAte(dt){ if(!dt) return null; return diasEntre(hoje(), dt); }
    Chaves: mc_tema ('claro'|'escuro') e mc_pal (paleta do claro). */
 function modoAtual(){ return document.documentElement.getAttribute('data-theme')==='dark' ? 'escuro' : 'claro'; }
 function aplicarModo(m){
+  /* a Logística tem visual fixo (grafite e laranja): não segue o claro/escuro nem as paletas dos outros apps */
   var h=document.documentElement;
-  if(m==='escuro'){ h.setAttribute('data-theme','dark'); h.setAttribute('data-pal','ui'); }
-  else {
-    h.setAttribute('data-theme','light');
-    var p=''; try{ p=localStorage.getItem('mc_pal')||''; }catch(e){}
-    if(p) h.setAttribute('data-pal',p); else h.removeAttribute('data-pal');
-  }
-  try{ localStorage.setItem('mc_tema', m); }catch(e){}
+  h.setAttribute('data-theme','dark'); h.setAttribute('data-pal','brasa'); h.removeAttribute('data-menu');
   marcarPaletas();
   var lua=document.getElementById('mtopoLua');
   if(lua){ lua.textContent = m==='escuro' ? '☀' : '☾'; lua.title = m==='escuro' ? 'Voltar ao modo claro' : 'Modo escuro'; }
@@ -4474,7 +4501,7 @@ window.setMenuTopo=function(on){
   document.querySelectorAll('.mgrupo.aberto').forEach(function(x){ x.classList.remove('aberto'); });
   menuTopoAtualizar();
 };
-(function(){ try{ if(localStorage.getItem('mc_menu')!=='lateral') document.documentElement.setAttribute('data-menu','topo'); }catch(e){} })();
+/* menu no topo desligado na Logística: o padrão dela é o menu lateral com seções */
 
 function render(){
   setTimeout(function(){ if(window.menuTopoAtualizar) menuTopoAtualizar(); },0);
