@@ -814,6 +814,7 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
 .rh-cam span{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--c,#555);color:#fff;font-size:12px}
 .rh-cam.velho{opacity:.6;border-style:dashed}
 .rh-cam.outro{--c:#7a7f8c;opacity:.85}
+.rh-feita{width:16px;height:16px;border-radius:50%;border:2px solid #fff;color:#fff;font:700 9px/12px 'Archivo',system-ui,sans-serif;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.4)}
 .rh-gm-lab{background:#fff;padding:1px 6px;border-radius:999px;box-shadow:0 1px 4px rgba(0,0,0,.35)}
 .rha-abas{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
 .rha-mut{color:var(--muted)}
@@ -1040,6 +1041,7 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
         <div class="rh-cab"><h2>Mapa da frota agora</h2><span class="rh-sub" id="rhMapaInfo"></span>
           <span class="tools rh-mapa-tools" id="rhMapaCtr">
             <select id="rhMapaRota" onchange="rhMapaSet('rota',this.value)"></select>
+            <label class="rh-sub"><input type="checkbox" id="rhMapaFei" onchange="rhMapaSet('feitas',this.checked)"> Clientes atendidos</label>
             <label class="rh-sub"><input type="checkbox" id="rhMapaPar" onchange="rhMapaSet('paradas',this.checked)"> Paradas que faltam</label>
             <label class="rh-sub"><input type="checkbox" id="rhMapaOut" onchange="rhMapaSet('outros',this.checked)"> Veículos sem rota</label>
             <button class="btn btn-sm btn-ghost" onclick="rhMapaCentrar()">Enquadrar</button>
@@ -5942,7 +5944,7 @@ function renderRotasAnalise(){
    O mapa nasce uma vez e só troca as camadas a cada atualização, para não
    perder o zoom de quem está olhando. */
 var rhPos=null, rhMapa=null, rhMapaGrupo=null, rhMapaEnquadrou=false;
-var rhMapaOpc={ aberto:true, paradas:true, outros:false, rota:'' };
+var rhMapaOpc={ aberto:true, paradas:true, feitas:true, outros:false, rota:'' };
 try{ var _mo=JSON.parse(localStorage.getItem('mc_rh_mapa')||'null'); if(_mo) Object.assign(rhMapaOpc,_mo); }catch(e){}
 function rhMapaSalvar(){ try{ localStorage.setItem('mc_rh_mapa', JSON.stringify(rhMapaOpc)); }catch(e){} }
 window.rhMapaSet=function(k,v){ rhMapaOpc[k]=v; rhMapaSalvar(); if(k==='rota') rhMapaEnquadrou=false; rhMapaAtualizar(rhMapaUltima||[], true); };
@@ -5966,6 +5968,7 @@ function rhMapaAtualizar(lista, forcar){
   }
   sel.value=rhMapaOpc.rota; if(sel.value!==rhMapaOpc.rota){ rhMapaOpc.rota=''; sel.value=''; }
   document.getElementById('rhMapaPar').checked=!!rhMapaOpc.paradas;
+  document.getElementById('rhMapaFei').checked=!!rhMapaOpc.feitas;
   document.getElementById('rhMapaOut').checked=!!rhMapaOpc.outros;
   document.getElementById('rhMapaBtn').textContent=rhMapaOpc.aberto?'Esconder mapa':'Mostrar mapa';
   var box=document.getElementById('rhMapa'), ctr=document.getElementById('rhMapaCtr');
@@ -5978,7 +5981,9 @@ function rhMapaAtualizar(lista, forcar){
     var cor=rhMapaCorDe(i), v=vs[r.placa]; usadas[r.placa]=1;
     var falta=(r.paradas||[]).filter(function(p){ return (p.sit==='pendente'||p.sit==='local') && p.lat!=null && p.lng!=null; })
       .sort(function(a,b){ return (a.pos||0)-(b.pos||0); });
-    var R={ cor:cor, r:r, v:v, falta:rhMapaOpc.paradas?falta:[], trilha:r.trilha?rhDecodificar(r.trilha):[] };
+    var feitas=(r.paradas||[]).filter(function(p){ return (p.sit==='feita'||p.sit==='falhou') && p.lat!=null && p.lng!=null; });
+    var R={ cor:cor, r:r, v:v, falta:rhMapaOpc.paradas?falta:[], feitas:rhMapaOpc.feitas?feitas:[], trilha:r.trilha?rhDecodificar(r.trilha):[] };
+    R.feitas.forEach(function(p){ D.pts.push([p.lat,p.lng]); });
     R.trilha.forEach(function(q){ D.pts.push(q); });
     R.falta.forEach(function(p){ D.pts.push([p.lat,p.lng]); });
     if(v){
@@ -6010,6 +6015,15 @@ function rhMapaAtualizar(lista, forcar){
       R.agrupado=g.length;
     });
   });
+  var popFeita=function(R,p){
+    var oa=p.aid && R.r.obsApp && R.r.obsApp[p.aid], obs=p.obs || (oa && oa.texto) || '';
+    return '<div class="rt-pop"><b>'+esc(p.nome||'—')+'</b><br>'+esc(R.r.nome||'')+' · parada '+(p.pos!=null?p.pos:'')
+      +(p.bairro||p.cidade?'<br>'+esc([p.bairro,p.cidade].filter(Boolean).join(' · ')):'')
+      +'<br>'+(p.sit==='falhou'?'<b style="color:#c62828">Não entregue</b>':'<b style="color:#1b8a4b">Entregue</b>')
+      +(p.chegada?' · chegou '+esc(rhHora(p.chegada)):'')+(p.saida?' · saiu '+esc(rhHora(p.saida)):'')
+      +(p.dur>0?'<br>Tempo no cliente: <b'+(p.dur>RH_DEMORA_MIN*60000?' style="color:#c62828"':'')+'>'+rhMin(p.dur)+'</b>':'')
+      +(p.prev?'<br>Previsto '+esc(rhHora(p.prev)):'')+(obs?'<br>Motivo: “'+esc(obs)+'”':'')+'</div>'; };
+  D.popFeita=popFeita;
   var popParada=function(R,p){ return '<div class="rt-pop"><b>'+esc(p.nome||'—')+'</b><br>'+esc(R.r.nome||'')+' · parada '+(p.pos!=null?p.pos:'')
     +(p.bairro||p.cidade?'<br>'+esc([p.bairro,p.cidade].filter(Boolean).join(' · ')):'')
     +(p.prev?'<br>Previsto '+esc(rhHora(p.prev)):'')+(p.sit==='local'?'<br><b>Caminhão no local agora</b>':'')+'</div>'; };
@@ -6049,6 +6063,13 @@ function rhMapaGoogle(box, D, popParada){
   D.rotas.forEach(function(R){
     if(R.trilha.length>1) rhGM.objs.push(new google.maps.Polyline({ map:M, path:R.trilha.map(function(q){ return { lat:q[0], lng:q[1] }; }),
       strokeColor:R.cor, strokeOpacity:.9, strokeWeight:5, zIndex:2 }));
+    R.feitas.forEach(function(p){
+      var falhou=p.sit==='falhou';
+      var m=new google.maps.Marker({ map:M, position:{ lat:p.lat, lng:p.lng }, zIndex:80, title:p.nome||'',
+        label:{ text:falhou?'✕':'✓', color:'#fff', fontSize:'10px', fontWeight:'700' },
+        icon:{ path:google.maps.SymbolPath.CIRCLE, scale:7, fillColor:falhou?'#d93025':R.cor, fillOpacity:falhou?1:.85, strokeColor:'#fff', strokeWeight:2 } });
+      pop(m, D.popFeita(R,p)); rhGM.objs.push(m);
+    });
     if(R.falta.length){
       var linha=(R.v?[{ lat:R.v.lat, lng:R.v.lng }]:[]).concat(R.falta.map(function(p){ return { lat:p.lat, lng:p.lng }; }));
       if(linha.length>1) rhGM.objs.push(new google.maps.Polyline({ map:M, path:linha, strokeOpacity:0, zIndex:1,
@@ -6093,6 +6114,12 @@ function rhMapaLeaflet(box, D, popParada){
       .bindTooltip('Sede').addTo(rhMapaGrupo);
     D.rotas.forEach(function(R){
       if(R.trilha.length>1) L.polyline(R.trilha, { color:R.cor, weight:4, opacity:.85 }).addTo(rhMapaGrupo);
+      R.feitas.forEach(function(p){
+        var falhou=p.sit==='falhou';
+        L.marker([p.lat,p.lng], { icon:L.divIcon({ className:'', iconSize:[16,16], iconAnchor:[8,8],
+            html:'<div class="rh-feita" style="background:'+(falhou?'#d93025':R.cor)+'">'+(falhou?'✕':'✓')+'</div>' }) })
+          .bindPopup(D.popFeita(R,p)).addTo(rhMapaGrupo);
+      });
       if(R.falta.length){
         var linha=(R.v?[[R.v.lat,R.v.lng]]:[]).concat(R.falta.map(function(p){ return [p.lat,p.lng]; }));
         if(linha.length>1) L.polyline(linha, { color:R.cor, weight:3, opacity:.75, dashArray:'6 6' }).addTo(rhMapaGrupo);
