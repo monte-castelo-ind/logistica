@@ -803,6 +803,11 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
 .rh-cab{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
 .rh-cab h2{font-size:16px;margin:0}
 .rh-sub{font-size:12.5px;color:var(--muted)}
+.rha-abas{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
+.rha-mut{color:var(--muted)}
+.rha-ok{color:var(--green)}
+.rha-barra{display:inline-block;width:60px;height:6px;border-radius:3px;background:var(--card-2);margin-right:7px;vertical-align:middle;overflow:hidden}
+.rha-barra i{display:block;height:100%;background:var(--primary)}
 .rh-err{color:var(--red)}
 .rh-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;align-items:start}
 .rh-card{padding:16px;border-radius:16px}
@@ -1229,7 +1234,21 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
 
     <!-- HISTÓRICO DE ROTAS: rotas passadas do Cobli, por semana -->
     <div class="page" id="page-rotashist">
-      <div class="tools">
+      <div class="rha-abas" style="margin-bottom:12px">
+        <button class="btn btn-sm" id="rhh-b-semana" onclick="rhhSetModo('semana')">Por semana</button>
+        <button class="btn btn-sm btn-ghost" id="rhh-b-analise" onclick="rhhSetModo('analise')">Análises</button>
+      </div>
+      <div class="tools" id="rha-tools" style="display:none">
+        <select id="rha-sem" onchange="rhaSet('semanas',this.value)">
+          <option value="4">Últimas 4 semanas</option><option value="8" selected>Últimas 8 semanas</option>
+          <option value="13">Últimos 3 meses</option><option value="26">Últimos 6 meses</option><option value="52">Último ano</option>
+        </select>
+        <select id="rha-filtro" onchange="rhaSet('filtro',this.value)">
+          <option value="">Matriz e Filial</option><option value="matriz">Só Matriz</option><option value="filial">Só Filial</option>
+        </select>
+        <button class="btn btn-sm btn-ghost" onclick="rhaCarregar(true)">Atualizar</button>
+      </div>
+      <div class="tools" id="rhh-tools">
         <button class="btn btn-sm btn-ghost" onclick="rhhSemana(-1)" title="Semana anterior">‹</button>
         <span id="rhh-sem" style="font-weight:600;font-size:13px;white-space:nowrap"></span>
         <button class="btn btn-sm btn-ghost" onclick="rhhSemana(1)" title="Semana seguinte">›</button>
@@ -1326,6 +1345,19 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
         <div class="tools" style="margin-bottom:10px"><button class="btn btn-sm" onclick="cbBaixar()">⬇ Baixar planilha do Cobli</button></div>
         <div id="cb-tabela"></div>
       </div>
+      <div class="card" style="max-width:1100px;margin-top:14px">
+        <div class="klabel">3 · Ou envie direto para o Cobli</div>
+        <div class="fhint" style="margin:6px 0 10px">Cria a rota no Cobli sem baixar planilha, na ordem da tabela acima. A partida e a volta são a sede (Roteirizar → base). O motorista que estiver no veículo é vinculado sozinho.</div>
+        <div class="tools">
+          <input type="text" id="cbe-nome" placeholder="Nome da rota (ex.: 2F Canoas)" style="min-width:220px">
+          <select id="cbe-veic"></select>
+          <label class="rh-sub">Saída <input type="datetime-local" id="cbe-saida" style="width:auto;min-width:0"></label>
+          <label class="rh-sub">Volta até <input type="time" id="cbe-fim" value="19:00" style="width:auto;min-width:0"></label>
+          <label class="rh-sub">Min. por parada <input type="number" id="cbe-min" value="10" min="1" max="120" style="width:70px;min-width:0"></label>
+          <button class="btn btn-sm" id="cbe-btn" onclick="cbEnviarCobli()">⇪ Enviar para o Cobli</button>
+        </div>
+        <div id="cbe-msg" class="rh-sub" style="margin-top:8px;line-height:1.6"></div>
+      </div>
     </div>
     <div class="page" id="page-config">
       <div class="card caixas-only" style="max-width:860px;margin-bottom:14px">
@@ -1408,12 +1440,14 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getFirestore, collection, onSnapshot, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, getDocs, query, where, orderBy, limit, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const cfgFB = { apiKey:"AIzaSyCH_t074MvkJn-qVMvCtLfEMaQHf_e_d7M", authDomain:"manutencao-comodato.firebaseapp.com", projectId:"manutencao-comodato", storageBucket:"manutencao-comodato.firebasestorage.app", messagingSenderId:"89709396101", appId:"1:89709396101:web:22ee225ffa806e07a269ec" };
 const appFB = initializeApp(cfgFB);
 const dbC = getFirestore(appFB);
 const auth = getAuth(appFB);
+const fnC = getFunctions(appFB, 'southamerica-east1');   /* funções do Cobli (repo Cobli/functions) */
 
 /* ============ ESTADO ============ */
 var pagina='painel', sessaoEmail='', sessaoUid='', sessaoNome='', ehAdmin=false, podeLancar=false;
@@ -4210,7 +4244,81 @@ function cbResumo(){
     +(ok===n ? '<span style="color:var(--green)">✓ todos com endereço</span>' : '<span style="color:var(--amber)">⚠ '+(n-ok)+' sem endereço completo — preencha antes de baixar</span>') : '';
 }
 
+function cbePintar(){
+  var sel=document.getElementById('cbe-veic'); if(!sel) return;
+  var at=sel.value, it=ativos().slice().sort(function(a,b){ return String(a.placa).localeCompare(String(b.placa)); });
+  var mk=it.map(function(v){ return v.firestoreId; }).join('|');
+  if(sel.dataset.mk!==mk){
+    sel.innerHTML='<option value="">Sem veículo (vincular no Cobli)</option>'+it.map(function(v){
+      return '<option value="'+esc(rtPlaca(v.placa))+'">'+esc(v.placa+(v.apelido?' · '+v.apelido:''))+'</option>'; }).join('');
+    sel.dataset.mk=mk; if(at) sel.value=at;
+  }
+  var sd=document.getElementById('cbe-saida');
+  if(sd && !sd.value){ var d=new Date(); d.setDate(d.getDate()+(d.getHours()>=12?1:0)); d.setHours(7,0,0,0);
+    sd.value=rhIso(d)+'T07:00'; }
+}
+/* "Rua X, 123 - fundos" → rua e número */
+function cbeEndereco(t){
+  var m=String(t||'').match(/^(.*?),\s*(\d+[A-Za-z]?)\s*(?:[-–,]\s*(.*))?$/);
+  return m ? { street_name:m[1].trim(), number:m[2], complement:(m[3]||'').trim() } : { street_name:String(t||'').trim() };
+}
+function cbePos(r){
+  var id=r.clienteId; if(!id) return null;
+  var f=(cb.fichas||{})[id]; if(f && f.posManual && f.posManual.lat!=null) return { latitude:f.posManual.lat, longitude:f.posManual.lng };
+  var c=(cb.base||{})[id]; if(c && c.la!=null && (c.p==='ok' || c.p==='aprox')) return { latitude:c.la, longitude:c.lo };
+  return null;
+}
+/* janela "08:00 - 12:00" (ou várias: "08:00-12:00 / 14:00-18:00") no dia da rota */
+function cbeJanelas(txt, dia){
+  var hs=String(txt||'').match(/\d{1,2}[:h]\d{2}/g)||[], out=[];
+  var ms=function(h){ var p=h.split(/[:h]/); var d=new Date(dia); d.setHours(+p[0], +p[1], 0, 0); return d.getTime(); };
+  for(var i=0;i+1<hs.length;i+=2){ var a=ms(hs[i]), b=ms(hs[i+1]); if(b>a) out.push({ start_time:a, end_time:b }); }
+  return out;
+}
+window.cbEnviarCobli=function(){
+  var msg=document.getElementById('cbe-msg'), btn=document.getElementById('cbe-btn');
+  if(!cb.linhas.length){ msg.innerHTML='<span class="rh-err">Cole e converta os pedidos primeiro.</span>'; return; }
+  var base=rzBase();
+  if(!base){ msg.innerHTML='<span class="rh-err">Falta a posição da sede: cadastre a base em Roteirizar antes de enviar.</span>'; return; }
+  var nome=document.getElementById('cbe-nome').value.trim(), placa=document.getElementById('cbe-veic').value;
+  var sv=document.getElementById('cbe-saida').value, fv=document.getElementById('cbe-fim').value||'19:00';
+  var minP=Math.max(1, Number(document.getElementById('cbe-min').value)||10);
+  if(!nome){ msg.innerHTML='<span class="rh-err">Dê um nome para a rota.</span>'; return; }
+  var ini=new Date(sv); if(!sv || isNaN(ini)){ msg.innerHTML='<span class="rh-err">Escolha o dia e a hora de saída.</span>'; return; }
+  var fim=new Date(ini); var fp=fv.split(':'); fim.setHours(+fp[0], +fp[1], 0, 0); if(fim<=ini) fim.setDate(fim.getDate()+1);
+  if(fim-ini>24*3600000){ msg.innerHTML='<span class="rh-err">A rota pode ter no máximo 24 h.</span>'; return; }
+  var semLocal=cb.linhas.filter(function(r){ return !r.endereco && !cbePos(r); });
+  if(semLocal.length){ msg.innerHTML='<span class="rh-err">'+semLocal.length+' parada'+(semLocal.length>1?'s':'')+' sem endereço nem posição: '+esc(semLocal.slice(0,5).map(function(r){ return r.nome; }).join(', '))+'. Preencha na tabela.</span>'; return; }
+  var services=cb.linhas.map(function(r,i){
+    var e=cbeEndereco(r.endereco), loc={ address:{ country:'Brasil', state:'RS', city:r.cidadeOut||r.cidade||'', neighborhood:r.bairroOut||'', postal_code:r.cep||'' } };
+    Object.keys(e).forEach(function(k){ if(e[k]) loc.address[k]=e[k]; });
+    Object.keys(loc.address).forEach(function(k){ if(!loc.address[k]) delete loc.address[k]; });
+    var pos=cbePos(r); if(pos) loc.coordinates=pos;
+    var instr=[r.instrucoes, r.carga?('Carga '+r.carga+' kg'):''].filter(Boolean).join(' · ');
+    var sv2={ location:loc, name:String(r.nome||'Cliente').slice(0,100), position:i+1, duration:minP*60000,
+      external_id:(r.pedidos||[]).filter(Boolean).join(',') || undefined };
+    if(instr) sv2.instructions=instr.slice(0,1000);
+    var jan=cbeJanelas(r.janela, ini); if(jan.length) sv2.time_windows=jan;
+    var tel=String(r.telefone||'').replace(/\D/g,''); if(tel.length>=10) sv2.phone_number=(tel.length<=11?'55':'')+tel;
+    if(!sv2.external_id) delete sv2.external_id;
+    return sv2;
+  });
+  var sede={ coordinates:{ latitude:base.lat, longitude:base.lng } };
+  var rota={ name:nome, start_time:ini.getTime(), end_time:fim.getTime(), start_location:sede, end_location:sede, services:services };
+  if(placa) rota.placa=placa;
+  if(!confirm('Criar no Cobli a rota "'+nome+'" com '+services.length+' parada'+(services.length>1?'s':'')+(placa?' no veículo '+placa:' sem veículo')+', saída '+ini.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+'?')) return;
+  btn.disabled=true; msg.innerHTML='Enviando para o Cobli…';
+  httpsCallable(fnC, 'cobliCriarRotas')({ rotas:[rota] }).then(function(res){
+    var c=(res.data&&res.data.criadas)||[];
+    msg.innerHTML='<span class="rha-ok">✓ Rota criada no Cobli</span>'+(c.length?': <b>'+esc(c.map(function(x){ return x.nome; }).join(', '))+'</b>':'')+'. Confira no painel do Cobli antes da saída.';
+  }).catch(function(e){
+    console.error('enviar ao Cobli:', e);
+    var t=(e.code==='functions/not-found' || e.code==='functions/internal' && /not.?found|404/i.test(e.message)) ? 'A função do Cobli ainda não foi publicada no Firebase.' : (e.message||String(e));
+    msg.innerHTML='<span class="rh-err">Não foi possível criar a rota: '+esc(t)+'</span>';
+  }).then(function(){ btn.disabled=false; });
+};
 function renderCobli(){
+  cbePintar();
   var box=document.getElementById('cb-tabela'); if(!box) return;
   if(cb.erro){ box.innerHTML='<div class="rz-av esp" style="margin-top:10px">'+esc(cb.erro)+'</div>'; return; }
   if(!cb.linhas.length){ box.innerHTML=''; cbResumo(); return; }
@@ -5145,13 +5253,15 @@ var RH_DEMORA_MIN=15, RH_ATRASO_MIN=30;
 function rhMin(ms){ var m=Math.round((ms||0)/60000); return m>=60 ? Math.floor(m/60)+'h'+(m%60?String(m%60).padStart(2,'0'):'') : m+' min'; }
 function rhPontos(r){
   var ps=r.paradas||[], out=[], lim=RH_DEMORA_MIN*60000;
+  /* observação do motorista: vem pelo webhook do Cobli (obsApp, por id da parada) */
+  var obsDe=function(p){ var o=p.aid && r.obsApp && r.obsApp[p.aid]; return p.obs || (o && o.texto) || ''; };
   var nomeP=function(p){ return esc(p.nome||'—')+(r.filial&&p.rota?' <small>('+esc(p.rota)+')</small>':''); };
   var falhas=ps.filter(function(p){ return p.sit==='falhou'; });
   if(falhas.length) out.push(['erro','✕', falhas.length+' não entregue'+(falhas.length>1?'s':''),
-    falhas.map(function(p){ return nomeP(p)+' — '+(p.obs?'“'+esc(p.obs)+'”':'<i>motivo ainda não disponível</i>'); })]);
+    falhas.map(function(p){ return nomeP(p)+' — '+(obsDe(p)?'“'+esc(obsDe(p))+'”':'<i>sem motivo informado</i>'); })]);
   var parc=ps.filter(function(p){ return p.sit==='feita' && p.comp==='PARTIALLY_COMPLETED'; });
   if(parc.length) out.push(['alerta','◐', parc.length+' entrega'+(parc.length>1?'s':'')+' marcada'+(parc.length>1?'s':'')+' como parcial pelo motorista',
-    parc.map(function(p){ return nomeP(p)+(p.obs?' — “'+esc(p.obs)+'”':''); })]);
+    parc.map(function(p){ return nomeP(p)+(obsDe(p)?' — “'+esc(obsDe(p))+'”':''); })]);
   var semBaixa=ps.filter(function(p){ return p.sit==='feita' && p.vis==='VISITED' && p.comp!=null && p.comp!=='COMPLETED' && p.comp!=='PARTIALLY_COMPLETED'; });
   if(semBaixa.length) out.push(['info','⌖', semBaixa.length+' entrega'+(semBaixa.length>1?'s':'')+' sem baixa no app (o Cobli registrou pela posição)',
     semBaixa.map(function(p){ return nomeP(p); })]);
@@ -5305,6 +5415,12 @@ function rhhCarregar(forcar){
 window.rhhCarregar=rhhCarregar;
 function renderRotasHist(){
   var box=document.getElementById('rhhBox'); if(!box) return;
+  var an=(rhhModo==='analise');
+  document.getElementById('rhh-tools').style.display=an?'none':'';
+  document.getElementById('rha-tools').style.display=an?'':'none';
+  document.getElementById('rhh-b-semana').classList.toggle('btn-ghost', an);
+  document.getElementById('rhh-b-analise').classList.toggle('btn-ghost', !an);
+  if(an){ renderRotasAnalise(); return; }
   if(!rhh.ini) rhh.ini=rhhSemanaDe(dataLocalHoje());
   var ini=rhh.ini, fim=rhhSoma(ini,6), atual=(ini===rhhSemanaDe(dataLocalHoje()));
   document.getElementById('rhh-sem').textContent='Semana '+rhhDM(ini)+' a '+rhhDM(fim)+(atual?' · atual':'');
@@ -5344,6 +5460,189 @@ function renderRotasHist(){
     var p=rhhData(d), tit=RH_DIAS[p.getDay()]+' '+rhhDM(d)+(d===dataLocalHoje()?' · hoje':'');
     h+=rhSecao(tit, doDia, rhSomar(doDia));
   });
+  box.innerHTML=h;
+}
+/* ===== ANÁLISES DAS ROTAS (aba Histórico de rotas → Análises) =====
+   Junta as rotas gravadas pelo robô num período (4 a 26 semanas) e mostra:
+   · Clientes: tempo médio parado em cada um, quem sempre demora, pontualidade;
+   · Motoristas: chegada dentro da janela, atraso em relação ao previsto, mês a mês;
+   · Rotas: entregas por hora, km planejado × rodado, não entregues.
+   Km rodado: o que o Cobli manda quando a rota encerra (kmReal, pelo webhook);
+   sem ele, o km do dia do veículo (frotaRotas) — só quando o veículo fez uma rota no dia. */
+var rhhModo='semana';
+try{ if(localStorage.getItem('mc_rhh_modo')==='analise') rhhModo='analise'; }catch(e){}
+var rha={ semanas:8, filtro:'', aba:'clientes', ordCli:'tempo', busca:'', dados:null, km:{}, chave:'', carregando:false, erro:'' };
+window.rhhSetModo=function(m){ rhhModo=m; try{ localStorage.setItem('mc_rhh_modo',m); }catch(e){} renderRotasHist(); };
+window.rhaSet=function(k,v){ rha[k]=(k==='semanas')?Number(v):v; if(k==='semanas') rhaCarregar(); else renderRotasAnalise(); };
+function rhaCarregar(forcar){
+  var fim=dataLocalHoje(), ini=rhhSoma(rhhSemanaDe(fim), -7*(rha.semanas-1)), chave=ini+'|'+fim;
+  if(rha.chave===chave && rha.dados && !forcar){ renderRotasAnalise(); return; }
+  rha.chave=chave; rha.carregando=true; rha.erro=''; rha.dados=null; renderRotasAnalise();
+  Promise.all([
+    getDocs(query(collection(dbC,'frotaRotasHoje'), where('data','>=',ini), where('data','<=',fim))),
+    getDocs(query(collection(dbC,'frotaRotas'), where('data','>=',ini), where('data','<=',fim))).catch(function(e){ console.warn('frotaRotas (km):', e); return null; })
+  ]).then(function(res){
+    if(rha.chave!==chave) return;
+    var l=[], km={};
+    res[0].docs.forEach(function(x){ if(x.id!=='_meta') l.push(Object.assign({ id:x.id }, x.data())); });
+    if(res[1]) res[1].docs.forEach(function(x){ var d=x.data(); if(d && d.placa && d.data) km[rtPlaca(d.placa)+'|'+d.data]=Number(d.km)||0; });
+    rha.dados=l; rha.km=km; rha.ini=ini; rha.carregando=false;
+    if(pagina==='rotashist') renderRotasAnalise();
+  }).catch(function(e){
+    console.error('análises de rotas:', e);
+    rha.carregando=false; rha.erro=(e&&(e.code||e.message))||String(e);
+    if(pagina==='rotashist') renderRotasAnalise();
+  });
+}
+window.rhaCarregar=rhaCarregar;
+function rhaNorm(s){ return String(s||'').trim().replace(/\s+/g,' ').toUpperCase(); }
+function rhaPct(a,b){ return b ? Math.round(a/b*100) : null; }
+function rhaPctTxt(a,b){ var p=rhaPct(a,b); return p==null ? '<span class="rha-mut">—</span>' : p+'%'; }
+function rhaAtraso(ms){
+  if(ms==null || !isFinite(ms)) return '<span class="rha-mut">—</span>';
+  var m=Math.round(ms/60000);
+  return m>0 ? '<span'+(m>RH_ATRASO_MIN?' class="rh-err"':'')+'>+'+rhMin(m*60000)+'</span>' : m<0 ? '<span class="rha-ok">'+m+' min</span>' : 'no horário';
+}
+function rhaCalcular(){
+  var placasFilial={}; RH_FILIAIS.forEach(function(f){ placasFilial[f.placa]=f; });
+  var rotas=(rha.dados||[]).filter(function(r){
+    var f=!!placasFilial[r.placa];
+    return rha.filtro==='matriz' ? !f : rha.filtro==='filial' ? f : true;
+  });
+  var porPlacaDia={}; rotas.forEach(function(r){ var k=rtPlaca(r.placa)+'|'+r.data; porPlacaDia[k]=(porPlacaDia[k]||0)+1; });
+  var cli={}, mot={}, rot={}, mes={}, G={ paradas:0, feitas:0, falhas:0, comJan:0, naJan:0, dur:0, nDur:0, comPrev:0, atr30:0 };
+  rotas.forEach(function(r){
+    var nr=rhaNorm(r.nome)||'ROTA', mo=(r.motorista||'').trim()||'(sem motorista)', mk=String(r.data||'').slice(0,7);
+    var R=rot[nr]||(rot[nr]={ nome:r.nome||'Rota', saidas:0, clientes:0, feitas:0, falhas:0, kmPlan:0, nKmPlan:0, kmReal:0, kmPlanCR:0, nKmReal:0, horas:0, feitasH:0, dur:0, nDur:0, mot:{} });
+    R.saidas++; R.clientes+=r.total||0; R.feitas+=r.feitas||0; R.falhas+=r.falhas||0; R.mot[mo]=1;
+    if(r.distPlanKm){ R.kmPlan+=r.distPlanKm; R.nKmPlan++; }
+    var kmR=(r.kmReal!=null) ? Number(r.kmReal) : (porPlacaDia[rtPlaca(r.placa)+'|'+r.data]===1 ? rha.km[rtPlaca(r.placa)+'|'+r.data] : null);
+    if(kmR>0 && r.distPlanKm){ R.kmReal+=kmR; R.kmPlanCR+=r.distPlanKm; R.nKmReal++; }
+    if(r.inicioReal && r.fimReal && r.fimReal>r.inicioReal){ R.horas+=(r.fimReal-r.inicioReal)/3600000; R.feitasH+=r.feitas||0; }
+    var M=mot[mo]||(mot[mo]={ nome:mo, rotas:0, paradas:0, falhas:0, comJan:0, naJan:0, comPrev:0, atrSoma:0, atr30:0, dur:0, nDur:0 });
+    M.rotas++;
+    var Me=mes[mk]||(mes[mk]={ k:mk, rotas:0, paradas:0, feitas:0, falhas:0, comJan:0, naJan:0, comPrev:0, atr30:0, dur:0, nDur:0 });
+    Me.rotas++; Me.feitas+=r.feitas||0; Me.falhas+=r.falhas||0;
+    G.feitas+=r.feitas||0; G.falhas+=r.falhas||0;
+    (r.paradas||[]).forEach(function(p){
+      var nc=rhaNorm(p.nome); if(!nc) return;
+      var C=cli[nc]||(cli[nc]={ nome:p.nome, cidade:p.cidade||'', visitas:0, dur:0, nDur:0, max:0, longas:0, comJan:0, naJan:0, comPrev:0, atrSoma:0, atr30:0, falhas:0, rotas:{} });
+      C.visitas++; C.rotas[r.nome||'']=1; M.paradas++; Me.paradas++; G.paradas++;
+      if(p.sit==='falhou'){ C.falhas++; M.falhas++; }
+      if(p.dur>0){
+        C.dur+=p.dur; C.nDur++; if(p.dur>C.max) C.max=p.dur; if(p.dur>RH_DEMORA_MIN*60000) C.longas++;
+        M.dur+=p.dur; M.nDur++; Me.dur+=p.dur; Me.nDur++; R.dur+=p.dur; R.nDur++; G.dur+=p.dur; G.nDur++;
+      }
+      if(p.chegada && p.jan && p.jan.length){
+        var ok=p.jan.some(function(j){ return p.chegada>=j[0] && p.chegada<=j[1]; });
+        C.comJan++; M.comJan++; Me.comJan++; G.comJan++;
+        if(ok){ C.naJan++; M.naJan++; Me.naJan++; G.naJan++; }
+      }
+      if(p.chegada && p.prev){
+        var at=p.chegada-p.prev, a30=at>RH_ATRASO_MIN*60000;
+        C.comPrev++; C.atrSoma+=at; M.comPrev++; M.atrSoma+=at; Me.comPrev++; G.comPrev++;
+        if(a30){ C.atr30++; M.atr30++; Me.atr30++; G.atr30++; }
+      }
+    });
+  });
+  var vals=function(o){ return Object.keys(o).map(function(k){ return o[k]; }); };
+  return { rotas:rotas, G:G, cli:vals(cli), mot:vals(mot), rot:vals(rot), mes:vals(mes).sort(function(a,b){ return a.k<b.k?-1:1; }) };
+}
+function rhaTabela(cab, linhas, vazio){
+  if(!linhas.length) return '<div class="rh-sub" style="padding:12px 2px">'+(vazio||'Sem dados no período.')+'</div>';
+  return '<div class="tw"><div class="tscroll" style="max-height:62vh"><table><thead><tr>'+cab.map(function(c){ return '<th'+(c[1]?' class="r"':'')+'>'+c[0]+'</th>'; }).join('')+'</tr></thead><tbody>'
+    +linhas.join('')+'</tbody></table></div></div>';
+}
+function renderRotasAnalise(){
+  var box=document.getElementById('rhhBox'); if(!box || rhhModo!=='analise') return;
+  var sel=document.getElementById('rha-sem'); if(sel) sel.value=String(rha.semanas);
+  var fl=document.getElementById('rha-filtro'); if(fl) fl.value=rha.filtro;
+  if(rha.erro){ box.innerHTML='<div class="rh-sub rh-err">Não foi possível ler as rotas: '+esc(rha.erro)+'</div>'; return; }
+  if(!rha.dados){ box.innerHTML='<div class="rh-sub">Carregando as rotas do período…</div>'; if(!rha.carregando) rhaCarregar(); return; }
+  var A=rhaCalcular(), G=A.G;
+  if(!A.rotas.length){ box.innerHTML='<div class="rh-sub">Nenhuma rota no período'+(rha.filtro?' com esse filtro':'')+'.</div>'; return; }
+  var h='<div class="rh-sub" style="margin-bottom:10px">De '+rhhDM(rha.ini)+' a '+rhhDM(dataLocalHoje())+' · '+A.rotas.length+' rota'+(A.rotas.length===1?'':'s')+' · '+G.paradas+' paradas</div>'
+    +'<div class="rh-kpis">'
+    +'<div class="card rh-kpi rh-kpi-dest"><span class="rh-kpi-lab">Chegadas dentro da janela</span><div class="rh-kpi-val">'+(rhaPct(G.naJan,G.comJan)==null?'—':rhaPct(G.naJan,G.comJan)+'<small>%</small>')+'</div>'
+      +'<span class="rh-kpi-sub"><b>'+G.naJan+'</b> de '+G.comJan+' paradas com janela</span><div class="rh-bar"><div style="width:'+(rhaPct(G.naJan,G.comJan)||0)+'%"></div></div></div>'
+    +'<div class="card rh-kpi"><span class="rh-kpi-lab">Tempo médio no cliente</span><div class="rh-kpi-val">'+(G.nDur?rhMin(G.dur/G.nDur):'—')+'</div><span class="rh-kpi-sub">'+G.nDur+' paradas medidas</span></div>'
+    +'<div class="card rh-kpi'+(G.atr30?' rh-kpi-erro':'')+'"><span class="rh-kpi-lab">Mais de '+RH_ATRASO_MIN+' min atrasado</span><div class="rh-kpi-val">'+(rhaPct(G.atr30,G.comPrev)==null?'—':rhaPct(G.atr30,G.comPrev)+'<small>%</small>')+'</div><span class="rh-kpi-sub">'+G.atr30+' chegadas, contra o previsto</span></div>'
+    +'<div class="card rh-kpi'+(G.falhas?' rh-kpi-erro':'')+'"><span class="rh-kpi-lab">Não entregues</span><div class="rh-kpi-val">'+G.falhas+'</div><span class="rh-kpi-sub">'+rhaPctTxt(G.falhas,G.paradas)+' das paradas</span></div>'
+    +'</div>';
+  var abas=[['clientes','Clientes'],['motoristas','Motoristas e meses'],['rotas','Rotas']];
+  h+='<div class="rha-abas">'+abas.map(function(a){ return '<button class="btn btn-sm'+(rha.aba===a[0]?'':' btn-ghost')+'" onclick="rhaSet(\'aba\',\''+a[0]+'\')">'+a[1]+'</button>'; }).join('')+'</div>';
+
+  if(rha.aba==='clientes'){
+    var b=rhaNorm(rha.busca), ORD={
+      tempo:['Tempo médio no cliente (maior primeiro)', function(a,b){ return (b.nDur?b.dur/b.nDur:0)-(a.nDur?a.dur/a.nDur:0); }],
+      longas:['Vezes com mais de '+RH_DEMORA_MIN+' min', function(a,b){ return b.longas-a.longas || b.visitas-a.visitas; }],
+      janela:['Pior pontualidade na janela', function(a,b){ return (rhaPct(a.naJan,a.comJan)==null?101:rhaPct(a.naJan,a.comJan))-(rhaPct(b.naJan,b.comJan)==null?101:rhaPct(b.naJan,b.comJan)); }],
+      atraso:['Maior atraso médio', function(a,b){ return (b.comPrev?b.atrSoma/b.comPrev:-1e12)-(a.comPrev?a.atrSoma/a.comPrev:-1e12); }],
+      falhas:['Mais não entregues', function(a,b){ return b.falhas-a.falhas || b.visitas-a.visitas; }],
+      visitas:['Mais visitados', function(a,b){ return b.visitas-a.visitas; }]
+    };
+    var lc=A.cli.filter(function(c){ return c.visitas>=2 && (!b || rhaNorm(c.nome).indexOf(b)>=0 || rhaNorm(c.cidade).indexOf(b)>=0); }).sort((ORD[rha.ordCli]||ORD.tempo)[1]);
+    h+='<div class="tools" style="margin-top:12px"><select onchange="rhaSet(\'ordCli\',this.value)">'+Object.keys(ORD).map(function(k){ return '<option value="'+k+'"'+(rha.ordCli===k?' selected':'')+'>'+ORD[k][0]+'</option>'; }).join('')+'</select>'
+      +'<input type="text" placeholder="Buscar cliente ou cidade" value="'+esc(rha.busca)+'" onchange="rhaSet(\'busca\',this.value)" style="min-width:210px">'
+      +'<span class="rh-sub">Clientes com 2 visitas ou mais · '+lc.length+' no total'+(lc.length>100?', mostrando 100':'')+'</span></div>';
+    h+=rhaTabela([['Cliente'],['Visitas',1],['Tempo médio',1],['Maior',1],['> '+RH_DEMORA_MIN+' min',1],['Na janela',1],['Atraso médio',1],['Não entregue',1]],
+      lc.slice(0,100).map(function(c){
+        var med=c.nDur?c.dur/c.nDur:0;
+        return '<tr><td><b>'+esc(c.nome)+'</b><div class="rha-mut" style="font-size:11px">'+esc(c.cidade||'')+(Object.keys(c.rotas).length?' · '+esc(Object.keys(c.rotas).filter(Boolean).slice(0,3).join(', ')):'')+'</div></td>'
+          +'<td class="r num">'+c.visitas+'</td>'
+          +'<td class="r num">'+(c.nDur?'<b'+(med>RH_DEMORA_MIN*60000?' class="rh-err"':'')+'>'+rhMin(med)+'</b>':'<span class="rha-mut">—</span>')+'</td>'
+          +'<td class="r num">'+(c.max?rhMin(c.max):'<span class="rha-mut">—</span>')+'</td>'
+          +'<td class="r num">'+(c.longas?c.longas+' <span class="rha-mut">('+rhaPct(c.longas,c.nDur)+'%)</span>':'0')+'</td>'
+          +'<td class="r num">'+rhaPctTxt(c.naJan,c.comJan)+'</td>'
+          +'<td class="r num">'+rhaAtraso(c.comPrev?c.atrSoma/c.comPrev:null)+'</td>'
+          +'<td class="r num">'+(c.falhas?'<span class="rh-err">'+c.falhas+'</span>':'0')+'</td></tr>';
+      }), 'Nenhum cliente com 2 visitas ou mais no período.');
+    h+='<div class="rh-sub" style="margin-top:9px;line-height:1.6"><b>Tempo médio</b> = da chegada à saída do cliente. <b>Na janela</b> = chegou dentro do horário de entrega cadastrado (só conta parada que tem janela). <b>Atraso médio</b> = chegada real menos a prevista pelo Cobli (negativo = chegou antes).</div>';
+  }
+  else if(rha.aba==='motoristas'){
+    var lm=A.mot.sort(function(a,b){ return (rhaPct(a.naJan,a.comJan)==null?101:rhaPct(a.naJan,a.comJan))-(rhaPct(b.naJan,b.comJan)==null?101:rhaPct(b.naJan,b.comJan)) || b.rotas-a.rotas; });
+    h+='<div class="sect" style="margin-top:14px">Pontualidade por motorista</div>';
+    h+=rhaTabela([['Motorista'],['Rotas',1],['Paradas',1],['Na janela',1],['Atraso médio',1],['> '+RH_ATRASO_MIN+' min atrasado',1],['Tempo médio no cliente',1],['Não entregues',1]],
+      lm.map(function(m){
+        return '<tr><td><b>'+esc(m.nome)+'</b></td><td class="r num">'+m.rotas+'</td><td class="r num">'+m.paradas+'</td>'
+          +'<td class="r num">'+rhaPctTxt(m.naJan,m.comJan)+'</td>'
+          +'<td class="r num">'+rhaAtraso(m.comPrev?m.atrSoma/m.comPrev:null)+'</td>'
+          +'<td class="r num">'+(m.atr30?m.atr30+' <span class="rha-mut">('+rhaPct(m.atr30,m.comPrev)+'%)</span>':'0')+'</td>'
+          +'<td class="r num">'+(m.nDur?rhMin(m.dur/m.nDur):'—')+'</td>'
+          +'<td class="r num">'+(m.falhas?'<span class="rh-err">'+m.falhas+'</span> <span class="rha-mut">('+rhaPct(m.falhas,m.paradas)+'%)</span>':'0')+'</td></tr>';
+      }));
+    h+='<div class="sect">Mês a mês</div>';
+    var MESES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+    h+=rhaTabela([['Mês'],['Rotas',1],['Paradas',1],['Na janela',1],['> '+RH_ATRASO_MIN+' min atrasado',1],['Tempo médio no cliente',1],['Não entregues',1]],
+      A.mes.map(function(m){
+        var p=m.k.split('-'), pj=rhaPct(m.naJan,m.comJan);
+        return '<tr><td><b>'+MESES[+p[1]-1]+'/'+p[0]+'</b></td><td class="r num">'+m.rotas+'</td><td class="r num">'+m.paradas+'</td>'
+          +'<td class="r num"><span class="rha-barra"><i style="width:'+(pj||0)+'%"></i></span>'+rhaPctTxt(m.naJan,m.comJan)+'</td>'
+          +'<td class="r num">'+rhaPctTxt(m.atr30,m.comPrev)+'</td>'
+          +'<td class="r num">'+(m.nDur?rhMin(m.dur/m.nDur):'—')+'</td>'
+          +'<td class="r num">'+rhaPctTxt(m.falhas,m.paradas)+'</td></tr>';
+      }));
+    h+='<div class="rh-sub" style="margin-top:9px">Para ver mais meses, aumente o período no alto da tela.</div>';
+  }
+  else {
+    var lr=A.rot.map(function(R){ R.eh=R.horas>0?R.feitasH/R.horas:null; return R; })
+      .sort(function(a,b){ return (a.eh==null?1e9:a.eh)-(b.eh==null?1e9:b.eh); });
+    h+='<div class="rh-sub" style="margin:12px 0 9px">Rotas com menos entregas por hora aparecem primeiro: são as candidatas a ser remontadas.</div>';
+    h+=rhaTabela([['Rota'],['Saídas',1],['Clientes por saída',1],['Entregas por hora',1],['Tempo médio no cliente',1],['Km planejado',1],['Km rodado',1],['Diferença',1],['Não entregues',1]],
+      lr.map(function(R){
+        var dif=R.nKmReal ? (R.kmReal-R.kmPlanCR)/R.kmPlanCR*100 : null;
+        return '<tr><td><b>'+esc(R.nome)+'</b><div class="rha-mut" style="font-size:11px">'+esc(Object.keys(R.mot).slice(0,3).join(', '))+'</div></td>'
+          +'<td class="r num">'+R.saidas+'</td>'
+          +'<td class="r num">'+(R.saidas?String(Math.round(R.clientes/R.saidas*10)/10).replace('.',','):'—')+'</td>'
+          +'<td class="r num"><b>'+(R.eh!=null?String(Math.round(R.eh*10)/10).replace('.',','):'—')+'</b></td>'
+          +'<td class="r num">'+(R.nDur?rhMin(R.dur/R.nDur):'—')+'</td>'
+          +'<td class="r num">'+(R.nKmPlan?rtNum(R.kmPlan/R.nKmPlan,1):'—')+'</td>'
+          +'<td class="r num">'+(R.nKmReal?rtNum(R.kmReal/R.nKmReal,1):'<span class="rha-mut">—</span>')+'</td>'
+          +'<td class="r num">'+(dif==null?'<span class="rha-mut">—</span>':'<span'+(dif>15?' class="rh-err"':'')+'>'+(dif>0?'+':'')+Math.round(dif)+'%</span>')+'</td>'
+          +'<td class="r num">'+(R.falhas?'<span class="rh-err">'+R.falhas+'</span> <span class="rha-mut">('+rhaPct(R.falhas,R.clientes)+'%)</span>':'0')+'</td></tr>';
+      }));
+    h+='<div class="rh-sub" style="margin-top:9px;line-height:1.6"><b>Entregas por hora</b> = entregas feitas ÷ horas da saída ao encerramento da rota. <b>Km rodado</b> = o que o Cobli mede quando a rota é encerrada; sem isso, o km do veículo no dia (só quando ele fez uma rota só). <b>Diferença</b> = km rodado contra o planejado, nas saídas que têm os dois.</div>';
+  }
   box.innerHTML=h;
 }
 function renderPainel(){
