@@ -833,6 +833,11 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
 .rh-txt b{color:var(--text)}
 .rh-pe{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--border);margin-top:12px;padding-top:12px;font-size:12.5px;color:var(--muted)}
 .rh-pe b{color:var(--text)}
+.rh-hr{display:grid;grid-template-columns:auto 1fr 1.6fr;gap:3px 12px;margin-top:10px;padding:9px 11px;border-radius:10px;background:var(--card-2);font-size:12.5px;align-items:baseline}
+.rh-hr-cab{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.rh-hr-lab{color:var(--muted)}
+.rh-hr small{font-size:10.5px}
+.rh-hr-ok{color:var(--green);font-size:11.5px}
 .rh-lista{margin-top:12px;max-height:320px;overflow:auto;border-top:1px solid var(--border);padding-top:6px}
 .rh-par{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px}
 .rh-pos{width:22px;flex:0 0 22px;text-align:center;color:var(--muted)}
@@ -5325,12 +5330,27 @@ function rhDoca(r){
   return o;
 }
 function rhDocaTxt(r){
-  var d=rhDoca(r); if(!d) return '';
-  var t=[];
-  if(d.saida) t.push('Saiu da sede às <b>'+rhHora(d.saida)+'</b>'+(d.pernoite?' <span class="rha-mut">(pernoite)</span>':' · <b>'+rhMin(d.min*60000)+'</b> na doca')
-    +(d.atrasoSaida>15*60000?' · <span class="rh-err">'+rhMin(d.atrasoSaida)+' depois do previsto</span>':''));
-  if(d.volta) t.push('Voltou à sede às <b>'+rhHora(d.volta)+'</b>');
-  return t.length?'<div class="rh-txt rh-doca">⌂ '+t.join(' · ')+'</div>':'';
+  /* horários de saída e volta já aparecem no quadro Previsto × Real; aqui fica o tempo de doca */
+  var d=rhDoca(r); if(!d || !d.saida) return '';
+  return '<div class="rh-txt rh-doca">⌂ '+(d.pernoite ? 'Pernoite na sede · saiu às <b>'+rhHora(d.saida)+'</b>'
+    : '<b>'+rhMin(d.min*60000)+'</b> na doca antes de sair (entrou '+rhHora(d.saida-d.min*60000)+')')+'</div>';
+}
+/* Início e fim da rota: previsto (planejado no Cobli) × real.
+   Real = o que o Cobli registrou; sem isso, a saída/volta pela sede (doca). */
+function rhDifTxt(real, prev){
+  if(!real || !prev) return '';
+  var m=Math.round((real-prev)/60000);
+  if(Math.abs(m)<=5) return ' <span class="rh-hr-ok">no horário</span>';
+  return m>0 ? ' <span class="'+(m>15?'rh-err':'rha-mut')+'">+'+rhMin(m*60000)+'</span>' : ' <span class="rh-hr-ok">'+rhMin(-m*60000)+' antes</span>';
+}
+function rhHorarios(r){
+  var d=rhDoca(r)||{};
+  var ini=r.inicioReal || d.saida || null, iniSede=!r.inicioReal && !!d.saida;
+  var fim=r.fimReal || d.volta || null, fimSede=!r.fimReal && !!d.volta;
+  var cel=function(ms, sede){ return ms ? '<b>'+rhHora(ms)+'</b>'+(sede?' <small class="rha-mut" title="Pela passagem na sede (Cobli)">sede</small>':'') : '<span class="rha-mut">—</span>'; };
+  return '<div class="rh-hr"><span></span><span class="rh-hr-cab">Previsto</span><span class="rh-hr-cab">Real</span>'
+    +'<span class="rh-hr-lab">Início</span><span>'+(r.inicioPlan?rhHora(r.inicioPlan):'—')+'</span><span>'+cel(ini,iniSede)+rhDifTxt(ini,r.inicioPlan)+'</span>'
+    +'<span class="rh-hr-lab">Fim</span><span>'+(r.fimPlan?rhHora(r.fimPlan):'—')+'</span><span>'+cel(fim,fimSede)+rhDifTxt(fim,r.fimPlan)+'</span></div>';
 }
 function rhCartao(r){
   var st=RH_ST[r.status]||[r.status||'—','neutro'], pct=r.total?Math.round(r.feitas/r.total*100):0;
@@ -5349,7 +5369,7 @@ function rhCartao(r){
     : r.agora ? 'Agora no cliente: <b>'+esc(r.agora.nome)+'</b>'+(r.agora.bairro?' · '+esc(r.agora.bairro):'')
     : r.proxima ? 'Próxima: <b>'+esc(r.proxima.nome)+'</b>'+(r.proxima.bairro?' · '+esc(r.proxima.bairro):'')
     : r.ultima ? 'Última entrega: <b>'+esc(r.ultima.nome)+'</b> às '+esc(rhHora(r.ultima.chegada)) : 'Sem entregas registradas ainda';
-  var volta = semEncerrar ? 'Rota <b>não encerrada</b> no app do Cobli' : r.fimReal ? (r.filial?'Rotas encerradas às ':'Rota encerrada às ')+'<b>'+esc(rhHora(r.fimReal))+'</b>' : 'Volta prevista: <b>'+esc(rhHora(r.fimPlan))+'</b>';
+  var volta = semEncerrar ? 'Rota <b>não encerrada</b> no app do Cobli' : r.fimReal ? (r.filial?'Rotas encerradas':'Rota encerrada') : (r.status==='PLANNED'?'Ainda não saiu':'Em andamento');
   var sub=(r.ehFilial&&r.data?rhDia(r.data)+' · ':'')+[r.motorista,r.placa].filter(Boolean).join(' · ')+(r.filial?' · '+r.qtdRotas+' rota'+(r.qtdRotas>1?'s':''):'');
   var h='<div class="card rh-card'+(r.filial||r.ehFilial?' rh-filial':'')+'"><div class="rh-top"><span class="rh-ico">'+(r.filial?'⇄':'⛟')+'</span><div class="rh-tit"><b>'+esc(r.nome)+'</b><span>'+esc(sub||'—')+'</span></div>'
     +'<span class="rh-badge rh-'+st[1]+'">'+esc(st[0])+'</span></div>'
@@ -5359,6 +5379,7 @@ function rhCartao(r){
       +(r.falhas?' · <span class="rh-err">'+r.falhas+' não entregue'+(r.falhas>1?'s':'')+'</span>':'')+'</span>'
       +(r.distPlanKm?'<span class="rh-num">'+String(r.distPlanKm).replace('.',',')+' km planejados</span>':'')+'</div>'
     +'<div class="rh-txt">'+linha+'</div>'+rhDocaTxt(r)
+    +rhHorarios(r)
     +'<div class="rh-pe"><span>'+volta+'</span><button class="btn btn-sm" onclick="rhAlternar(\''+esc(r.id)+'\')">'+(rhAbertas[r.id]?'Fechar':'Resumo e paradas')+'</button></div>';
   if(rhAbertas[r.id]){
     var rotaAtual=null;
