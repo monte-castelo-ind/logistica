@@ -814,6 +814,7 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
 .rh-cam span{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--c,#555);color:#fff;font-size:12px}
 .rh-cam.velho{opacity:.6;border-style:dashed}
 .rh-cam.outro{--c:#7a7f8c;opacity:.85}
+.rh-falta{width:18px;height:18px;border-radius:50%;background:#fff;border:2.5px solid var(--c);color:var(--c);font:700 9px/13px 'Archivo',system-ui,sans-serif;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.35)}
 .rh-feita{width:16px;height:16px;border-radius:50%;border:2px solid #fff;color:#fff;font:700 9px/12px 'Archivo',system-ui,sans-serif;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.4)}
 .rh-gm-lab{background:#fff;padding:1px 6px;border-radius:999px;box-shadow:0 1px 4px rgba(0,0,0,.35)}
 .rha-abas{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
@@ -6071,12 +6072,11 @@ function rhMapaGoogle(box, D, popParada){
       pop(m, D.popFeita(R,p)); rhGM.objs.push(m);
     });
     if(R.falta.length){
-      var linha=(R.v?[{ lat:R.v.lat, lng:R.v.lng }]:[]).concat(R.falta.map(function(p){ return { lat:p.lat, lng:p.lng }; }));
-      if(linha.length>1) rhGM.objs.push(new google.maps.Polyline({ map:M, path:linha, strokeOpacity:0, zIndex:1,
-        icons:[{ icon:{ path:'M 0,-1 0,1', strokeOpacity:.8, strokeColor:R.cor, scale:3 }, offset:'0', repeat:'14px' }] }));
+      /* sem linha ligando: o caminho até lá ainda não foi feito, e uma reta cortando o mapa confunde */
       R.falta.forEach(function(p){
         var m=new google.maps.Marker({ map:M, position:{ lat:p.lat, lng:p.lng }, zIndex:100, title:p.nome||'',
-          icon:{ path:google.maps.SymbolPath.CIRCLE, scale:p.sit==='local'?8:6, fillColor:R.cor, fillOpacity:1, strokeColor:'#fff', strokeWeight:2 } });
+          label:{ text:String(p.pos!=null?p.pos:''), color:R.cor, fontSize:'9px', fontWeight:'700' },
+          icon:{ path:google.maps.SymbolPath.CIRCLE, scale:p.sit==='local'?9:8, fillColor:'#fff', fillOpacity:1, strokeColor:R.cor, strokeWeight:2.5 } });
         pop(m, popParada(R,p)); rhGM.objs.push(m);
       });
     }
@@ -6121,10 +6121,9 @@ function rhMapaLeaflet(box, D, popParada){
           .bindPopup(D.popFeita(R,p)).addTo(rhMapaGrupo);
       });
       if(R.falta.length){
-        var linha=(R.v?[[R.v.lat,R.v.lng]]:[]).concat(R.falta.map(function(p){ return [p.lat,p.lng]; }));
-        if(linha.length>1) L.polyline(linha, { color:R.cor, weight:3, opacity:.75, dashArray:'6 6' }).addTo(rhMapaGrupo);
         R.falta.forEach(function(p){
-          L.circleMarker([p.lat,p.lng], { radius:p.sit==='local'?8:6, color:'#fff', weight:2, fillColor:R.cor, fillOpacity:.95 })
+          L.marker([p.lat,p.lng], { icon:L.divIcon({ className:'', iconSize:[18,18], iconAnchor:[9,9],
+              html:'<div class="rh-falta" style="--c:'+R.cor+'">'+(p.pos!=null?p.pos:'')+'</div>' }) })
             .bindPopup(popParada(R,p)).addTo(rhMapaGrupo);
         });
       }
