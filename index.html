@@ -5997,6 +5997,19 @@ function rhMapaAtualizar(lista, forcar){
     D.outros.push({ pl:pl, v:v, popup:'<div class="rt-pop"><b>'+esc(pl)+'</b>'+(v.motorista?'<br>'+esc(v.motorista):'')+'<br>Sem rota hoje<br>'
       +(v.ign?(v.vel>3?'Rodando a '+v.vel+' km/h':'Parado, motor ligado'):'Motor desligado')+'<br>Posição de '+esc(rhHora(v.em))+'</div>' });
   });
+  /* caminhões no mesmo lugar (ex.: todos no pátio): abre em leque para os nomes não se sobreporem */
+  var grupos={};
+  D.rotas.filter(function(R){ return R.v; }).forEach(function(R){
+    var k=Math.round(R.v.lat/0.0015)+'|'+Math.round(R.v.lng/0.0015); (grupos[k]=grupos[k]||[]).push(R);
+  });
+  Object.keys(grupos).forEach(function(k){
+    var g=grupos[k]; if(g.length<2) return;
+    g.forEach(function(R,n){
+      var ang=2*Math.PI*n/g.length, raio=0.0012+0.00025*g.length;
+      R.v=Object.assign({}, R.v, { lat:R.v.lat+raio*Math.sin(ang), lng:R.v.lng+raio*1.15*Math.cos(ang) });
+      R.agrupado=g.length;
+    });
+  });
   var popParada=function(R,p){ return '<div class="rt-pop"><b>'+esc(p.nome||'—')+'</b><br>'+esc(R.r.nome||'')+' · parada '+(p.pos!=null?p.pos:'')
     +(p.bairro||p.cidade?'<br>'+esc([p.bairro,p.cidade].filter(Boolean).join(' · ')):'')
     +(p.prev?'<br>Previsto '+esc(rhHora(p.prev)):'')+(p.sit==='local'?'<br><b>Caminhão no local agora</b>':'')+'</div>'; };
