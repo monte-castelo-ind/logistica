@@ -803,6 +803,7 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
 .rh-cab{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
 .rh-cab h2{font-size:16px;margin:0}
 .rh-sub{font-size:12.5px;color:var(--muted)}
+.rh-doca{font-size:12px;color:var(--muted);margin-top:4px}
 .rha-abas{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
 .rha-mut{color:var(--muted)}
 .rha-ok{color:var(--green)}
@@ -1470,7 +1471,7 @@ var estoque=[], estoqueMov=[];
 /* telemetria do Cobli: um documento por placa, gravado pelo robo do Actions.
    O app so le — a regra do Firestore bloqueia escrita de propósito. */
 var telemetria={}, telemetriaMeta=null;
-var rotasHoje={}, rotasHojeMeta=null, rhAbertas={};   /* andamento das rotas de hoje (robô do Cobli) */
+var rotasHoje={}, rotasHojeMeta=null, rhAbertas={}, docaDias={};   /* docaDias: frotaDoca por dia (passagens pela sede) */   /* andamento das rotas de hoje (robô do Cobli) */
 var veiculos=[], movs=[], docs=[], cfg={ oleoKm:10000, oleoMeses:6, revisaoKm:20000, revisaoMeses:12,
   diasAviso:30, kmParadoDias:15, desvioPct:15, tipos:[] };
 var modelosChk={}, checklists=[];
@@ -5285,26 +5286,67 @@ function rhPontos(r){
   if(!out.length) out.push(['ok','✓','Nada fora do normal até agora',[]]);
   return out;
 }
+/* ===== TEMPO DE DOCA =====
+   O robô grava em frotaDoca/{dia} as passagens de cada veículo pela sede (local de
+   interesse Base/Sede no Cobli). Para cada rota: a passagem que termina logo antes
+   da primeira entrega é a saída da sede (o tempo dentro = carregamento); a primeira
+   que começa depois da última entrega é a volta. Passagem que vem da noite anterior
+   ou passa de RH_PERNOITE_MIN é pernoite: conta a hora de saída, não o tempo. */
+var RH_PERNOITE_MIN=240;
+function rhDoca(r){
+  var dia=docaDias[r.data]; if(!dia || !dia.visitas || !r.placa) return null;
+  var vs=dia.visitas.filter(function(v){ return v.placa===r.placa; }); if(!vs.length) return null;
+  var ch=(r.paradas||[]).map(function(p){ return p.chegada; }).filter(Boolean);
+  var ref=r.inicioReal || (ch.length?Math.min.apply(null,ch):null);
+  var ult=ch.length?Math.max.apply(null,ch):null;
+  var p0=rhhData(r.data); p0.setHours(0,1,0,0);
+  var sai=null; vs.forEach(function(v){ if(ref ? v.saida<=ref+5*60000 : true){ if(!sai || v.saida>sai.saida) sai=v; } });
+  if(!ref && sai && ult==null){ sai=vs[0]; }
+  var volta=null; if(ult) vs.forEach(function(v){ if(v.entrada>=ult && (!volta || v.entrada<volta.entrada)) volta=v; });
+  if(!sai && !volta) return null;
+  var o={ volta:volta?volta.entrada:null };
+  if(sai){
+    o.saida=sai.saida; o.min=sai.min;
+    o.pernoite=(sai.entrada<=p0.getTime()) || sai.min>RH_PERNOITE_MIN;
+    if(r.inicioPlan) o.atrasoSaida=sai.saida-r.inicioPlan;
+  }
+  return o;
+}
+function rhDocaTxt(r){
+  var d=rhDoca(r); if(!d) return '';
+  var t=[];
+  if(d.saida) t.push('Saiu da sede às <b>'+rhHora(d.saida)+'</b>'+(d.pernoite?' <span class="rha-mut">(pernoite)</span>':' · <b>'+rhMin(d.min*60000)+'</b> na doca')
+    +(d.atrasoSaida>15*60000?' · <span class="rh-err">'+rhMin(d.atrasoSaida)+' depois do previsto</span>':''));
+  if(d.volta) t.push('Voltou à sede às <b>'+rhHora(d.volta)+'</b>');
+  return t.length?'<div class="rh-txt rh-doca">⌂ '+t.join(' · ')+'</div>':'';
+}
 function rhCartao(r){
   var st=RH_ST[r.status]||[r.status||'—','neutro'], pct=r.total?Math.round(r.feitas/r.total*100):0;
   /* O Cobli chama de "parcial" a rota em que alguma parada não teve baixa completa
      no app (entrega parcial ou só visita pela posição). Se todos os clientes foram
      atendidos e nada falhou, para nós a rota está concluída; o detalhe vai nos Pontos. */
   if(r.status==='PARTIALLY_EXECUTED' && r.total && r.feitas===r.total && !r.falhas) st=['Concluída','ok'];
+  /* todas as paradas resolvidas, mas o motorista ainda não encerrou a rota no app
+     (o Cobli só marca "Concluída" quando ela é encerrada) */
+  var semEncerrar=rhSemEncerrar(r);
+  if(semEncerrar) st=['Entregas feitas','ok'];
   var faltam=(r.pendentes||0)+(r.local||0);
-  var linha = r.agora ? 'Agora no cliente: <b>'+esc(r.agora.nome)+'</b>'+(r.agora.bairro?' · '+esc(r.agora.bairro):'')
+  /* rota que só chegou pelo aviso do Cobli (webhook): o robô ainda não leu as paradas */
+  var semParadas=!Array.isArray(r.paradas);
+  var linha = semParadas ? '<span class="rha-mut">Paradas ainda não lidas do Cobli — aparecem na próxima rodada do robô</span>'
+    : r.agora ? 'Agora no cliente: <b>'+esc(r.agora.nome)+'</b>'+(r.agora.bairro?' · '+esc(r.agora.bairro):'')
     : r.proxima ? 'Próxima: <b>'+esc(r.proxima.nome)+'</b>'+(r.proxima.bairro?' · '+esc(r.proxima.bairro):'')
     : r.ultima ? 'Última entrega: <b>'+esc(r.ultima.nome)+'</b> às '+esc(rhHora(r.ultima.chegada)) : 'Sem entregas registradas ainda';
-  var volta = r.fimReal ? (r.filial?'Rotas encerradas às ':'Rota encerrada às ')+'<b>'+esc(rhHora(r.fimReal))+'</b>' : 'Volta prevista: <b>'+esc(rhHora(r.fimPlan))+'</b>';
+  var volta = semEncerrar ? 'Rota <b>não encerrada</b> no app do Cobli' : r.fimReal ? (r.filial?'Rotas encerradas às ':'Rota encerrada às ')+'<b>'+esc(rhHora(r.fimReal))+'</b>' : 'Volta prevista: <b>'+esc(rhHora(r.fimPlan))+'</b>';
   var sub=(r.ehFilial&&r.data?rhDia(r.data)+' · ':'')+[r.motorista,r.placa].filter(Boolean).join(' · ')+(r.filial?' · '+r.qtdRotas+' rota'+(r.qtdRotas>1?'s':''):'');
   var h='<div class="card rh-card'+(r.filial||r.ehFilial?' rh-filial':'')+'"><div class="rh-top"><span class="rh-ico">'+(r.filial?'⇄':'⛟')+'</span><div class="rh-tit"><b>'+esc(r.nome)+'</b><span>'+esc(sub||'—')+'</span></div>'
     +'<span class="rh-badge rh-'+st[1]+'">'+esc(st[0])+'</span></div>'
     +'<div class="rh-lin"><span>Entregas <b>('+pct+'%)</b></span><span class="rh-num"><b>'+(r.feitas||0)+' / '+(r.total||0)+'</b> clientes</span></div>'
     +'<div class="rh-bar"><div style="width:'+pct+'%"></div>'+(pct>0&&pct<100?'<i style="left:'+pct+'%"></i>':'')+'</div>'
-    +'<div class="rh-lin"><span>'+(faltam?'Faltam <b>'+faltam+'</b> cliente'+(faltam>1?'s':''):'Todas as paradas atendidas')
+    +'<div class="rh-lin"><span>'+(semParadas?'Aguardando o robô do Cobli':faltam?'Faltam <b>'+faltam+'</b> cliente'+(faltam>1?'s':''):'Todas as paradas atendidas')
       +(r.falhas?' · <span class="rh-err">'+r.falhas+' não entregue'+(r.falhas>1?'s':'')+'</span>':'')+'</span>'
       +(r.distPlanKm?'<span class="rh-num">'+String(r.distPlanKm).replace('.',',')+' km planejados</span>':'')+'</div>'
-    +'<div class="rh-txt">'+linha+'</div>'
+    +'<div class="rh-txt">'+linha+'</div>'+rhDocaTxt(r)
     +'<div class="rh-pe"><span>'+volta+'</span><button class="btn btn-sm" onclick="rhAlternar(\''+esc(r.id)+'\')">'+(rhAbertas[r.id]?'Fechar':'Resumo e paradas')+'</button></div>';
   if(rhAbertas[r.id]){
     var rotaAtual=null;
@@ -5321,11 +5363,16 @@ function rhCartao(r){
   }
   return h+'</div>';
 }
+function rhSemEncerrar(r){
+  return (r.status==='IN_PROGRESS'||r.status==='DELAYED') && r.total>0 && !r.fimReal
+    && ((r.feitas||0)+(r.falhas||0))>=r.total && !(r.local>0);
+}
 function rhSomar(lista){
   var t={ rotas:lista.length, total:0, feitas:0, falhas:0, faltam:0, rua:0, atras:0, fim:0, plan:0 };
   lista.forEach(function(r){
     t.total+=r.total||0; t.feitas+=r.feitas||0; t.falhas+=r.falhas||0; t.faltam+=(r.pendentes||0)+(r.local||0);
-    if(r.status==='DELAYED') t.atras++; else if(r.status==='IN_PROGRESS') t.rua++;
+    if(rhSemEncerrar(r)) t.fim++;
+    else if(r.status==='DELAYED') t.atras++; else if(r.status==='IN_PROGRESS') t.rua++;
     else if(r.status==='PLANNED') t.plan++;
     else if(r.status==='EXECUTED'||r.status==='PARTIALLY_EXECUTED'||r.status==='UNEXECUTED') t.fim++;
   });
@@ -5402,6 +5449,7 @@ function rhhCarregar(forcar){
   var ini=rhh.ini, fim=rhhSoma(ini,6);
   if(rhh.dados[ini] && !forcar){ renderRotasHist(); return; }
   rhh.carregando=true; rhh.erro=''; renderRotasHist();
+  rhDocaCarregar(ini, fim);
   getDocs(query(collection(dbC,'frotaRotasHoje'), where('data','>=',ini), where('data','<=',fim))).then(function(s){
     var l=[]; s.docs.forEach(function(x){ if(x.id!=='_meta') l.push(Object.assign({ id:x.id }, x.data())); });
     rhh.dados[ini]=l; rhh.carregando=false;
@@ -5413,6 +5461,13 @@ function rhhCarregar(forcar){
   });
 }
 window.rhhCarregar=rhhCarregar;
+/* passagens pela sede (frotaDoca) de um período; sem permissão ou sem dados, segue sem */
+function rhDocaCarregar(ini, fim, depois){
+  return getDocs(query(collection(dbC,'frotaDoca'), where('data','>=',ini), where('data','<=',fim)))
+    .then(function(s){ s.docs.forEach(function(x){ docaDias[x.id]=x.data(); }); })
+    .catch(function(e){ console.warn('frotaDoca:', e && (e.code||e.message)); })
+    .then(function(){ if(depois) depois(); else if(pagina==='rotashist') renderRotasHist(); });
+}
 function renderRotasHist(){
   var box=document.getElementById('rhhBox'); if(!box) return;
   var an=(rhhModo==='analise');
@@ -5480,7 +5535,8 @@ function rhaCarregar(forcar){
   rha.chave=chave; rha.carregando=true; rha.erro=''; rha.dados=null; renderRotasAnalise();
   Promise.all([
     getDocs(query(collection(dbC,'frotaRotasHoje'), where('data','>=',ini), where('data','<=',fim))),
-    getDocs(query(collection(dbC,'frotaRotas'), where('data','>=',ini), where('data','<=',fim))).catch(function(e){ console.warn('frotaRotas (km):', e); return null; })
+    getDocs(query(collection(dbC,'frotaRotas'), where('data','>=',ini), where('data','<=',fim))).catch(function(e){ console.warn('frotaRotas (km):', e); return null; }),
+    rhDocaCarregar(ini, fim, function(){})
   ]).then(function(res){
     if(rha.chave!==chave) return;
     var l=[], km={};
@@ -5548,6 +5604,51 @@ function rhaCalcular(){
   var vals=function(o){ return Object.keys(o).map(function(k){ return o[k]; }); };
   return { rotas:rotas, G:G, cli:vals(cli), mot:vals(mot), rot:vals(rot), mes:vals(mes).sort(function(a,b){ return a.k<b.k?-1:1; }) };
 }
+function rhaHoraMin(min){ min=Math.round(min); return String(Math.floor(min/60)).padStart(2,'0')+':'+String(min%60).padStart(2,'0'); }
+function rhaDocaHtml(rotas){
+  var V={}, D={}, lin=[], temDoca=false;
+  var DIAS=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+  rotas.forEach(function(r){
+    var d=rhDoca(r); if(!d || !d.saida) return; temDoca=true;
+    var sd=new Date(d.saida), hm=sd.getHours()*60+sd.getMinutes(), wd=rhhData(r.data).getDay();
+    var v=V[r.placa]||(V[r.placa]={ placa:r.placa, mot:{}, saidas:0, nDoca:0, doca:0, max:0, pern:0, hm:0, nAtr:0, atr:0, atr15:0 });
+    var w=D[wd]||(D[wd]={ wd:wd, saidas:0, nDoca:0, doca:0, hm:0, nAtr:0, atr:0 });
+    v.saidas++; w.saidas++; v.hm+=hm; w.hm+=hm; if(r.motorista) v.mot[r.motorista]=1;
+    if(d.pernoite) v.pern++; else { v.nDoca++; v.doca+=d.min; w.nDoca++; w.doca+=d.min; if(d.min>v.max) v.max=d.min; }
+    if(d.atrasoSaida!=null){ v.nAtr++; v.atr+=d.atrasoSaida; w.nAtr++; w.atr+=d.atrasoSaida; if(d.atrasoSaida>15*60000) v.atr15++; }
+    lin.push({ r:r, d:d });
+  });
+  if(!temDoca) return '<div class="rh-sub" style="margin-top:14px;line-height:1.6">Ainda não há passagens pela sede no período. O robô começa a gravar a partir da primeira rodada com a versão nova — e precisa de um <b>local de interesse do tipo Base ou Sede</b> cadastrado no Cobli na fábrica (Cobli → Locais de interesse).</div>';
+  var h='<div class="sect" style="margin-top:14px">Por veículo</div>';
+  h+=rhaTabela([['Veículo'],['Saídas',1],['Tempo médio na doca',1],['Maior',1],['Pernoites',1],['Saída média',1],['Atraso médio de saída',1],['> 15 min atrasado',1]],
+    Object.keys(V).map(function(k){ return V[k]; }).sort(function(a,b){ return (b.nDoca?b.doca/b.nDoca:0)-(a.nDoca?a.doca/a.nDoca:0); }).map(function(v){
+      return '<tr><td><b>'+esc(v.placa)+'</b><div class="rha-mut" style="font-size:11px">'+esc(Object.keys(v.mot).slice(0,2).join(', '))+'</div></td>'
+        +'<td class="r num">'+v.saidas+'</td>'
+        +'<td class="r num"><b>'+(v.nDoca?rhMin(v.doca/v.nDoca*60000):'—')+'</b></td>'
+        +'<td class="r num">'+(v.max?rhMin(v.max*60000):'—')+'</td>'
+        +'<td class="r num">'+(v.pern||'0')+'</td>'
+        +'<td class="r num">'+rhaHoraMin(v.hm/v.saidas)+'</td>'
+        +'<td class="r num">'+rhaAtraso(v.nAtr?v.atr/v.nAtr:null)+'</td>'
+        +'<td class="r num">'+(v.atr15?'<span class="rh-err">'+v.atr15+'</span>':'0')+'</td></tr>';
+    }));
+  h+='<div class="sect">Por dia da semana</div>';
+  h+=rhaTabela([['Dia'],['Saídas',1],['Tempo médio na doca',1],['Saída média',1],['Atraso médio de saída',1]],
+    [1,2,3,4,5,6,0].filter(function(k){ return D[k]; }).map(function(k){ var w=D[k];
+      return '<tr><td><b>'+DIAS[k]+'</b></td><td class="r num">'+w.saidas+'</td>'
+        +'<td class="r num">'+(w.nDoca?rhMin(w.doca/w.nDoca*60000):'—')+'</td>'
+        +'<td class="r num">'+rhaHoraMin(w.hm/w.saidas)+'</td>'
+        +'<td class="r num">'+rhaAtraso(w.nAtr?w.atr/w.nAtr:null)+'</td></tr>'; }));
+  h+='<div class="sect">Saídas mais demoradas na doca</div>';
+  h+=rhaTabela([['Dia'],['Rota'],['Veículo'],['Entrou',1],['Saiu',1],['Na doca',1],['Saída prevista',1]],
+    lin.filter(function(x){ return !x.d.pernoite; }).sort(function(a,b){ return b.d.min-a.d.min; }).slice(0,15).map(function(x){
+      var r=x.r, d=x.d;
+      return '<tr><td>'+esc(rhDia(r.data))+'</td><td><b>'+esc(r.nome||'')+'</b></td><td>'+esc(r.placa||'')+'</td>'
+        +'<td class="r num">'+rhHora(d.saida-d.min*60000)+'</td><td class="r num">'+rhHora(d.saida)+'</td>'
+        +'<td class="r num"><b>'+rhMin(d.min*60000)+'</b></td><td class="r num">'+(r.inicioPlan?rhHora(r.inicioPlan):'—')+'</td></tr>';
+    }), 'Só houve pernoites no período.');
+  h+='<div class="rh-sub" style="margin-top:9px;line-height:1.6"><b>Na doca</b> = tempo dentro da sede antes de sair para a rota (carregamento, conferência, espera). <b>Pernoite</b> = o caminhão dormiu na sede ou ficou mais de '+(RH_PERNOITE_MIN/60)+' h: conta só a hora de saída. <b>Atraso de saída</b> = saída real da sede menos o início planejado da rota no Cobli.</div>';
+  return h;
+}
 function rhaTabela(cab, linhas, vazio){
   if(!linhas.length) return '<div class="rh-sub" style="padding:12px 2px">'+(vazio||'Sem dados no período.')+'</div>';
   return '<div class="tw"><div class="tscroll" style="max-height:62vh"><table><thead><tr>'+cab.map(function(c){ return '<th'+(c[1]?' class="r"':'')+'>'+c[0]+'</th>'; }).join('')+'</tr></thead><tbody>'
@@ -5569,7 +5670,7 @@ function renderRotasAnalise(){
     +'<div class="card rh-kpi'+(G.atr30?' rh-kpi-erro':'')+'"><span class="rh-kpi-lab">Mais de '+RH_ATRASO_MIN+' min atrasado</span><div class="rh-kpi-val">'+(rhaPct(G.atr30,G.comPrev)==null?'—':rhaPct(G.atr30,G.comPrev)+'<small>%</small>')+'</div><span class="rh-kpi-sub">'+G.atr30+' chegadas, contra o previsto</span></div>'
     +'<div class="card rh-kpi'+(G.falhas?' rh-kpi-erro':'')+'"><span class="rh-kpi-lab">Não entregues</span><div class="rh-kpi-val">'+G.falhas+'</div><span class="rh-kpi-sub">'+rhaPctTxt(G.falhas,G.paradas)+' das paradas</span></div>'
     +'</div>';
-  var abas=[['clientes','Clientes'],['motoristas','Motoristas e meses'],['rotas','Rotas']];
+  var abas=[['clientes','Clientes'],['motoristas','Motoristas e meses'],['rotas','Rotas'],['doca','Doca e saída']];
   h+='<div class="rha-abas">'+abas.map(function(a){ return '<button class="btn btn-sm'+(rha.aba===a[0]?'':' btn-ghost')+'" onclick="rhaSet(\'aba\',\''+a[0]+'\')">'+a[1]+'</button>'; }).join('')+'</div>';
 
   if(rha.aba==='clientes'){
@@ -5623,6 +5724,9 @@ function renderRotasAnalise(){
           +'<td class="r num">'+rhaPctTxt(m.falhas,m.paradas)+'</td></tr>';
       }));
     h+='<div class="rh-sub" style="margin-top:9px">Para ver mais meses, aumente o período no alto da tela.</div>';
+  }
+  else if(rha.aba==='doca'){
+    h+=rhaDocaHtml(A.rotas);
   }
   else {
     var lr=A.rot.map(function(R){ R.eh=R.horas>0?R.feitasH/R.horas:null; return R; })
@@ -8955,6 +9059,10 @@ function liberar(d){
     docs=s.docs.map(function(x){ return Object.assign({ firestoreId:x.id }, x.data()); });
     render();
   });
+  ouvir('frotaDoca', doc(dbC,'frotaDoca',dataLocalHoje()), function(s){
+    if(s.exists()) docaDias[s.id]=s.data();
+    if(pagina==='painel') renderRotasHoje();
+  });
   ouvir('frotaRotasHoje', query(collection(dbC,'frotaRotasHoje'), where('data','>=',rhSemana()[0]), where('data','<=',rhSemana()[1])), function(s){
     rotasHoje={}; rotasHojeMeta=null;
     s.docs.forEach(function(x){ if(x.id==='_meta') rotasHojeMeta=x.data(); else rotasHoje[x.id]=x.data(); });
@@ -9036,9 +9144,8 @@ window.sair=function(){ signOut(auth).catch(function(e){ console.warn(e); }); };
 document.addEventListener('keydown', function(e){
   if(e.key==='Escape' && document.querySelector('#modal-host .mask')){ e.preventDefault(); fecharModal(); }
 });
-try{ var lp=localStorage.getItem('mc_frota_page'); if(lp==='rotas') lp='roteirizar';   /* a tela Rotas saiu do menu */
-     if(lp&&TITLES[lp]) setTimeout(function(){ nav(lp); },0); }catch(e){}
-// nav() já barra as telas de gestão, então a página salva não abre indevidamente
+/* Ao abrir o link, o app começa sempre no Painel (não volta para a última tela).
+   Quem não tem acesso ao Painel cai em Veículos — o render() já faz esse desvio. */
 </script>
 <script src="https://monte-castelo-ind.github.io/voltar.js"></script>
 </body>
