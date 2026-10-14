@@ -896,6 +896,18 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
 .rh-sec-cab{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 .rh-sec-cab h3{font-size:14px;margin:0;text-transform:uppercase;letter-spacing:.08em}
 .rh-sec-n{font-size:12.5px;color:var(--muted)}
+.rh-oc{position:relative;display:inline-block}
+.rh-oc-btn{font:inherit;font-size:12px;padding:4px 11px;border-radius:999px;border:1px solid var(--border);background:var(--card-2);color:var(--muted);cursor:pointer}
+.rh-oc-btn.tem{color:var(--primary);border-color:color-mix(in srgb,var(--primary) 45%,var(--border))}
+.rh-oc-btn b{color:inherit}
+.rh-oc-pop{position:absolute;top:calc(100% + 6px);left:0;z-index:40;width:min(460px,86vw);max-height:60vh;overflow:auto;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 14px 34px rgba(0,0,0,.35);padding:10px 12px}
+.rh-oc-tit{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:2px 0 6px}
+.rh-oc-lin{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid var(--border)}
+.rh-oc-cli{min-width:0;display:flex;flex-direction:column}
+.rh-oc-cli b{font-size:12.5px}
+.rh-oc-lin small{font-size:11px;color:var(--muted)}
+.rh-oc-t{text-align:right;white-space:nowrap;display:flex;flex-direction:column}
+.rh-oc-t b{color:var(--primary);font-size:13px}
 .rh-sec-prog{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted)}
 .rh-sec-prog b{color:var(--text)}
 .rh-sec-bar{position:relative;width:140px;height:5px;border-radius:99px;background:var(--card-2);overflow:hidden}
@@ -5383,8 +5395,38 @@ var RH_ORDEM={ IN_PROGRESS:0, DELAYED:0, PLANNED:1, PARTIALLY_EXECUTED:2, UNEXEC
 function rhOrdenar(lista){
   return lista.sort(function(a,b){ return ((RH_ORDEM[a.status]!=null?RH_ORDEM[a.status]:1)-(RH_ORDEM[b.status]!=null?RH_ORDEM[b.status]:1)) || String(a.nome).localeCompare(String(b.nome),'pt-BR',{numeric:true}); });
 }
+/* Ocorrências: só as paradas em que o motorista ficou mais de RH_DEMORA_MIN no
+   cliente, de todas as rotas da seção, da maior para a menor. Abre num painel
+   suspenso ao lado do número de rotas. */
+var rhOcorrAberta='';
+window.rhOcorrAlternar=function(k, ev){
+  if(ev) ev.stopPropagation();
+  rhOcorrAberta=(rhOcorrAberta===k)?'':k;
+  if(pagina==='rotashist') renderRotasHist(); else renderRotasHoje();
+};
+document.addEventListener('click', function(e){
+  if(rhOcorrAberta && !(e.target.closest && e.target.closest('.rh-oc'))){ rhOcorrAberta=''; if(pagina==='rotashist') renderRotasHist(); else renderRotasHoje(); }
+});
+function rhOcorrBotao(titulo, lista){
+  var lim=RH_DEMORA_MIN*60000, oc=[];
+  lista.forEach(function(r){ (r.paradas||[]).forEach(function(p){ if((p.dur||0)>lim) oc.push({ p:p, r:r }); }); });
+  oc.sort(function(a,b){ return b.p.dur-a.p.dur; });
+  var k='oc_'+titulo, aberta=(rhOcorrAberta===k);
+  var h='<span class="rh-oc"><button class="rh-oc-btn'+(oc.length?' tem':'')+'" onclick="rhOcorrAlternar(\''+esc(k).replace(/'/g,"\\'")+'\',event)">⏱ Ocorrências <b>'+oc.length+'</b> ▾</button>';
+  if(aberta){
+    h+='<div class="rh-oc-pop"><div class="rh-oc-tit">Clientes com mais de '+RH_DEMORA_MIN+' min de parada</div>'
+      +(oc.length ? oc.map(function(x){
+          var p=x.p, r=x.r;
+          return '<div class="rh-oc-lin"><div class="rh-oc-cli"><b>'+esc(p.nome||'—')+'</b><small>'+esc(r.nome||'')+(r.motorista?' · '+esc(r.motorista):'')
+            +(p.bairro||p.cidade?' · '+esc([p.bairro,p.cidade].filter(Boolean).join(', ')):'')+'</small></div>'
+            +'<div class="rh-oc-t"><b>'+rhMin(p.dur)+'</b><small>'+(p.chegada?'chegou '+rhHora(p.chegada):'')+(p.saida?' · saiu '+rhHora(p.saida):'')+'</small></div></div>';
+        }).join('') : '<div class="rh-sub" style="padding:10px 2px">Nenhuma parada passou de '+RH_DEMORA_MIN+' min até agora.</div>')
+      +'</div>';
+  }
+  return h+'</span>';
+}
 function rhSecao(titulo, lista, t, extra, vazio){
-  return '<section class="rh-sec'+(extra||'')+'"><div class="rh-sec-cab"><h3>'+esc(titulo)+'</h3><span class="rh-sec-n">'+t.rotas+' rota'+(t.rotas===1?'':'s')+'</span>'
+  return '<section class="rh-sec'+(extra||'')+'"><div class="rh-sec-cab"><h3>'+esc(titulo)+'</h3><span class="rh-sec-n">'+t.rotas+' rota'+(t.rotas===1?'':'s')+'</span>'+rhOcorrBotao(titulo, lista)
     +'<span class="rh-sec-prog"><span><b>'+t.feitas+'</b> de '+t.total+' entregas</span><span class="rh-sec-bar"><i style="width:'+t.pct+'%"></i></span><b>'+t.pct+'%</b></span></div>'
     +'<div class="rh-grid">'+(lista.length?lista.map(rhCartao).join(''):'<div class="rh-sub">'+(vazio||'Nenhuma rota hoje.')+'</div>')+'</div></section>';
 }
