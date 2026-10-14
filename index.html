@@ -5985,6 +5985,11 @@ function rhMapaAtualizar(lista, forcar){
     var feitas=(r.paradas||[]).filter(function(p){ return (p.sit==='feita'||p.sit==='falhou') && p.lat!=null && p.lng!=null; });
     var R={ cor:cor, r:r, v:v, falta:rhMapaOpc.paradas?falta:[], feitas:rhMapaOpc.feitas?feitas:[], trilha:r.trilha?rhDecodificar(r.trilha):[] };
     R.feitas.forEach(function(p){ D.pts.push([p.lat,p.lng]); });
+    /* baixa longe do caminho: o caminhão não passou perto do endereço cadastrado */
+    if(R.trilha.length>1) R.feitas.forEach(function(p){
+      if(p.chegada && r.trilhaAte && p.chegada>r.trilhaAte) return;
+      var km=rhDistTrilha([p.lat,p.lng], R.trilha); if(km>RH_LONGE_KM) p._longe=km;
+    });
     R.trilha.forEach(function(q){ D.pts.push(q); });
     R.falta.forEach(function(p){ D.pts.push([p.lat,p.lng]); });
     if(v){
@@ -6023,7 +6028,9 @@ function rhMapaAtualizar(lista, forcar){
       +'<br>'+(p.sit==='falhou'?'<b style="color:#c62828">Não entregue</b>':'<b style="color:#1b8a4b">Entregue</b>')
       +(p.chegada?' · chegou '+esc(rhHora(p.chegada)):'')+(p.saida?' · saiu '+esc(rhHora(p.saida)):'')
       +(p.dur>0?'<br>Tempo no cliente: <b'+(p.dur>RH_DEMORA_MIN*60000?' style="color:#c62828"':'')+'>'+rhMin(p.dur)+'</b>':'')
-      +(p.prev?'<br>Previsto '+esc(rhHora(p.prev)):'')+(obs?'<br>Motivo: “'+esc(obs)+'”':'')+'</div>'; };
+      +(p.prev?'<br>Previsto '+esc(rhHora(p.prev)):'')+(obs?'<br>Motivo: “'+esc(obs)+'”':'')
+      +(p.sit==='feita'?'<br><span style="color:#5f6368">Baixa: '+(p.comp==='COMPLETED'||p.comp==='PARTIALLY_COMPLETED'?'pelo motorista no app':p.vis==='VISITED'?'pela posição do caminhão':'—')+'</span>':'')
+      +(p._longe?'<br><b style="color:#b06000">⚠ O caminhão não passou a menos de '+String(Math.round(p._longe*10)/10).replace('.',',')+' km deste endereço.</b><br><span style="color:#5f6368">Baixa dada à distância, ou endereço errado no cadastro do cliente.</span>':'')+'</div>'; };
   D.popFeita=popFeita;
   var popParada=function(R,p){ return '<div class="rt-pop"><b>'+esc(p.nome||'—')+'</b><br>'+esc(R.r.nome||'')+' · parada '+(p.pos!=null?p.pos:'')
     +(p.bairro||p.cidade?'<br>'+esc([p.bairro,p.cidade].filter(Boolean).join(' · ')):'')
@@ -6032,6 +6039,17 @@ function rhMapaAtualizar(lista, forcar){
     rzGCarregar().then(function(){ rhMapaGoogle(box, D, popParada); })
       .catch(function(){ rhMapaLeaflet(box, D, popParada); });
   } else rhMapaLeaflet(box, D, popParada);
+}
+var RH_LONGE_KM=0.8;
+/* menor distância (km) de um ponto até a linha do trajeto */
+function rhDistTrilha(q, tr){
+  var kx=111.32*Math.cos(q[0]*Math.PI/180), ky=110.57, best=1e9;
+  for(var i=0;i+1<tr.length;i++){
+    var ax=(tr[i][1]-q[1])*kx, ay=(tr[i][0]-q[0])*ky, bx=(tr[i+1][1]-q[1])*kx, by=(tr[i+1][0]-q[0])*ky;
+    var dx=bx-ax, dy=by-ay, n=dx*dx+dy*dy, t=n?Math.max(0,Math.min(1,-(ax*dx+ay*dy)/n)):0;
+    var x=ax+t*dx, y=ay+t*dy, d=Math.sqrt(x*x+y*y); if(d<best) best=d;
+  }
+  return best;
 }
 /* polyline codificada (formato do Google) → [[lat,lng],…] */
 function rhDecodificar(t){
@@ -6065,10 +6083,10 @@ function rhMapaGoogle(box, D, popParada){
     if(R.trilha.length>1) rhGM.objs.push(new google.maps.Polyline({ map:M, path:R.trilha.map(function(q){ return { lat:q[0], lng:q[1] }; }),
       strokeColor:R.cor, strokeOpacity:.9, strokeWeight:5, zIndex:2 }));
     R.feitas.forEach(function(p){
-      var falhou=p.sit==='falhou';
-      var m=new google.maps.Marker({ map:M, position:{ lat:p.lat, lng:p.lng }, zIndex:80, title:p.nome||'',
-        label:{ text:falhou?'✕':'✓', color:'#fff', fontSize:'10px', fontWeight:'700' },
-        icon:{ path:google.maps.SymbolPath.CIRCLE, scale:7, fillColor:falhou?'#d93025':R.cor, fillOpacity:falhou?1:.85, strokeColor:'#fff', strokeWeight:2 } });
+      var falhou=p.sit==='falhou', longe=!falhou&&p._longe;
+      var m=new google.maps.Marker({ map:M, position:{ lat:p.lat, lng:p.lng }, zIndex:longe?90:80, title:p.nome||'',
+        label:{ text:falhou?'✕':longe?'!':'✓', color:'#fff', fontSize:'10px', fontWeight:'700' },
+        icon:{ path:google.maps.SymbolPath.CIRCLE, scale:longe?8:7, fillColor:falhou?'#d93025':longe?'#f29900':R.cor, fillOpacity:falhou||longe?1:.85, strokeColor:longe?R.cor:'#fff', strokeWeight:longe?3:2 } });
       pop(m, D.popFeita(R,p)); rhGM.objs.push(m);
     });
     if(R.falta.length){
@@ -6115,9 +6133,9 @@ function rhMapaLeaflet(box, D, popParada){
     D.rotas.forEach(function(R){
       if(R.trilha.length>1) L.polyline(R.trilha, { color:R.cor, weight:4, opacity:.85 }).addTo(rhMapaGrupo);
       R.feitas.forEach(function(p){
-        var falhou=p.sit==='falhou';
+        var falhou=p.sit==='falhou', longe=!falhou&&p._longe;
         L.marker([p.lat,p.lng], { icon:L.divIcon({ className:'', iconSize:[16,16], iconAnchor:[8,8],
-            html:'<div class="rh-feita" style="background:'+(falhou?'#d93025':R.cor)+'">'+(falhou?'✕':'✓')+'</div>' }) })
+            html:'<div class="rh-feita" style="background:'+(falhou?'#d93025':longe?'#f29900':R.cor)+(longe?';border-color:'+R.cor:'')+'">'+(falhou?'✕':longe?'!':'✓')+'</div>' }) })
           .bindPopup(D.popFeita(R,p)).addTo(rhMapaGrupo);
       });
       if(R.falta.length){
