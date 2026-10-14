@@ -965,6 +965,7 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
     <button class="navbtn cobli-only" data-p="cobli" onclick="nav('cobli')" style="display:none"><span class="side-ico">⇪</span><span class="lbl">Cobli Conversor</span></button>
     <div class="side-sec lbl">Rotas</div>
     <button class="navbtn gestao-only" data-p="roteirizar" onclick="nav('roteirizar')"><span class="side-ico">⤳</span><span class="lbl">Roteirizar</span></button>
+    <button class="navbtn gestao-only" data-p="rotashist" onclick="nav('rotashist')"><span class="side-ico">◴</span><span class="lbl">Histórico de rotas</span></button>
     <button class="navbtn admin-only" data-p="territorios" onclick="nav('territorios')" style="display:none"><span class="side-ico">◈</span><span class="lbl">Territórios</span></button>
     <div class="side-sec lbl">Ajustes</div>
     <button class="navbtn config-only" data-p="config" onclick="nav('config')"><span class="side-ico">⚙</span><span class="lbl">Configurações</span></button>
@@ -1226,6 +1227,22 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
       </div>
     </div>
 
+    <!-- HISTÓRICO DE ROTAS: rotas passadas do Cobli, por semana -->
+    <div class="page" id="page-rotashist">
+      <div class="tools">
+        <button class="btn btn-sm btn-ghost" onclick="rhhSemana(-1)" title="Semana anterior">‹</button>
+        <span id="rhh-sem" style="font-weight:600;font-size:13px;white-space:nowrap"></span>
+        <button class="btn btn-sm btn-ghost" onclick="rhhSemana(1)" title="Semana seguinte">›</button>
+        <input type="date" id="rhh-data" onchange="rhhIrData(this.value)" title="Ir para a semana deste dia" style="width:auto;min-width:0">
+        <select id="rhh-filtro" onchange="rhhFiltro('filtro',this.value)">
+          <option value="">Matriz e Filial</option><option value="matriz">Só Matriz</option><option value="filial">Só Filial</option>
+        </select>
+        <select id="rhh-dia" onchange="rhhFiltro('dia',this.value)"></select>
+        <button class="btn btn-sm btn-ghost" onclick="rhhCarregar(true)">Atualizar</button>
+      </div>
+      <div id="rhhBox"></div>
+    </div>
+
     <!-- ROTEIRIZAR: montar rota por endereço -->
     <div class="page" id="page-roteirizar">
       <div class="rz-wrap">
@@ -1407,7 +1424,7 @@ var pagina='painel', sessaoEmail='', sessaoUid='', sessaoNome='', ehAdmin=false,
 var podeCadastrar=false, podeCaixas=false, podeConfig=false, podeCobli=false;
 /* Painel e Custos são telas de gestão: quem só lança manutenção não precisa
    ver o gasto da frota inteira. */
-var PAGINAS_GESTAO=['painel','custos','rotas','roteirizar'];
+var PAGINAS_GESTAO=['painel','custos','rotas','roteirizar','rotashist'];
 /* Janela dos números da aba Veículos e do detalhe do veículo. Estava 90 em
    seis lugares diferentes; agora sai de um só. */
 var JANELA_DIAS=30;
@@ -1438,6 +1455,7 @@ const TITLES={
   estoque:['Pneus e óleos','Estoque da oficina — o que tem em casa'],
   custos:['Custos e consumo','R$/km, R$/litro e km/L por veículo'],
   rotas:['Rotas','O dia de cada veículo: saída, paradas e volta, pelo Cobli'],
+  rotashist:['Histórico de rotas','Rotas passadas do Cobli, semana a semana: entregas, não entregues e paradas'],
   roteirizar:['Roteirizar','Monte a rota pelos endereços: melhor ordem, km, tempo e horário em cada parada'],
   cobli:['Cobli Conversor','Pedidos do carregamento do ERP → planilha de endereços para importar no Cobli'],
   territorios:['Territórios','Área de atuação de cada vendedor e representante · só administrador'],
@@ -4583,7 +4601,7 @@ window.rzMarcarSujoCampo=function(){ rzMarcarSujo(); };
 var MTOPO_GRUPOS=[
   { nome:'Frota', ps:['painel','veiculos','mov','chk','docs','estoque','custos'] },
   { nome:'Expedição', ps:['caixas','cobli'] },
-  { nome:'Rotas', ps:['rotas','roteirizar','territorios'] },
+  { nome:'Rotas', ps:['rotas','roteirizar','rotashist','territorios'] },
   { ps:['config'] }
 ];
 function mtopoMontar(){
@@ -4673,6 +4691,7 @@ function render(){
   else if(pagina==='custos') renderCustos();
   else if(pagina==='rotas') renderRotas();
   else if(pagina==='roteirizar') renderRoteirizar();
+  else if(pagina==='rotashist') renderRotasHist();
   else if(pagina==='cobli') renderCobli();
   else if(pagina==='territorios') renderTerritorios();
   else if(pagina==='config'){ renderConfig(); renderConfigCaixas(); }
@@ -5116,7 +5135,7 @@ function rhHora(ms){ if(!ms) return '—'; var d=new Date(ms); return String(d.g
 var RH_ST={ PLANNED:['Planejada','neutro'], IN_PROGRESS:['Na rua','neutro'], DELAYED:['Atrasada','alerta'],
   EXECUTED:['Concluída','ok'], PARTIALLY_EXECUTED:['Parcial','alerta'], UNEXECUTED:['Não executada','alerta'] };
 var RH_SIT={ feita:['Entregue','ok'], local:['No local','info'], falhou:['Não entregue','erro'], pendente:['Pendente','neutro'] };
-window.rhAlternar=function(id){ rhAbertas[id]=!rhAbertas[id]; renderRotasHoje(); };
+window.rhAlternar=function(id){ rhAbertas[id]=!rhAbertas[id]; if(pagina==='rotashist') renderRotasHist(); else renderRotasHoje(); };
 /* Caminhões de filial: as rotas deles vão para a seção da filial (um cartão
    por rota, como na Matriz). Placa no formato do robô. */
 var RH_FILIAIS=[{ placa:'IYW7I66', nome:'Filial · Cruz Alta' }];
@@ -5130,6 +5149,12 @@ function rhPontos(r){
   var falhas=ps.filter(function(p){ return p.sit==='falhou'; });
   if(falhas.length) out.push(['erro','✕', falhas.length+' não entregue'+(falhas.length>1?'s':''),
     falhas.map(function(p){ return nomeP(p)+' — '+(p.obs?'“'+esc(p.obs)+'”':'<i>motivo ainda não disponível</i>'); })]);
+  var parc=ps.filter(function(p){ return p.sit==='feita' && p.comp==='PARTIALLY_COMPLETED'; });
+  if(parc.length) out.push(['alerta','◐', parc.length+' entrega'+(parc.length>1?'s':'')+' marcada'+(parc.length>1?'s':'')+' como parcial pelo motorista',
+    parc.map(function(p){ return nomeP(p)+(p.obs?' — “'+esc(p.obs)+'”':''); })]);
+  var semBaixa=ps.filter(function(p){ return p.sit==='feita' && p.vis==='VISITED' && p.comp!=null && p.comp!=='COMPLETED' && p.comp!=='PARTIALLY_COMPLETED'; });
+  if(semBaixa.length) out.push(['info','⌖', semBaixa.length+' entrega'+(semBaixa.length>1?'s':'')+' sem baixa no app (o Cobli registrou pela posição)',
+    semBaixa.map(function(p){ return nomeP(p); })]);
   var dem=ps.filter(function(p){ return (p.dur||0)>lim; }).sort(function(a,b){ return b.dur-a.dur; });
   if(dem.length) out.push(['alerta','⏱', dem.length+' cliente'+(dem.length>1?'s':'')+' com mais de '+RH_DEMORA_MIN+' min',
     dem.map(function(p){ return nomeP(p)+' — <b>'+rhMin(p.dur)+'</b>'+(p.espera>60000?' (espera '+rhMin(p.espera)+')':''); })]);
@@ -5152,6 +5177,10 @@ function rhPontos(r){
 }
 function rhCartao(r){
   var st=RH_ST[r.status]||[r.status||'—','neutro'], pct=r.total?Math.round(r.feitas/r.total*100):0;
+  /* O Cobli chama de "parcial" a rota em que alguma parada não teve baixa completa
+     no app (entrega parcial ou só visita pela posição). Se todos os clientes foram
+     atendidos e nada falhou, para nós a rota está concluída; o detalhe vai nos Pontos. */
+  if(r.status==='PARTIALLY_EXECUTED' && r.total && r.feitas===r.total && !r.falhas) st=['Concluída','ok'];
   var faltam=(r.pendentes||0)+(r.local||0);
   var linha = r.agora ? 'Agora no cliente: <b>'+esc(r.agora.nome)+'</b>'+(r.agora.bairro?' · '+esc(r.agora.bairro):'')
     : r.proxima ? 'Próxima: <b>'+esc(r.proxima.nome)+'</b>'+(r.proxima.bairro?' · '+esc(r.proxima.bairro):'')
@@ -5244,6 +5273,77 @@ function renderRotasHoje(){
   /* Matriz em cima; divisória; Filial embaixo */
   h+=rhSecao('Matriz', matriz, tm);
   h+='<hr class="rh-div">'+rhSecao(RH_FILIAIS[0].nome+' · semana '+rhDia(sem[0]).replace(/^\S+ /,'')+' a '+rhDia(sem[1]).replace(/^\S+ /,''), filial, tf, ' rh-sec-filial', 'Nenhuma rota da filial nesta semana.');
+  box.innerHTML=h;
+}
+/* ===== HISTÓRICO DE ROTAS =====
+   Lê frotaRotasHoje da semana escolhida (seg–dom) uma vez, com getDocs — não
+   fica escutando. O robô guarda os resumos por 12 meses. Os cartões são os
+   mesmos do Painel (Resumo e paradas, Pontos da rota). */
+var rhh={ ini:null, dados:{}, carregando:false, erro:'', filtro:'', dia:'' };
+function rhhData(iso){ var p=iso.split('-'); return new Date(+p[0],+p[1]-1,+p[2],12); }
+function rhhSoma(iso,n){ var d=rhhData(iso); d.setDate(d.getDate()+n); return rhIso(d); }
+function rhhSemanaDe(iso){ var d=rhhData(iso); d.setDate(d.getDate()-((d.getDay()+6)%7)); return rhIso(d); }
+function rhhDM(iso){ var p=iso.split('-'); return p[2]+'/'+p[1]; }
+window.rhhSemana=function(n){ rhh.ini=rhhSoma(rhh.ini||rhhSemanaDe(dataLocalHoje()), 7*n); rhh.dia=''; rhhCarregar(); };
+window.rhhIrData=function(v){ if(!v) return; rhh.ini=rhhSemanaDe(v); rhh.dia=''; rhhCarregar(); };
+window.rhhFiltro=function(k,v){ rhh[k]=v; renderRotasHist(); };
+function rhhCarregar(forcar){
+  if(!rhh.ini) rhh.ini=rhhSemanaDe(dataLocalHoje());
+  var ini=rhh.ini, fim=rhhSoma(ini,6);
+  if(rhh.dados[ini] && !forcar){ renderRotasHist(); return; }
+  rhh.carregando=true; rhh.erro=''; renderRotasHist();
+  getDocs(query(collection(dbC,'frotaRotasHoje'), where('data','>=',ini), where('data','<=',fim))).then(function(s){
+    var l=[]; s.docs.forEach(function(x){ if(x.id!=='_meta') l.push(Object.assign({ id:x.id }, x.data())); });
+    rhh.dados[ini]=l; rhh.carregando=false;
+    if(pagina==='rotashist') renderRotasHist();
+  }).catch(function(e){
+    console.error('histórico de rotas', e);
+    rhh.carregando=false; rhh.erro=(e&&e.message)||String(e);
+    if(pagina==='rotashist') renderRotasHist();
+  });
+}
+window.rhhCarregar=rhhCarregar;
+function renderRotasHist(){
+  var box=document.getElementById('rhhBox'); if(!box) return;
+  if(!rhh.ini) rhh.ini=rhhSemanaDe(dataLocalHoje());
+  var ini=rhh.ini, fim=rhhSoma(ini,6), atual=(ini===rhhSemanaDe(dataLocalHoje()));
+  document.getElementById('rhh-sem').textContent='Semana '+rhhDM(ini)+' a '+rhhDM(fim)+(atual?' · atual':'');
+  var dias=[]; for(var i=0;i<7;i++) dias.push(rhhSoma(ini,i));
+  document.getElementById('rhh-dia').innerHTML='<option value="">Todos os dias</option>'+dias.map(function(d){
+    return '<option value="'+d+'"'+(rhh.dia===d?' selected':'')+'>'+esc(rhDia(d))+'</option>'; }).join('');
+  document.getElementById('rhh-filtro').value=rhh.filtro;
+  if(rhh.erro){ box.innerHTML='<div class="rh-sub rh-err">Não foi possível ler o histórico: '+esc(rhh.erro)+'</div>'; return; }
+  if(!rhh.dados[ini]){
+    box.innerHTML='<div class="rh-sub">Carregando as rotas da semana…</div>';
+    if(!rhh.carregando) rhhCarregar();
+    return;
+  }
+  var placasFilial={}; RH_FILIAIS.forEach(function(f){ placasFilial[f.placa]=f; });
+  var lista=rhh.dados[ini].map(function(r){ r=Object.assign({}, r); r.ehFilial=!!placasFilial[r.placa]; return r; });
+  if(rhh.filtro==='matriz') lista=lista.filter(function(r){ return !r.ehFilial; });
+  else if(rhh.filtro==='filial') lista=lista.filter(function(r){ return r.ehFilial; });
+  if(rhh.dia) lista=lista.filter(function(r){ return r.data===rhh.dia; });
+  if(!lista.length){
+    box.innerHTML='<div class="rh-sub">Nenhuma rota '+(rhh.dia?'neste dia':'nesta semana')+(rhh.filtro?' com esse filtro':'')+'.</div>';
+    return;
+  }
+  var t=rhSomar(lista), demoras=0;
+  lista.forEach(function(r){ (r.paradas||[]).forEach(function(p){ if((p.dur||0)>RH_DEMORA_MIN*60000) demoras++; }); });
+  var h='<div class="rh-kpis">'
+    +'<div class="card rh-kpi rh-kpi-dest"><span class="rh-kpi-lab">Entregas '+(rhh.dia?'do dia':'da semana')+'</span><div class="rh-kpi-val">'+t.pct+'<small>%</small></div>'
+      +'<span class="rh-kpi-sub"><b>'+t.feitas+'</b> de '+t.total+' clientes</span><div class="rh-bar"><div style="width:'+t.pct+'%"></div></div></div>'
+    +'<div class="card rh-kpi'+(t.falhas?' rh-kpi-erro':'')+'"><span class="rh-kpi-lab">Não entregues</span><div class="rh-kpi-val">'+t.falhas+'</div><span class="rh-kpi-sub">'+(t.falhas?'motivos em cada rota':'nenhuma')+'</span></div>'
+    +'<div class="card rh-kpi"><span class="rh-kpi-lab">Mais de '+RH_DEMORA_MIN+' min no cliente</span><div class="rh-kpi-val">'+demoras+'</div><span class="rh-kpi-sub">paradas</span></div>'
+    +'<div class="card rh-kpi"><span class="rh-kpi-lab">Rotas</span><div class="rh-kpi-val">'+t.rotas+'</div><span class="rh-kpi-sub">'+t.faltam+' cliente'+(t.faltam===1?'':'s')+' sem baixa</span></div>'
+    +'</div>';
+  /* um bloco por dia, segunda → domingo; dentro do dia, Matriz antes da Filial */
+  dias.forEach(function(d){
+    var doDia=lista.filter(function(r){ return r.data===d; });
+    if(!doDia.length) return;
+    doDia.sort(function(a,b){ return (a.ehFilial-b.ehFilial) || String(a.nome).localeCompare(String(b.nome),'pt-BR',{numeric:true}); });
+    var p=rhhData(d), tit=RH_DIAS[p.getDay()]+' '+rhhDM(d)+(d===dataLocalHoje()?' · hoje':'');
+    h+=rhSecao(tit, doDia, rhSomar(doDia));
+  });
   box.innerHTML=h;
 }
 function renderPainel(){
