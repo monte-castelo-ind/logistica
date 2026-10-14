@@ -5343,6 +5343,16 @@ function rhDifTxt(real, prev){
   if(Math.abs(m)<=5) return ' <span class="rh-hr-ok">no horário</span>';
   return m>0 ? ' <span class="'+(m>15?'rh-err':'rha-mut')+'">+'+rhMin(m*60000)+'</span>' : ' <span class="rh-hr-ok">'+rhMin(-m*60000)+' antes</span>';
 }
+/* Retorno estimado: o fim planejado empurrado pelo atraso atual.
+   Atraso atual = chegada real − chegada prevista da última entrega feita;
+   sem entrega ainda, o atraso da saída. Nunca antes de agora. */
+function rhRetornoEst(r, ini){
+  if(r.fimReal || !r.fimPlan || r.status==='PLANNED' || rhSemEncerrar(r)) return null;
+  var ps=(r.paradas||[]).filter(function(p){ return p.chegada && p.prev && p.sit!=='pendente'; })
+    .sort(function(a,b){ return b.chegada-a.chegada; });
+  var atraso = ps.length ? ps[0].chegada-ps[0].prev : (ini && r.inicioPlan ? ini-r.inicioPlan : 0);
+  return Math.max(r.fimPlan+atraso, Date.now());
+}
 function rhHorarios(r){
   var d=rhDoca(r)||{};
   var ini=r.inicioReal || d.saida || null, iniSede=!r.inicioReal && !!d.saida;
@@ -5350,7 +5360,9 @@ function rhHorarios(r){
   var cel=function(ms, sede){ return ms ? '<b>'+rhHora(ms)+'</b>'+(sede?' <small class="rha-mut" title="Pela passagem na sede (Cobli)">sede</small>':'') : '<span class="rha-mut">—</span>'; };
   return '<div class="rh-hr"><span></span><span class="rh-hr-cab">Previsto</span><span class="rh-hr-cab">Real</span>'
     +'<span class="rh-hr-lab">Início</span><span>'+(r.inicioPlan?rhHora(r.inicioPlan):'—')+'</span><span>'+cel(ini,iniSede)+rhDifTxt(ini,r.inicioPlan)+'</span>'
-    +'<span class="rh-hr-lab">Fim</span><span>'+(r.fimPlan?rhHora(r.fimPlan):'—')+'</span><span>'+cel(fim,fimSede)+rhDifTxt(fim,r.fimPlan)+'</span></div>';
+    +'<span class="rh-hr-lab">Fim</span><span>'+(r.fimPlan?rhHora(r.fimPlan):'—')+'</span><span>'+cel(fim,fimSede)+rhDifTxt(fim,r.fimPlan)+'</span>'
+    +(function(){ var est=fim?null:rhRetornoEst(r, ini); return est ? '<span class="rh-hr-lab">Retorno</span><span class="rha-mut">estimado</span><span><b>'+rhHora(est)+'</b>'+rhDifTxt(est,r.fimPlan)+'</span>' : ''; })()
+    +'</div>';
 }
 function rhCartao(r){
   var st=RH_ST[r.status]||[r.status||'—','neutro'], pct=r.total?Math.round(r.feitas/r.total*100):0;
