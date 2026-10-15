@@ -5358,10 +5358,12 @@ function rhDoca(r){
 function rhDocaTxt(r){
   /* horários de saída e volta já aparecem no quadro Previsto × Real; aqui fica o tempo de doca */
   var d=rhDoca(r);
-  if((!d || !d.saida) && r.saidaSede && r.entradaSede) d={ saida:r.saidaSede, min:Math.round((r.saidaSede-r.entradaSede)/60000), pernoite:false };
+  if((!d || !d.saida) && r.saidaSede) d = r.entradaSede ? { saida:r.saidaSede, min:Math.round((r.saidaSede-r.entradaSede)/60000), pernoite:false }
+                                                       : { saida:r.saidaSede, min:0, pernoite:true };
   if(!d || !d.saida) return '';
+  var vai=(r.saidasSede&&r.saidasSede.length>1) ? ' · <span class="rh-err">saiu e voltou ao pátio antes ('+r.saidasSede.slice(0,-1).map(rhHora).join(', ')+')</span>' : '';
   return '<div class="rh-txt rh-doca">⌂ '+(d.pernoite ? 'Pernoite na sede · saiu às <b>'+rhHora(d.saida)+'</b>'
-    : '<b>'+rhMin(d.min*60000)+'</b> na doca antes de sair (entrou '+rhHora(d.saida-d.min*60000)+')')+'</div>';
+    : '<b>'+rhMin(d.min*60000)+'</b> na doca antes de sair (entrou '+rhHora(d.saida-d.min*60000)+')')+vai+'</div>';
 }
 /* Início e fim da rota: previsto (planejado no Cobli) × real.
    Real = o que o Cobli registrou; sem isso, a saída/volta pela sede (doca). */
@@ -5388,7 +5390,8 @@ function rhHorarios(r){
   /* saída pelo pátio: do GPS (robô, saidaSede) ou do local de interesse (doca) */
   var saidaPatio=r.saidaSede || d.saida || null;
   var ini=saidaPatio || r.inicioReal || null, iniSede=!!saidaPatio;
-  if(saidaPatio && r.inicioReal && r.inicioReal<saidaPatio) { ini=r.inicioReal; iniSede=false; }
+  /* a saída do pátio pelo GPS vale mais que o "iniciar rota" do app (que pode ser
+     apertado antes ou depois de o caminhão sair de fato) */
   var voltaPatio=r.voltaSede || d.volta || null;
   var fim=r.fimReal || voltaPatio || null, fimSede=!r.fimReal && !!voltaPatio;
   var cel=function(ms, sede){ return ms ? '<b>'+rhHora(ms)+'</b>'+(sede?' <small class="rha-mut" title="Pela passagem na sede (Cobli)">sede</small>':'') : '<span class="rha-mut">—</span>'; };
