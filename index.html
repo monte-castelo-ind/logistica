@@ -5357,7 +5357,9 @@ function rhDoca(r){
 }
 function rhDocaTxt(r){
   /* horários de saída e volta já aparecem no quadro Previsto × Real; aqui fica o tempo de doca */
-  var d=rhDoca(r); if(!d || !d.saida) return '';
+  var d=rhDoca(r);
+  if((!d || !d.saida) && r.saidaSede && r.entradaSede) d={ saida:r.saidaSede, min:Math.round((r.saidaSede-r.entradaSede)/60000), pernoite:false };
+  if(!d || !d.saida) return '';
   return '<div class="rh-txt rh-doca">⌂ '+(d.pernoite ? 'Pernoite na sede · saiu às <b>'+rhHora(d.saida)+'</b>'
     : '<b>'+rhMin(d.min*60000)+'</b> na doca antes de sair (entrou '+rhHora(d.saida-d.min*60000)+')')+'</div>';
 }
@@ -5383,9 +5385,12 @@ function rhHorarios(r){
   var d=rhDoca(r)||{};
   /* início real: a saída do caminhão da sede (doca) vale mais que o "iniciar rota"
      do app, que o motorista às vezes aperta depois de já estar rodando */
-  var ini=d.saida || r.inicioReal || null, iniSede=!!d.saida;
-  if(d.saida && r.inicioReal && r.inicioReal<d.saida) { ini=r.inicioReal; iniSede=false; }
-  var fim=r.fimReal || d.volta || null, fimSede=!r.fimReal && !!d.volta;
+  /* saída pelo pátio: do GPS (robô, saidaSede) ou do local de interesse (doca) */
+  var saidaPatio=r.saidaSede || d.saida || null;
+  var ini=saidaPatio || r.inicioReal || null, iniSede=!!saidaPatio;
+  if(saidaPatio && r.inicioReal && r.inicioReal<saidaPatio) { ini=r.inicioReal; iniSede=false; }
+  var voltaPatio=r.voltaSede || d.volta || null;
+  var fim=r.fimReal || voltaPatio || null, fimSede=!r.fimReal && !!voltaPatio;
   var cel=function(ms, sede){ return ms ? '<b>'+rhHora(ms)+'</b>'+(sede?' <small class="rha-mut" title="Pela passagem na sede (Cobli)">sede</small>':'') : '<span class="rha-mut">—</span>'; };
   return '<div class="rh-hr"><span></span><span class="rh-hr-cab">Previsto</span><span class="rh-hr-cab">Real</span>'
     +'<span class="rh-hr-lab">Início</span><span>'+(r.inicioPlan?rhHora(r.inicioPlan):'—')+'</span><span>'+cel(ini,iniSede)+rhDifTxt(ini,r.inicioPlan)+'</span>'
