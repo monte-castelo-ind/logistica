@@ -7713,20 +7713,12 @@ function cxAplicarSemente(){
   }
 }
 
-/* ---- base de produtos do Produlog (projeto montecastelo-a0764) ---- */
-var PL_CONFIG={
-  apiKey:"AIzaSyDY5ma_NbCmZ2dyXUjKm6GZQ3ibhwgcdmI",
-  authDomain:"montecastelo-a0764.firebaseapp.com",
-  projectId:"montecastelo-a0764",
-  storageBucket:"montecastelo-a0764.firebasestorage.app",
-  messagingSenderId:"158891969912",
-  appId:"1:158891969912:web:0541e828e0e0743cef0c8d"
-};
-var _dbProdulog=null;
-function dbProdulog(){
-  if(!_dbProdulog) _dbProdulog=getFirestore(initializeApp(PL_CONFIG,'produlog'));
-  return _dbProdulog;
-}
+/* ---- base de produtos do Produlog ----
+   Desde a migração, os dados do Produlog moram no próprio Comodato, nas
+   coleções com prefixo pl_ (antes era o projeto montecastelo-a0764). Mesma
+   sessão e mesmo login; dbProdulog() continua existindo para o resto do
+   código não mudar. */
+function dbProdulog(){ return dbC; }
 
 window.importarProdulog=function(){
   if(!podeCaixas){ alert('Você não tem permissão para alterar este cadastro.'); return; }
@@ -7734,8 +7726,8 @@ window.importarProdulog=function(){
   if(st){ st.setAttribute('data-busy','1'); st.textContent='Lendo o Produlog…'; }
   var db2=dbProdulog();
   Promise.all([
-    getDocs(collection(db2,'produtosConfeitaria')),
-    getDocs(collection(db2,'quadraProdutosCustom'))
+    getDocs(collection(db2,'pl_produtosConfeitaria')),
+    getDocs(collection(db2,'pl_quadraProdutosCustom'))
   ]).then(function(res){
     var novos=0, renomeados=0, i, k, p, cod, nome;
     for(i=0;i<res.length;i++){
@@ -7964,7 +7956,7 @@ function cxCarregarPesosPL(){
   if(cxPesoPL || cxPesoPLlendo) return;
   cxPesoPLlendo=true;
   var d2=dbProdulog();
-  Promise.all([ getDocs(collection(d2,'quadraProdutosCustom')), getDocs(collection(d2,'produtosConfeitaria')) ])
+  Promise.all([ getDocs(collection(d2,'pl_quadraProdutosCustom')), getDocs(collection(d2,'pl_produtosConfeitaria')) ])
     .then(function(res){
       var m={};
       res[0].docs.forEach(function(x){ var p=x.data()||{}, kg=Number(p.kgPacote)||0; if(p.cod!=null && kg>0) m[cxKey(p.cod)]=kg; });
@@ -8475,7 +8467,7 @@ window.apagarConversao=function(){
 };
 
 /* ===== Enviar ao Produlog =====
-   A conversão vira carregamento no Produlog (projeto montecastelo-a0764),
+   A conversão vira carregamento no Produlog (coleção pl_carregamentos, no Comodato),
    pronto para a bipagem: mesmos produtos e quantidades, já sem o que "não
    vai". Regra combinada: tudo que sobe no caminhão entra por aqui —
    carregamento do ERP e pedidos avulsos, inclusive o de última hora.
@@ -8556,8 +8548,8 @@ function cxResumo(R){
 /* código normalizado (sem zero à frente) -> código como o Produlog guarda.
    O estoque do Produlog tem a palavra final, porque é ele que dá a baixa. */
 function cxCodigosProdulog(dbP){
-  return Promise.all([ getDocs(collection(dbP,'produtosConfeitaria')),
-                       getDocs(collection(dbP,'estoqueCtrlProdutos')) ])
+  return Promise.all([ getDocs(collection(dbP,'pl_produtosConfeitaria')),
+                       getDocs(collection(dbP,'pl_estoqueCtrlProdutos')) ])
     .then(function(res){
       var mapa={};
       res[0].docs.forEach(function(d){ var p=d.data()||{};
@@ -8570,7 +8562,7 @@ function cxCodigosProdulog(dbP){
 /* procura no Produlog um carregamento com o mesmo nome que ainda não terminou */
 function cxProcurarIgual(dbP, nome){
   var base=cxSemAcento(nome);
-  return getDocs(query(collection(dbP,'carregamentos'), where('status','in',['aberto','conferindo'])))
+  return getDocs(query(collection(dbP,'pl_carregamentos'), where('status','in',['aberto','conferindo'])))
     .then(function(s){
       var achado=null;
       s.docs.forEach(function(d){
@@ -8635,7 +8627,7 @@ window.enviarProdulog=function(){
 
   /* 1. decide o destino: o mesmo de antes, um feito à mão, ou um novo */
   var passo = pl
-    ? getDoc(doc(dbP,'carregamentos',pl.id)).then(function(s){
+    ? getDoc(doc(dbP,'pl_carregamentos',pl.id)).then(function(s){
         if(!s.exists()){ ehNovo=true; return; }      /* apagaram lá: recria com o mesmo id */
         var c=s.data()||{}, st=c.status||'aberto';
         if(st!=='aberto') throw {msg:'O carregamento "'+(c.nome||nome)+'" já está '
@@ -8646,7 +8638,7 @@ window.enviarProdulog=function(){
       })
     : cxProcurarIgual(dbP, nome).then(function(achado){
         if(achado){ alvoId=achado.id; nome=achado.nome; data=achado.data||data; ehNovo=false; }
-        else{ alvoId=doc(collection(dbP,'carregamentos')).id; ehNovo=true; }
+        else{ alvoId=doc(collection(dbP,'pl_carregamentos')).id; ehNovo=true; }
       });
 
   passo
@@ -8673,9 +8665,9 @@ window.enviarProdulog=function(){
         dados.data=data;
         dados.criadoPor='Logística · '+(sessaoNome||sessaoEmail);
         dados.criadoEm=plHoje(); dados.timestamp=Date.now();
-        return setDoc(doc(dbP,'carregamentos',alvoId), cxLimpo(dados)).then(function(){ return convId; });
+        return setDoc(doc(dbP,'pl_carregamentos',alvoId), cxLimpo(dados)).then(function(){ return convId; });
       }
-      return updateDoc(doc(dbP,'carregamentos',alvoId), cxLimpo(dados)).then(function(){ return convId; });
+      return updateDoc(doc(dbP,'pl_carregamentos',alvoId), cxLimpo(dados)).then(function(){ return convId; });
     });
   })
   /* 4. confirma na conversão */
