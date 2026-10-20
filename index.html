@@ -7720,34 +7720,54 @@ function cxAplicarSemente(){
    código não mudar. */
 function dbProdulog(){ return dbC; }
 
+/* Produtos do Produlog. Lê TODOS os cadastros de produto do Produlog, porque
+   produto novo pode ter nascido em qualquer um deles:
+     - Produtos da confeitaria e da Quadra (os de sempre: o nome deles vale);
+     - Estoque & Contêiner (traz também pacotes por caixa, que preenche a
+       conversão quando ela ainda está em branco);
+     - EAN (bipagem) e Planejamento (vendas do ERP): só acrescentam código novo.
+   Um cadastro que não abrir (sem permissão, por exemplo) não impede os outros:
+   o aviso diz qual ficou de fora. */
 window.importarProdulog=function(){
   if(!podeCaixas){ alert('Você não tem permissão para alterar este cadastro.'); return; }
   var st=document.getElementById('cgcx-status');
   if(st){ st.setAttribute('data-busy','1'); st.textContent='Lendo o Produlog…'; }
   var db2=dbProdulog();
-  Promise.all([
-    getDocs(collection(db2,'pl_produtosConfeitaria')),
-    getDocs(collection(db2,'pl_quadraProdutosCustom'))
-  ]).then(function(res){
-    var novos=0, renomeados=0, i, k, p, cod, nome;
-    for(i=0;i<res.length;i++){
-      for(k=0;k<res[i].docs.length;k++){
-        p=res[i].docs[k].data()||{};
-        cod=cxKey(p.cod); nome=String(p.nome||'').trim();
-        if(!cod || !nome) continue;
-        if(!cxRatios[cod]){ cxRatios[cod]={pct:null, nome:nome}; novos++; }
-        else if(cxRatios[cod].nome!==nome){ cxRatios[cod].nome=nome; renomeados++; }
-      }
-    }
+  var FONTES=[
+    { col:'pl_produtosConfeitaria', nome:'Produtos da confeitaria', cod:'cod', nm:'nome', renomeia:true },
+    { col:'pl_quadraProdutosCustom', nome:'Produtos da Quadra', cod:'cod', nm:'nome', renomeia:true },
+    { col:'pl_estoqueCtrlProdutos', nome:'Estoque & Contêiner', cod:'codigo', nm:'nome', pct:'pctCaixa' },
+    { col:'pl_eansProdutos', nome:'EAN (bipagem)', cod:'codigo', nm:'nome' },
+    { col:'pl_planejProdutos', nome:'Planejamento', cod:'cod', nm:'desc' }
+  ];
+  Promise.all(FONTES.map(function(f){
+    return getDocs(collection(db2,f.col)).then(function(r){ return { f:f, docs:r.docs }; })
+      .catch(function(e){ console.warn('produlog/importar '+f.col+':', e); return { f:f, erro:(e.code||e.message) }; });
+  })).then(function(res){
+    var novos=0, renomeados=0, preenchidos=0, porFonte=[], falhas=[];
+    res.forEach(function(r){
+      if(r.erro){ falhas.push(r.f.nome+' ('+r.erro+')'); return; }
+      var n=0, f=r.f;
+      r.docs.forEach(function(d){
+        var p=d.data()||{}, cod=cxKey(p[f.cod]!=null?p[f.cod]:d.id), nome=String(p[f.nm]||'').trim();
+        if(!cod || !nome || p.ativo===false) return;
+        var pct=f.pct ? (Number(p[f.pct])||0) : 0;
+        if(!cxRatios[cod]){ cxRatios[cod]={ pct:pct>0?pct:null, nome:nome }; novos++; n++; if(pct>0) preenchidos++; }
+        else{
+          if(f.renomeia && cxRatios[cod].nome!==nome){ cxRatios[cod].nome=nome; renomeados++; }
+          if(pct>0 && !(cxRatios[cod].pct>0)){ cxRatios[cod].pct=pct; preenchidos++; }
+        }
+      });
+      if(n) porFonte.push('  • '+f.nome+': '+n);
+    });
     if(st) st.removeAttribute('data-busy');
-    if(novos||renomeados) cxSujo=true;
+    if(novos||renomeados||preenchidos) cxSujo=true;
     renderConfigCaixas();
-    alert('Produtos do Produlog: '+novos+' novo(s), '+renomeados+' com nome atualizado.\n\n'+
-          'As conversões que já estavam preenchidas foram mantidas. Clique em Salvar para gravar.');
-  }).catch(function(e){
-    console.error('produlog/importar:', e);
-    if(st){ st.removeAttribute('data-busy'); st.textContent=''; }
-    alert('Não deu para ler os produtos do Produlog: '+(e.code||e.message));
+    alert('Produtos do Produlog: '+novos+' novo(s), '+renomeados+' com nome atualizado'
+      +(preenchidos?', '+preenchidos+' com pacotes por caixa vindos do Estoque & Contêiner':'')+'.'
+      +(porFonte.length?'\n\nDe onde vieram os novos:\n'+porFonte.join('\n'):'')
+      +(falhas.length?'\n\nNão deu para ler: '+falhas.join(', ')+'.':'')
+      +'\n\nAs conversões que já estavam preenchidas foram mantidas. Clique em Salvar para gravar.');
   });
 };
 
