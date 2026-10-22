@@ -1349,6 +1349,7 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
             <button class="btn btn-sm" onclick="rzOtimizar()">⚡ Otimizar ordem</button>
             <button class="btn btn-sm" id="rz-tracar" onclick="rzTracar()" style="display:none">🛣 Traçar pelas ruas</button>
             <button class="btn btn-sm btn-ghost" onclick="rzGoogle()">Google Maps ↗</button>
+            <button class="btn btn-sm btn-ghost" onclick="rzExcel()" title="Baixar a rota em Excel: ordem das entregas, endereço, horários e tempo de parada">⤓ Excel</button>
             <button class="btn btn-sm btn-ghost" id="rz-salvar" onclick="rzSalvar()">💾 Salvar</button>
             <button class="btn btn-sm btn-ghost" id="rz-apagar-uma" onclick="rzApagar()" title="Apagar a rota salva" style="display:none">🗑</button>
           </div>
@@ -2600,6 +2601,71 @@ function rzOtimizarLocal(){
 }
 
 /* ---------- estimativas ---------- */
+/* ---------- rota em Excel ----------
+   A rota que está na tela, na ordem atual: sequência das entregas, cliente,
+   endereço, chegada prevista, tempo de parada programado (o da ficha do
+   cliente, ou o "Min por parada" da rota) e saída prevista. Mesma conta da
+   lista: com o traçado do Google, usa o tempo real das ruas. */
+window.rzExcel=function(){
+  if(!rzPontos.length){ alert('A rota não tem pontos.'); return; }
+  carregarXLSX().then(function(){
+    var T=rzTotais(), NUM=rzNumeros(), par=rzNumCampo('rz-par',10), base=rzBase(), modo=rzModo();
+    var nome=(rzVal('rz-nome')||'').trim()||'Rota';
+    var cab=['Ordem','Cliente','Endereço','Chegada prevista','Espera (min)','Tempo de parada (min)','Saída prevista','Km do trecho','Horário do cliente','Observação'];
+    var linhas=[], semLocal=[];
+    if(base && modo!=='livre') linhas.push(['Saída', base.nome||'Sede', base.endereco||'', '', '', '', rzVal('rz-saida')||'06:00', '', '', '']);
+    rzPontos.forEach(function(p,i){
+      if(rzEhSede(p)) return;
+      var tit=rzTitulo(p), cli=(tit!==p.endereco)?tit:'', f=(p.clienteId&&rzFicha[p.clienteId])||{};
+      var jan=(f.abre||f.fecha)?((f.abre||'?')+' – '+(f.fecha||'?')):'';
+      if(!rzConta(p)){ semLocal.push(['', cli, p.endereco||'', '', '', rzMinParada(p,par), '', '', jan, 'sem local no mapa — fora do cálculo']); return; }
+      var L=T.lin[i]||{}, pm=rzMinParada(p,par), esp=L.espera>0?Math.round(L.espera):0;
+      var obs=[];
+      if(L.atraso>0) obs.push('chega depois de fechar');
+      if(L.diaRuim) obs.push('não recebe '+L.diaRuim);
+      if(f.obs) obs.push(f.obs);
+      linhas.push([ NUM[p.id]||'', cli, p.endereco||'',
+        L.chegada!=null?rzHora(L.chegada):'', esp||'', pm,
+        L.chegada!=null?rzHora(L.chegada+esp+pm):'',
+        L.perna!=null?Math.round(L.perna*10)/10:'', jan, obs.join(' · ') ]);
+    });
+    if(base && modo==='sede_volta') linhas.push(['Volta', base.nome||'Sede', base.endereco||'', rzHora(T.fim), '', '', '', T.kmVolta?Math.round(T.kmVolta*10)/10:'', '', '']);
+    var dias=(rzDias||[]).slice().sort().map(function(d){ return RZ_DIAS[d]; }).join('/');
+    var topo=[
+      [nome],
+      ['Dias: '+(dias||'rota avulsa')+' · saída '+(rzVal('rz-saida')||'06:00')+' · parada padrão '+par+' min · '+rzNumCampo('rz-vel',28)+' km/h'],
+      ['Total: '+(Math.round(T.km*10)/10).toString().replace('.',',')+' km · '+(modo==='sede_volta'?'volta':'fim')+' ~'+rzHora(T.fim)
+        +' · '+(T.ruas?'horários pelas ruas (Google)':'estimativa em linha reta')+' · gerado em '+new Date().toLocaleString('pt-BR')],
+      []
+    ];
+    var aoa=topo.concat([cab]).concat(linhas).concat(semLocal.length?[[]].concat(semLocal):[]);
+    var ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:7},{wch:34},{wch:46},{wch:10},{wch:8},{wch:11},{wch:10},{wch:9},{wch:15},{wch:40}];
+    ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:9}},{s:{r:1,c:0},e:{r:1,c:9}},{s:{r:2,c:0},e:{r:2,c:9}}];
+    var lc=topo.length;   /* linha do cabeçalho */
+    ws['!freeze']={ xSplit:0, ySplit:lc+1 };
+    ws['!views']=[{ state:'frozen', ySplit:lc+1 }];
+    var bordaFina={ style:'thin', color:{ rgb:'D0D0D0' } };
+    Object.keys(ws).forEach(function(k){
+      if(k.charAt(0)==='!') return;
+      var c=XLSX.utils.decode_cell(k), cel=ws[k];
+      if(c.r===0) cel.s={ font:{ bold:true, sz:14 } };
+      else if(c.r<lc) cel.s={ font:{ sz:10, color:{ rgb:'666666' } } };
+      else if(c.r===lc) cel.s={ font:{ bold:true, color:{ rgb:'FFFFFF' } }, fill:{ fgColor:{ rgb:'E07A2E' } },
+                               alignment:{ horizontal:'center', vertical:'center', wrapText:true }, border:{ bottom:bordaFina } };
+      else {
+        cel.s={ alignment:{ vertical:'top', wrapText:(c.c===2||c.c===9), horizontal:(c.c===0||(c.c>=3&&c.c<=8))?'center':'left' },
+                border:{ bottom:bordaFina } };
+        if(c.c===0 || c.c===5) cel.s.font={ bold:true };
+      }
+    });
+    var wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Rota');
+    var arq=('Rota - '+nome).replace(/[\\/:*?"<>|]+/g,'-').slice(0,80)+' - '+new Date().toISOString().slice(0,10)+'.xlsx';
+    XLSX.writeFile(wb, arq);
+  }).catch(function(e){ alert('Não foi possível gerar o Excel: '+(e.message||e)); });
+};
+
 function rzTotais(){
   /* chegada em cada parada, com a ficha do cliente: descarga própria, espera
      quando chega antes de abrir e atraso quando chega depois de fechar */
