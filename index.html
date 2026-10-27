@@ -974,6 +974,8 @@ html[data-pal="brasa"] .placa{letter-spacing:.06em}
 .esc-q textarea{min-height:150px;font-size:12.5px}
 .esc-lab{display:block;font-size:11.5px;font-weight:600;color:var(--muted);margin-bottom:4px}
 input.esc-hora{width:108px;padding:5px 7px}
+.esc-tab tr.esc-gr1 td{border-top:2px solid var(--border)}
+.esc-tab tr.esc-gr2 td{border-top:none}
 </style>
 </head>
 <body>
@@ -9597,11 +9599,14 @@ function escDur(m){
   return s+Math.floor(m/60)+'h'+String(m%60).padStart(2,'0');
 }
 function escInter(){ var v=escMin(escCfg().inter); return v>0 ? v : 660; }
-/* chave de comparação de nomes: sem acento, maiúscula, sem data no meio
-   ("RESTINGA 27/10" = "Restinga") */
+/* chave de comparação de nomes: sem acento, maiúscula, sem data no meio e sem
+   marca de dia da semana ("RESTINGA 27/10" = "Viamão 2F" sem o 2F = "Restinga").
+   O dia da semana sai da DATA do registro, não do nome. */
 function escChave(s){
   return String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase()
     .replace(/\b\d{1,2}[\/.\-]\d{1,2}([\/.\-]\d{2,4})?\b/g,' ')
+    .replace(/(^|[\s\-–·:])\(?[2-7]\s?(?:(?:ª|º|A)?\s?-?\s?FEIRA|F|ª|º)\)?(?=$|[\s\-–·:])/g,'$1')
+    .replace(/(^|[\s\-–·:])\(?(?:SEG|TER|QUA|QUI|SEX|SAB|SEGUNDA|TERCA|QUARTA|QUINTA|SEXTA|SABADO)(?:-FEIRA)?\)?(?=$|[\s\-–·:])/g,'$1')
     .replace(/\s+/g,' ').replace(/^[\s\-–·:]+|[\s\-–·:]+$/g,'').trim();
 }
 function escQuadro6(q){ var o={}; for(var d=1; d<=6; d++) o[String(d)]=((q&&q[String(d)])||[]).slice(); return o; }
@@ -9626,7 +9631,20 @@ function escResolver(nome){
   if(escIdxMapa.hasOwnProperty(k)) return escIdxMapa[k];
   return escIdxRotas.hasOwnProperty(k) ? escIdxRotas[k] : null;
 }
-function escH(r){ return r ? ESC.H[escChave(r)] : null; }
+/* A mesma rota em dias diferentes tem horário próprio: Viamão de segunda
+   (2ª) não é a Viamão de quinta (5ª). ESC.H guarda por "ROTA|dia" e, para
+   quando o dia não tem registro, a média geral da rota em "ROTA". */
+function escHK(r, d){ return escChave(r)+'|'+d; }
+function escH(r, d){ if(!r) return null; return (d!=null ? ESC.H[escHK(r,d)] : null) || ESC.H[escChave(r)] || null; }
+function escPares(){
+  var vis={}, out=[];
+  [escCfg().quadro, ESC.quadroSem].forEach(function(q){
+    for(var d=1; d<=6; d++) ((q||{})[String(d)]||[]).forEach(function(r){
+      var k=escHK(r,d); if(!vis[k]){ vis[k]=1; out.push({ r:r, d:d }); }
+    });
+  });
+  return out.sort(function(a,b){ return a.r.localeCompare(b.r,'pt-BR') || a.d-b.d; });
+}
 function escTemHora(h){ return !!(h && h.ent!=null && h.sai!=null); }
 function escMedia(a){ if(!a.length) return null; var s=0; a.forEach(function(x){ s+=x; }); return s/a.length; }
 
@@ -9664,12 +9682,19 @@ function escCalc(){
   var ini=ESC.base ? ESC.base.ini : rhhSoma(dataLocalHoje(), -7*(Number(c.semanas)||6));
   var filiais={}; (RH_FILIAIS||[]).forEach(function(f){ filiais[rtPlaca(f.placa)]=1; });
   var A={}, desc={}, regs=[];
-  function ac(r){ return A[escChave(r)]||(A[escChave(r)]={ p:{ e:[], s:[] }, c:{ e:[], s:[] } }); }
+  function cesto(){ return { p:{ e:[], s:[] }, c:{ e:[], s:[] } }; }
+  /* cada registro entra na média geral da rota e na do dia da semana dele */
+  function ac(r, iso){
+    var k=escChave(r), dw=rhhData(iso).getDay();
+    var g=A[k]||(A[k]=cesto()), dd=A[k+'|'+dw]||(A[k+'|'+dw]=cesto());
+    return { p:{ e:{ push:function(v){ g.p.e.push(v); dd.p.e.push(v); } }, s:{ push:function(v){ g.p.s.push(v); dd.p.s.push(v); } } },
+             c:{ e:{ push:function(v){ g.c.e.push(v); dd.c.e.push(v); } }, s:{ push:function(v){ g.c.s.push(v); dd.c.s.push(v); } } } };
+  }
   function anota(nome, fonte){ var k=escChave(nome); if(!k) return; var x=desc[k]||(desc[k]={ nome:String(nome).trim(), n:0, fontes:{} }); x.n++; x.fontes[fonte]=1; }
   (ESC.ponto||[]).forEach(function(l){
     if(!l || !l.d || l.d<ini) return;
     var r=escResolver(l.r); if(r==='') return; if(r==null){ anota(l.r,'ponto'); return; }
-    var e=escMin(l.e), s=escMin(l.s), a=ac(r).p;
+    var e=escMin(l.e), s=escMin(l.s), a=ac(r, l.d).p;
     if(e!=null) a.e.push(e);
     if(s!=null){ if(e!=null && s<e) s+=1440; a.s.push(s); }
     if(l.m) regs.push({ r:r, m:l.m });
@@ -9681,36 +9706,53 @@ function escCalc(){
     var saida=(d && d.saida) || x.inicioReal, volta=(d && d.volta) || x.fimReal;
     if(!saida || !volta || volta<=saida) return;
     var z=rhhData(x.data); z.setHours(0,0,0,0);
-    var a=ac(r).c;
+    var a=ac(r, x.data).c;
     a.e.push((saida-z.getTime())/60000-antes);
     a.s.push((volta-z.getTime())/60000+depois);
     if(x.motorista) regs.push({ r:r, m:x.motorista });
   });
-  var aj={}; (c.ajustes||[]).forEach(function(a){ if(a && a.rota) aj[escChave(a.rota)]=a; });
-  var H={};
-  escTodasRotas().forEach(function(r){
-    var k=escChave(r), a=A[k]||{ p:{ e:[], s:[] }, c:{ e:[], s:[] } }, src=null, fonte='';
-    if(a.p.e.length && a.p.s.length){ src=a.p; fonte='ponto'; }
-    else if(a.c.e.length && a.c.s.length){ src=a.c; fonte='cobli'; }
-    var h={ rota:r, fonte:fonte, nP:a.p.s.length, nC:a.c.s.length,
+  var aj=escAjustesIdx(), H={};
+  function fonteDe(a){
+    if(a.p.e.length && a.p.s.length) return { src:a.p, fonte:'ponto' };
+    if(a.c.e.length && a.c.s.length) return { src:a.c, fonte:'cobli' };
+    return null;
+  }
+  function monta(r, d){
+    var k=escChave(r), g=A[k]||cesto(), a=(d!=null ? A[k+'|'+d] : g)||cesto();
+    var f=fonteDe(a), geral=false;
+    if(!f && d!=null){ f=fonteDe(g); geral=!!f; }   /* dia sem registro: média de todos os dias da rota */
+    var h={ rota:r, dia:d, fonte:f?f.fonte:'', geral:geral, nP:a.p.s.length, nC:a.c.s.length,
       pE:escMedia(a.p.e), pS:escMedia(a.p.s), cE:escMedia(a.c.e), cS:escMedia(a.c.s), ent:null, sai:null };
-    if(src){
-      h.ent=escMedia(src.e); h.sai=escMedia(src.s);
-      h.entMin=Math.min.apply(null,src.e); h.saiMax=Math.max.apply(null,src.s);
+    if(f){
+      h.ent=escMedia(f.src.e); h.sai=escMedia(f.src.s);
+      h.entMin=Math.min.apply(null,f.src.e); h.saiMax=Math.max.apply(null,f.src.s);
     }
-    var j=aj[k];
+    var j=(d!=null && aj[k+'|'+d]) || aj[k];
     if(j){
       var ae=escMin(j.ent), as=escMin(j.sai);
       if(ae!=null){ h.ent=ae; h.entMin=ae; h.ajE=true; }
       if(as!=null){ h.sai=as; h.saiMax=as; h.ajS=true; }
     }
-    H[k]=h;
-  });
+    return h;
+  }
+  escTodasRotas().forEach(function(r){ H[escChave(r)]=monta(r, null); });
+  escPares().forEach(function(p){ H[escHK(p.r,p.d)]=monta(p.r, p.d); });
   ESC.H=H;
   ESC.desconhecidos=Object.keys(desc).map(function(k){ return desc[k]; }).sort(function(a,b){ return b.n-a.n; });
   var hp={};
   regs.forEach(function(g){ var p=escAcharPessoa(g.m); if(p){ var k=p.id+'|'+escChave(g.r); hp[k]=(hp[k]||0)+1; } });
   ESC.histP=hp;
+}
+
+/* ajuste sem dia (dos padrões ou de antes) vale para todos os dias da rota;
+   ajuste com dia vale só naquele dia e manda sobre o geral */
+function escAjustesIdx(){
+  var aj={};
+  (escCfg().ajustes||[]).forEach(function(a){
+    if(!a || !a.rota) return;
+    aj[a.dia ? escHK(a.rota, a.dia) : escChave(a.rota)]=a;
+  });
+  return aj;
 }
 
 /* ---------- carga ---------- */
@@ -9798,7 +9840,7 @@ window.escSalvarSemana=function(){
     dias.forEach(function(x){ grade[d.id][String(x)]=((ESC.grade[d.id]||{})[x]) || null; });
   });
   Object.keys(ESC.fixos).forEach(function(k){ if(grade[k.split('|')[0]]) fixos[k]=ESC.fixos[k]; });
-  escTodasRotas().forEach(function(r){ var h=escH(r); if(escTemHora(h)) hor.push({ r:r, e:escHM(h.ent), s:escHM(h.sai), f:h.fonte||'ajuste' }); });
+  dias.forEach(function(x){ escRotasDia(x).forEach(function(r){ var h=escH(r,x); if(escTemHora(h)) hor.push({ d:x, r:r, e:escHM(h.ent), s:escHM(h.sai), f:h.fonte||'ajuste' }); }); });
   var dados={ semana:ESC.semana, quadro:escQuadro6(ESC.quadroSem), grade:grade, duplas:nomes, fixos:fixos, horarios:hor,
     salvoEm:agora(), salvoPor:sessaoEmail };
   ESC.salvando='semana'; renderEscala();
@@ -9879,11 +9921,11 @@ window.escSugerir=function(){
   var dias=escDiasSem(), dup=escDuplasAtivas();
   if(!dup.length){ alert('Cadastre a equipe e monte as duplas primeiro (aba Equipe e duplas).'); return; }
   if(!dias.length){ alert('A semana não tem rotas. Confira em "Rotas desta semana".'); return; }
-  var rotas={}, Hs={}, fixos={}, hist={}, ids={};
+  var rotas={}, Hd={}, fixos={}, hist={}, ids={};
   dup.forEach(function(d){ ids[d.id]=1; });
   dias.forEach(function(d){
     rotas[d]=escRotasDia(d).slice();
-    rotas[d].forEach(function(r){ var h=escH(r); if(escTemHora(h)) Hs[r]={ ent:h.ent, sai:h.sai, entMin:h.entMin, saiMax:h.saiMax }; });
+    rotas[d].forEach(function(r){ var h=escH(r,d); if(escTemHora(h)) Hd[d+'|'+r]={ ent:h.ent, sai:h.sai, entMin:h.entMin, saiMax:h.saiMax }; });
   });
   Object.keys(ESC.fixos).forEach(function(k){ var p=k.split('|'); if(ids[p[0]] && dias.indexOf(+p[1])>=0) fixos[k]=ESC.fixos[k]; });
   dup.forEach(function(d){ dias.forEach(function(x){ rotas[x].forEach(function(r){
@@ -9892,7 +9934,7 @@ window.escSugerir=function(){
   ESC.calc=true; renderEscala();
   setTimeout(function(){
     var res=null;
-    try{ res=escSolver({ dias:dias, rotas:rotas, duplas:dup.map(function(d){ return d.id; }), H:Hs, inter:escInter(), fixos:fixos, hist:hist }); }
+    try{ res=escSolver({ dias:dias, rotas:rotas, duplas:dup.map(function(d){ return d.id; }), H:{}, Hd:Hd, inter:escInter(), fixos:fixos, hist:hist }); }
     catch(e){ console.error('escala sugerir:', e); ESC.calc=false; renderEscala(); alert('Erro ao calcular: '+(e.message||e)); return; }
     ESC.calc=false;
     if(res.erro){
@@ -9914,7 +9956,7 @@ function escConferir(dias, dup){
     dup.forEach(function(p){ var r=escCelula(p.id,d); if(r) cont[r]=(cont[r]||0)+1; });
     escRotasDia(d).forEach(function(r){
       if(!cont[r]) o.falta.push({ dia:d, rota:r }); else if(cont[r]>1) o.dup.push({ dia:d, rota:r });
-      if(!escTemHora(escH(r))) semH[r]=1;
+      if(!escTemHora(escH(r,d))) semH[r+' ('+ESC_DC[d]+')']=1;
     });
   });
   o.semHor=Object.keys(semH);
@@ -9922,10 +9964,10 @@ function escConferir(dias, dup){
     var horas=0, nd=0, pior='ok';
     dias.forEach(function(d){
       var r=escCelula(p.id,d); if(!r) return;
-      nd++; var h=escH(r); if(escTemHora(h)) horas+=Math.max(0,h.sai-h.ent);
+      nd++; var h=escH(r,d); if(escTemHora(h)) horas+=Math.max(0,h.sai-h.ent);
       if(dias.indexOf(d-1)<0) return;
       var r0=escCelula(p.id,d-1); if(!r0) return;
-      var h0=escH(r0); if(!escTemHora(h0) || !escTemHora(h)) return;
+      var h0=escH(r0,d-1); if(!escTemHora(h0) || !escTemHora(h)) return;
       var ds=h.ent+1440-h0.sai, x={ k:k, dupla:p, dia:d, de:r0, para:r, desc:ds, sai0:h0.sai, ent:h.ent };
       if(ds<I){ o.viol.push(x); pior='ruim'; }
       else {
@@ -9999,7 +10041,7 @@ function escHtmlEscala(){
     var pd=cf.porDupla[p.id]||{};
     h+='<tr><td class="esc-nome">Dupla '+escNumDupla(p)+'<small>'+esc(escNomeDupla(p))+'</small></td>';
     dias.forEach(function(d){
-      var r=escCelula(p.id,d), hr=escH(r), fx=ESC.fixos[p.id+'|'+d];
+      var r=escCelula(p.id,d), hr=escH(r,d), fx=ESC.fixos[p.id+'|'+d];
       var cls='esc-cel'+(r?'':' folga')+(r && col[d][r]>1?' esc-dup':'');
       h+='<td class="'+cls+'">';
       if(pode){
@@ -10008,8 +10050,8 @@ function escHtmlEscala(){
       } else h+='<div class="esc-ro">'+(r?esc(r):'folga')+'</div>';
       var l2=[];
       if(r){
-        l2.push(escTemHora(hr) ? '<span>'+escHM(hr.ent)+'–'+escHM(hr.sai)+'</span>' : '<span class="rh-err">sem horário</span>');
-        var r0=dias.indexOf(d-1)>=0 ? escCelula(p.id,d-1) : null, h0=escH(r0);
+        l2.push(escTemHora(hr) ? '<span'+(hr.geral?' title="Sem registro neste dia da semana: média de todos os dias da rota"':'')+'>'+escHM(hr.ent)+'–'+escHM(hr.sai)+(hr.geral?'*':'')+'</span>' : '<span class="rh-err">sem horário</span>');
+        var r0=dias.indexOf(d-1)>=0 ? escCelula(p.id,d-1) : null, h0=escH(r0,d-1);
         if(r0 && escTemHora(h0) && escTemHora(hr)) l2.push(escDescBadge(hr.ent+1440-h0.sai, I));
       }
       if(fx) l2.push(pode ? '<button class="esc-pin" title="Escolhido à mão: o Sugerir mantém. Clique para soltar." onclick="escSoltar('+k+','+d+')">📌</button>' : '<span title="escolhido à mão">📌</span>');
@@ -10175,26 +10217,31 @@ function escHtmlRotas(){
     +'<label>Descanso mínimo<input id="esc-p-int" type="time" value="'+esc(c.inter||'11:00')+'"'+dis+'></label>'
     +'<button class="btn btn-sm" onclick="escSalvarParams()">Salvar</button><span class="rh-sub">'+escStatus('params')+'</span></div>';
   h+='</div>';
-  /* horários */
-  var rotas=escTodasRotas(), q=escCfg().quadro;
-  function diasDe(r){ var o=[]; for(var d=1; d<=6; d++) if((q[String(d)]||[]).indexOf(r)>=0) o.push(ESC_DC[d]); return o.join(', '); }
+  /* horários: uma linha por rota e dia da semana (Viamão 2ª ≠ Viamão 5ª) */
+  var rotas=escTodasRotas(), pares=escPares(), q=escCfg().quadro, aj=escAjustesIdx();
   function par(e,s,n){ return n ? escHM(e)+'–'+escHM(s)+' <span class="rha-mut">('+n+')</span>' : '<span class="rha-mut">—</span>'; }
-  var aj={}; (c.ajustes||[]).forEach(function(a){ if(a && a.rota) aj[escChave(a.rota)]=a; });
-  h+='<div class="sect">Horário de cada rota'+(ESC.carregandoBase?' <span class="rh-sub">lendo o Cobli…</span>':'')+'</div>';
+  h+='<div class="sect">Horário de cada rota, por dia da semana'+(ESC.carregandoBase?' <span class="rh-sub">lendo o Cobli…</span>':'')+'</div>';
   if(ESC.erroBase) h+='<div class="rh-sub rh-err" style="margin-bottom:8px">'+esc(ESC.erroBase)+'</div>';
-  h+='<div class="tw"><div class="tscroll" style="max-height:none"><table class="esc-tab"><thead><tr><th>Rota</th><th>Dias</th><th>Ponto (dias)</th><th>Cobli (dias)</th><th>Ajuste entrada</th><th>Ajuste saída</th><th>Usado</th><th class="r">Jornada</th></tr></thead><tbody>';
-  rotas.forEach(function(r,i){
-    var x=escH(r)||{}, a=aj[escChave(r)]||{};
-    h+='<tr><td><b>'+esc(r)+'</b></td><td class="rha-mut">'+(diasDe(r)||'só nesta semana')+'</td>'
+  h+='<div class="tw"><div class="tscroll" style="max-height:none"><table class="esc-tab"><thead><tr><th>Rota</th><th>Dia</th><th>Ponto (dias)</th><th>Cobli (dias)</th><th>Ajuste entrada</th><th>Ajuste saída</th><th>Usado</th><th class="r">Jornada</th></tr></thead><tbody>';
+  var ant='';
+  pares.forEach(function(p,i){
+    var x=escH(p.r,p.d)||{}, a=aj[escHK(p.r,p.d)]||aj[escChave(p.r)]||{}, novo=(escChave(p.r)!==ant);
+    var soSemana=((q[String(p.d)]||[]).indexOf(p.r)<0);
+    ant=escChave(p.r);
+    var fonte=({ ponto:'ponto', cobli:'Cobli' }[x.fonte]||'')+((x.ajE||x.ajS)?(x.fonte?' + ':'')+'ajuste':'');
+    h+='<tr class="'+(novo?'esc-gr1':'esc-gr2')+'"><td>'+(novo?'<b>'+esc(p.r)+'</b>':'<span class="rha-mut">'+esc(p.r)+'</span>')+'</td>'
+      +'<td><b>'+ESC_DC[p.d]+'</b>'+(p.d<6?' <span class="rha-mut">'+(p.d+1)+'ª</span>':'')+(soSemana?' <span class="rha-mut">(só nesta semana)</span>':'')+'</td>'
       +'<td class="num">'+par(x.pE,x.pS,x.nP)+'</td><td class="num">'+par(x.cE,x.cS,x.nC)+'</td>'
       +'<td><input type="time" class="esc-hora" id="esc-aje-'+i+'" value="'+esc(a.ent||'')+'"'+dis+'></td>'
       +'<td><input type="time" class="esc-hora" id="esc-ajs-'+i+'" value="'+esc(a.sai||'')+'"'+dis+'></td>'
-      +'<td class="num">'+(escTemHora(x) ? '<b>'+escHM(x.ent)+'–'+escHM(x.sai)+'</b> <span class="rha-mut">'+({ ponto:'ponto', cobli:'Cobli' }[x.fonte]||'')+((x.ajE||x.ajS)?(x.fonte?' + ':'')+'ajuste':'')+'</span>' : '<span class="rh-err">sem horário</span>')+'</td>'
+      +'<td class="num">'+(escTemHora(x) ? '<b>'+escHM(x.ent)+'–'+escHM(x.sai)+'</b> <span class="rha-mut">'+fonte+'</span>'
+          +(x.geral?' <span class="esc-at-txt" title="Este dia da semana ainda não tem registro: usa a média de todos os dias da rota">· média geral</span>':'')
+        : '<span class="rh-err">sem horário</span>')+'</td>'
       +'<td class="r num">'+(escTemHora(x)?escDur(x.sai-x.ent):'—')+'</td></tr>';
   });
   h+='</tbody></table></div></div>';
   if(pode) h+='<div class="tools" style="margin-top:10px"><button class="btn btn-sm" onclick="escSalvarAjustes()">Salvar ajustes</button><span class="rh-sub">'+escStatus('ajustes')+'</span>'
-    +'<span class="fhint" style="margin:0">Ajuste em branco = usa a média. Use para rota nova sem histórico ou horário combinado (ex.: São José entra às 07:00).</span></div>';
+    +'<span class="fhint" style="margin:0">Cada dia tem a sua média (só registros daquele dia da semana). "Média geral" = o dia ainda não tem registro e usa todos os dias da rota. Ajuste em branco = usa a média; serve para rota nova ou horário combinado (ex.: São José entra às 07:00).</span></div>';
   /* planilha do ponto */
   var pi=ESC.pontoInfo, ls=ESC.ponto||[], dmin='', dmax='';
   ls.forEach(function(l){ if(!dmin || l.d<dmin) dmin=l.d; if(!dmax || l.d>dmax) dmax=l.d; });
@@ -10236,12 +10283,13 @@ window.escSalvarParams=function(){
   if(mudouSem) setTimeout(function(){ escCarregarBase(true); }, 300);
 };
 window.escSalvarAjustes=function(){
-  var rotas=escTodasRotas(), velhos={}, aj=[];
-  (escCfg().ajustes||[]).forEach(function(a){ if(a && a.rota) velhos[escChave(a.rota)]=a; });
-  rotas.forEach(function(r,i){
+  var pares=escPares(), velhos=escAjustesIdx(), aj=[];
+  pares.forEach(function(p,i){
     var e=document.getElementById('esc-aje-'+i), s=document.getElementById('esc-ajs-'+i);
-    var ve=e?e.value:'', vs=s?s.value:''; delete velhos[escChave(r)];
-    if(ve || vs) aj.push({ rota:r, ent:ve||'', sai:vs||'' });
+    var ve=e?e.value:'', vs=s?s.value:'';
+    /* o ajuste antigo sem dia já veio preenchido nas linhas: passa a ser por dia */
+    delete velhos[escHK(p.r,p.d)]; delete velhos[escChave(p.r)];
+    if(ve || vs) aj.push({ rota:p.r, dia:p.d, ent:ve||'', sai:vs||'' });
   });
   Object.keys(velhos).forEach(function(k){ aj.push(velhos[k]); });   /* rota que saiu do quadro: guarda o ajuste */
   escGravarCfg({ ajustes:aj }, 'ajustes');
@@ -10357,7 +10405,7 @@ function escLinhasDia(d){
   var dup=escDuplasAtivas();
   return escRotasDia(d).map(function(r){
     var p=null; dup.forEach(function(x){ if(escCelula(x.id,d)===r && !p) p=x; });
-    return { rota:r, dupla:p, h:escH(r) };
+    return { rota:r, dupla:p, h:escH(r,d) };
   });
 }
 window.escImprimir=function(){
@@ -10435,7 +10483,7 @@ function escSolver(o){
   for(i=0;i<D;i++){
     ent.push([]); sai.push([]); entMin.push([]); saiMax.push([]); dur.push([]);
     R[i].forEach(function(r,j){
-      var h=H[r]||{};
+      var h=(o.Hd && o.Hd[dias[i]+'|'+r]) || H[r] || {};   /* horário da rota NAQUELE dia da semana */
       ent[i][j]=h.ent; sai[i][j]=h.sai; entMin[i][j]=(h.entMin!=null?h.entMin:h.ent); saiMax[i][j]=(h.saiMax!=null?h.saiMax:h.sai);
       dur[i][j]=(h.ent!=null && h.sai!=null)?Math.max(0,h.sai-h.ent):0;
     });
