@@ -2479,7 +2479,7 @@ function rzRodarFila(){
   var cpos=p.clienteId && rzCli.carregou ? rzCliPos(p.clienteId) : null;
   if(cpos){                                  /* cliente da base já posicionado: não busca de novo */
     var cf=rzFicha[p.clienteId]||{}, cb=rzCli.base[p.clienteId]||{};
-    p.lat=cpos.lat; p.lng=cpos.lng; p.status=((cf.posManual && cf.posManual.lat!=null) || cb.p==='ok')?'ok':'aprox'; p.motivo=null;
+    p.lat=cpos.lat; p.lng=cpos.lng; p.status=(rzPosManualOk(cf) || cb.p==='ok')?'ok':'aprox'; p.motivo=null;
     rzMarcarSujo(); rzFimBusca(0); return;
   }
   var conhecido=rzGeoConhecido(p.endereco);
@@ -3329,8 +3329,13 @@ function rzCliCarregar(){
     });
 }
 function rzCliN(){ return Object.keys(rzCli.base).length; }
+/* Posição gravada na ficha (📌). Já houve ficha salva com a caixinha "gravar a
+   posição" marcada enquanto o pino estava errado (MT, SP): essa posição fica
+   ignorada (vale a da base) até alguém apagar ou posicionar de novo com 📍. */
+function rzPosManualOk(f){ return !!(f && f.posManual && f.posManual.lat!=null && rzPosPlausivel(f.posManual)); }
+function rzPosManualLonge(f){ return !!(f && f.posManual && f.posManual.lat!=null && !rzPosPlausivel(f.posManual)); }
 function rzCliPos(id){
-  var f=rzFicha[id]; if(f && f.posManual && f.posManual.lat!=null) return f.posManual;
+  var f=rzFicha[id]; if(rzPosManualOk(f)) return f.posManual;
   var c=rzCli.base[id]; if(!(c && c.la!=null && c.p!=='cidade')) return null;
   var pos={ lat:c.la, lng:c.lo };
   return rzPosPlausivel(pos) ? pos : null;      /* geocodificação que caiu em outro estado: não usa */
@@ -3378,7 +3383,7 @@ function rzTirarLonge(){
 }
 /* posição em que dá para confiar para reconhecer o cliente pela proximidade */
 function rzCliPosExata(id){
-  var f=rzFicha[id]; if(f && f.posManual && f.posManual.lat!=null) return f.posManual;
+  var f=rzFicha[id]; if(rzPosManualOk(f)) return f.posManual;
   var c=rzCli.base[id]; return (c && c.p==='ok') ? rzCliPos(id) : null;
 }
 function rzNormNome(s){ return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim(); }
@@ -3428,14 +3433,16 @@ function rzSincClientes(){
   rzPontos.forEach(function(p){
     if(!p.clienteId || p.status==='manual') return;
     var c=rzCli.base[p.clienteId], f=rzFicha[p.clienteId]||{}, pos=rzCliPos(p.clienteId); if(!pos) return;
-    var st=(f.posManual && f.posManual.lat!=null) || (c && c.p==='ok') ? 'ok' : 'aprox';
+    var st=rzPosManualOk(f) || (c && c.p==='ok') ? 'ok' : 'aprox';
     var longe=p.lat==null || rzHav(p, pos)>0.03;
     if(longe || p.status!==st){
       if(longe){ p.lat=pos.lat; p.lng=pos.lng; }
       p.status=st; p.motivo=null; n++;
     }
   });
-  if(n || longe){
+  var tirados=longe;
+  longe=rzPontos.filter(function(p){ return p.lat==null && p.motivo==='longe'; }).length;   /* os que a base não conseguiu repor */
+  if(n || longe || tirados){
     rzMarcarSujo();
     rzMsg((n?n+' parada'+(n===1?' atualizada':'s atualizadas')+' com a posição mais recente da base de clientes. ':'')
       +(longe?longe+' parada'+(longe===1?'':'s')+' estava'+(longe===1?'':'m')+' a mais de 400 km da sede (endereço convertido errado) — posicione com 📍. ':'')
@@ -3567,7 +3574,8 @@ window.rzFichaAbrir=function(pid){
   if(!p.clienteId){ rzVincularManual(pid); return; }
   var id=p.clienteId, c=rzCliDe(p), f=rzFicha[id]||{}, dias=Array.isArray(f.dias)?f.dias.slice():[];
   var hist=(c.d||[]).map(function(d){ return RZ_DIAS_C[d]; }).join(', ');
-  var posPonto=p.lat!=null, auto=rzCli.base[id], difere=posPonto && (!f.posManual) && auto && auto.la!=null && rzHav(p,{lat:auto.la,lng:auto.lo})>0.03;
+  var posPonto=p.lat!=null && rzPosPlausivel(p), auto=rzCli.base[id], difere=posPonto && (!rzPosManualOk(f)) && auto && auto.la!=null && rzHav(p,{lat:auto.la,lng:auto.lo})>0.03;
+  var manLonge=rzPosManualLonge(f), kmLonge=manLonge && rzBase() ? Math.round(rzHav(rzBase(), f.posManual)) : 0;
   window._rzFichaDias=dias;
   modal({ titulo:esc(c.n||'Cliente'), sub:esc([c.e, c.c, c.r?'rota '+c.r:''].filter(Boolean).join(' · ')),
     body:'<div class="rz-ficha">'
@@ -3579,8 +3587,10 @@ window.rzFichaAbrir=function(pid){
       +'<div class="rz-dias" id="fz-dias"></div>'
       +(hist&&!dias.length?'<button class="btn btn-sm btn-ghost" style="margin-top:6px" onclick="rzFichaUsarHist(\''+id+'\')">Usar os dias do histórico</button>':'')+'</div>'
       +'<div class="fld"><label>Observações</label><textarea id="fz-obs" rows="3" placeholder="Ex.: descarga pelos fundos · ligar antes · caminhão grande não entra">'+esc(f.obs||'')+'</textarea></div>'
-      +(difere||p.status==='manual'?'<label class="rz-chk"><input type="checkbox" id="fz-pos" checked> Gravar a posição deste ponto como a correta do cliente</label>':'')
-      +(f.posManual?'<div style="font-size:11.5px;color:var(--muted)">📌 Posição corrigida à mão'+(f.atualizadoNome?' por '+esc(f.atualizadoNome):'')+'.</div>':'')
+      +(posPonto && (difere||p.status==='manual')?'<label class="rz-chk"><input type="checkbox" id="fz-pos"'+(p.status==='manual'?' checked':'')+'> Gravar a posição deste ponto como a correta do cliente</label>':'')
+      +(manLonge?'<div style="font-size:12px;color:var(--red);margin-top:6px">⚠ A posição gravada nesta ficha fica '+(kmLonge?'a '+kmLonge+' km da sede':'fora da região')+' (foi gravada com o pino no lugar errado) e está sendo ignorada.</div>'
+        +'<label class="rz-chk"><input type="checkbox" id="fz-pos-apaga" checked> Apagar a posição errada</label>':'')
+      +(rzPosManualOk(f)?'<div style="font-size:11.5px;color:var(--muted)">📌 Posição corrigida à mão'+(f.atualizadoNome?' por '+esc(f.atualizadoNome):'')+'.</div>':'')
       +(daLista?'':'<div style="margin-top:12px"><button class="btn btn-sm btn-ghost" onclick="rzDesvincular(\''+pid+'\')">Não é este cliente</button></div>'),
     ok:'Salvar ficha', onOk:function(){
       var abre=document.getElementById('fz-abre').value, fecha=document.getElementById('fz-fecha').value;
@@ -3589,7 +3599,8 @@ window.rzFichaAbrir=function(pid){
       var dados={ nome:c.n||'', abre:abre||'', fecha:fecha||'', descargaMin:dsc===''?null:Math.max(0,+dsc),
         dias:(window._rzFichaDias||[]).slice().sort(), obs:String(document.getElementById('fz-obs').value||'').trim(),
         atualizadoEm:agora(), atualizadoPor:sessaoEmail, atualizadoNome:sessaoNome||sessaoEmail };
-      var cx=document.getElementById('fz-pos'); if(cx && cx.checked && p.lat!=null) dados.posManual={ lat:p.lat, lng:p.lng };
+      var ca=document.getElementById('fz-pos-apaga'); if(ca && ca.checked) dados.posManual=null;
+      var cx=document.getElementById('fz-pos'); if(cx && cx.checked && p.lat!=null && rzPosPlausivel(p)) dados.posManual={ lat:p.lat, lng:p.lng };
       setDoc(doc(dbC,'logClientesFicha',id), dados, { merge:true })
         .then(function(){ rzFicha[id]=Object.assign({}, rzFicha[id]||{}, dados); fecharModal(); if(!daLista) rzMarcarSujo(); rzPintar(); rzDesenhar(false); rzMsg('Ficha salva.');
           if(daLista) rzClientesAdmin(); })
@@ -4208,7 +4219,8 @@ function rzAplicarNomes(){
 
 function rzClPos(id){
   var c=rzCli.base[id]||{}, f=rzFicha[id]||{};
-  if(f.posManual && f.posManual.lat!=null) return ['📌','posição ajustada à mão','ok'];
+  if(rzPosManualOk(f)) return ['📌','posição ajustada à mão','ok'];
+  if(rzPosManualLonge(f)) return ['⚠','posição gravada na ficha está longe da sede (errada) — abra a ficha e apague','sem'];
   if(c.la==null) return ['✗','sem posição no mapa','sem'];
   if(c.p==='cidade') return ['≈','só o centro da cidade','sem'];
   if(c.p==='aprox') return ['≈','posição aproximada','ok'];
@@ -4529,8 +4541,8 @@ function cbeEndereco(t){
 }
 function cbePos(r){
   var id=r.clienteId; if(!id) return null;
-  var f=(cb.fichas||{})[id]; if(f && f.posManual && f.posManual.lat!=null) return { latitude:f.posManual.lat, longitude:f.posManual.lng };
-  var c=(cb.base||{})[id]; if(c && c.la!=null && (c.p==='ok' || c.p==='aprox')) return { latitude:c.la, longitude:c.lo };
+  var f=(cb.fichas||{})[id]; if(rzPosManualOk(f)) return { latitude:f.posManual.lat, longitude:f.posManual.lng };
+  var c=(cb.base||{})[id]; if(c && c.la!=null && (c.p==='ok' || c.p==='aprox') && rzPosPlausivel({ lat:c.la, lng:c.lo })) return { latitude:c.la, longitude:c.lo };
   return null;
 }
 /* janela "08:00 - 12:00" (ou várias: "08:00-12:00 / 14:00-18:00") no dia da rota */
