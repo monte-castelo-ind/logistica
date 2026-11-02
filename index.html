@@ -2895,7 +2895,9 @@ function rzPintar(){
   var pesoT=rzPesoTotal(rzPontos.filter(rzConta));
   if(rzPontos.length && pesoT>0 && !rzDiv) document.getElementById('rz-resumo').insertAdjacentHTML('beforeend','<div style="font-size:12px;margin-top:3px">⚖ '+rzKg(pesoT)+' no total</div>');
   if(rzDiv) document.getElementById('rz-resumo').innerHTML='<b>✂ Prévia da divisão em '+rzDiv.rotas.length+' rotas</b> — ainda não salva.'
-    +'<div style="font-size:11.5px;color:var(--muted);margin-top:3px">Estimativa em linha reta. Mude uma parada de rota pela setinha; salve quando estiver bom.</div>';
+    +(rzDiv.rotas.every(rzDivRuasOk)
+      ? '<div style="font-size:11.5px;color:var(--green);margin-top:3px">✓ km e horários pelas ruas (Google). Mudar uma parada de rota volta essa rota para a estimativa.</div>'
+      : '<div style="font-size:11.5px;color:var(--muted);margin-top:3px">Estimativa em linha reta'+(rzGAtivo()?' — clique em 🛣 Traçar pelas ruas para km e tempo reais':'')+'. Mude uma parada de rota pela setinha; salve quando estiver bom.</div>');
   var cs=document.getElementById('rz-cli-st');
   if(cs) cs.innerHTML=rzCli.erro?'<span style="color:var(--red)">'+esc(rzCli.erro)+'</span>'
     : (!rzCli.carregou?'Carregando clientes…':(rzCliN()?rzCliN()+' clientes na base · '+rzPontos.filter(function(x){ return x.clienteId; }).length+' reconhecidos nesta rota':'Base de clientes ainda vazia — o robô do ERP preenche uma vez por dia.'));
@@ -4116,9 +4118,11 @@ window.rzDividirAbrir=function(){
       +'<div style="font-size:12px;margin-top:10px;line-height:1.55">Equilibra o <b>tempo</b> (a rota que volta mais tarde pesa mais) e o <b>peso</b>, sem passar do limite. '
       +'Usa a saída, o tempo por parada, a velocidade e as fichas dos clientes (horário de abrir/fechar) desta tela.</div>'
       +(semPeso?'<div class="rz-av esp" style="font-size:12px;margin-top:6px">⚖ '+semPeso+' parada'+(semPeso===1?'':'s')+' sem peso — conta como 0 kg. O peso vem quando os pedidos são colados do ERP.</div>':'')
-      +(sem.length?'<div class="rz-av atr" style="font-size:12px;margin-top:6px">⚠ '+sem.length+' parada'+(sem.length===1?'':'s')+' sem local no mapa fica'+(sem.length===1?'':'m')+' de fora da divisão.</div>':''),
+      +(sem.length?'<div class="rz-av atr" style="font-size:12px;margin-top:6px">⚠ '+sem.length+' parada'+(sem.length===1?'':'s')+' sem local no mapa fica'+(sem.length===1?'':'m')+' de fora da divisão.</div>':'')
+      +(rzGAtivo()?'<label class="rz-chk" style="margin-top:8px"><input type="checkbox" id="rzd-ruas" checked> 🛣 Traçar pelas ruas logo depois (Google: km e tempo reais)</label>':''),
     ok:'Dividir', onOk:function(){
       var N=Math.round(+document.getElementById('rzd-n').value||0), cp=Math.max(0,+document.getElementById('rzd-cap').value||0);
+      var ruas=!!(document.getElementById('rzd-ruas')||{}).checked;
       if(N<2 || N>8){ alert('Escolha de 2 a 8 rotas.'); return false; }
       if(N>pts.length){ alert('Mais rotas do que paradas.'); return false; }
       fecharModal();
@@ -4129,11 +4133,66 @@ window.rzDividirAbrir=function(){
           rotas:res.R.map(function(r,k){ return { nome:nome+' · parte '+(k+1), o:r.o, cor:RZ_VER_CORES[k%RZ_VER_CORES.length] }; }) };
         rzPintar(); rzDesenhar(true);
         rzMsg('Prévia pronta ('+((Date.now()-t)/1000).toFixed(1).replace('.',',')+' s). Confira no mapa, mude o que precisar e salve.');
+        if(ruas) rzDivTracar();
       }, 30);
     } });
 };
+/* ---- prévia pelas ruas (Google Routes): uma chamada por rota, só no clique ---- */
+function rzDivSig(r){
+  var b=rzBaseRota();
+  return [rzModo(), (b?b.lat+','+b.lng:'-'), (rzVolta()?'V':'-')].concat(r.o.map(function(p){ return p.lat+','+p.lng; })).join('|');
+}
+function rzDivRuasOk(r){ return !!(r.ruas && r.ruas.sig===rzDivSig(r)); }
+function rzDivSimRuas(r){
+  var X=rzDiv.X, L=r.ruas.legs, t=X.t0, km=0, atraso=0, espera=0;
+  r.o.forEach(function(p,i){
+    var l=L[i]||{ m:0, s:0 }; km+=l.m/1000; t+=l.s/60;
+    var j=X.jan[p._i];
+    if(j){ if(j.abre!=null && t<j.abre){ espera+=j.abre-t; t=j.abre; } if(j.fecha!=null && t>j.fecha) atraso+=t-j.fecha; }
+    t+=X.mp[p._i];
+  });
+  if(X.volta){ var lv=L[r.o.length]; if(lv){ km+=lv.m/1000; t+=lv.s/60; } }
+  return { custo:(t-X.t0)+25*atraso, min:t-X.t0, fim:t, km:km, atraso:atraso, espera:espera };
+}
+function rzDivLeg(l){ return { m:l.distanceMeters||0, s:rzGSeg(l.duration), p:(l.polyline&&l.polyline.encodedPolyline)||'' }; }
+function rzDivTracarUma(r){
+  var base=rzBaseRota(), volta=rzVolta(), X=rzDiv.X;
+  var seq=[base].concat(r.o).concat(volta?[base]:[]);
+  /* até 25 paradas, saindo e voltando à sede e sem horário de cliente: o Google também acerta a ordem pelas ruas */
+  var otimiza=volta && r.o.length>=2 && r.o.length<=25 && !r.o.some(function(p){ return X.jan[p._i]; });
+  if(otimiza) return rzGChamar(seq,true).then(function(rt){
+    var idx=rt.optimizedIntermediateWaypointIndex;
+    if(idx && idx.length===r.o.length) r.o=idx.map(function(i){ return r.o[i]; });
+    r.ruas={ sig:rzDivSig(r), legs:(rt.legs||[]).map(rzDivLeg) };
+  });
+  var MAX=25, blocos=[], legs=[];
+  for(var i=0;i<seq.length-1;){ var f=Math.min(i+MAX+1, seq.length-1); blocos.push(seq.slice(i,f+1)); i=f; }
+  return blocos.reduce(function(pr,b){
+    return pr.then(function(){ return rzGChamar(b,false).then(function(rt){ (rt.legs||[]).forEach(function(l){ legs.push(rzDivLeg(l)); }); }); });
+  }, Promise.resolve()).then(function(){ r.ruas={ sig:rzDivSig(r), legs:legs }; });
+}
+window.rzDivTracar=function(){
+  if(!rzDiv) return;
+  if(!rzGAtivo()){ alert('O Google Maps não está ativo nesta aba — sem ele não dá para traçar pelas ruas.'); return; }
+  var D=rzDiv, falta=D.rotas.filter(function(r){ return !rzDivRuasOk(r); });
+  if(!falta.length){ rzMsg('As '+D.rotas.length+' rotas já estão traçadas pelas ruas.'); return; }
+  var feitas=0;
+  rzMsg('Traçando pelas ruas… 0 de '+falta.length);
+  falta.reduce(function(pr,r){
+    return pr.then(function(){ return rzDivTracarUma(r).then(function(){ feitas++; if(rzDiv===D) rzMsg('Traçando pelas ruas… '+feitas+' de '+falta.length); }); });
+  }, Promise.resolve()).then(function(){
+    if(rzDiv!==D) return;
+    rzPintar(); rzDesenhar(true);
+    rzMsg('✓ '+feitas+' rota'+(feitas===1?' traçada':'s traçadas')+' pelas ruas (Google, sem trânsito). A ordem de cada uma também foi acertada pelas ruas.');
+  }).catch(function(e){
+    console.error('routes/dividir:', e);
+    if(rzDiv===D){ rzPintar(); rzDesenhar(false); }
+    rzMsg('Não foi possível traçar pelas ruas: '+(e.message||e)+(feitas?' ('+feitas+' rota'+(feitas===1?'':'s')+' traçada'+(feitas===1?'':'s')+' antes do erro)':''), true);
+  });
+};
 function rzDivStats(r){
-  var s=rzDivSim(r.o, rzDiv.X); s.kg=rzDivKg(r.o, rzDiv.X); s.n=r.o.length; return s;
+  var ruas=rzDivRuasOk(r), s=ruas?rzDivSimRuas(r):rzDivSim(r.o, rzDiv.X);
+  s.kg=rzDivKg(r.o, rzDiv.X); s.n=r.o.length; s.ruas=ruas; return s;
 }
 function rzDivHtml(){
   var D=rzDiv, tot=0, kgT=0, opts=function(k){ return D.rotas.map(function(r,j){ return '<option value="'+j+'"'+(j===k?' selected':'')+'>'+(j===k?'→ mover para…':esc(r.nome))+'</option>'; }).join(''); };
@@ -4146,7 +4205,8 @@ function rzDivHtml(){
       +'<input value="'+esc(r.nome)+'" onchange="rzDivNome('+k+',this.value)" title="Nome da rota"></div>'
       +'<div class="rz-div-s"><b>'+s.n+'</b> parada'+(s.n===1?'':'s')+' · '+s.km.toFixed(1).replace('.',',')+' km · '+rzDur(s.min)+' · volta ~'+rzHora(s.fim)
       +' · <span style="'+(acima?'color:var(--red);font-weight:700':'')+'">⚖ '+rzKg(s.kg)+(acima?' (acima de '+rzKg(D.cap)+')':'')+'</span>'
-      +(s.atraso>0?' · <span style="color:var(--red)">⚠ chega depois de fechar</span>':'')+'</div>'
+      +(s.atraso>0?' · <span style="color:var(--red)">⚠ chega depois de fechar</span>':'')
+      +'<div style="font-size:11px;margin-top:2px;color:'+(s.ruas?'var(--green)':'var(--muted)')+'">'+(s.ruas?'✓ pelas ruas (Google)':'estimativa em linha reta')+'</div></div>'
       +'<details><summary>Ver paradas</summary>'+r.o.map(function(p,i){
         var c=p.clienteId && rzCli.base[p.clienteId];
         return '<div class="rz-div-p"><span class="rz-div-n" style="background:'+r.cor+'">'+(i+1)+'</span>'
@@ -4156,6 +4216,7 @@ function rzDivHtml(){
   });
   h+='<div class="rz-div-s" style="margin:6px 0">Total: '+tot+' paradas · ⚖ '+rzKg(kgT)+(D.fora.length?' · <span style="color:var(--amber)">'+D.fora.length+' sem local ficaram de fora</span>':'')+'</div>'
     +'<div class="rz-acoes"><button class="btn btn-sm" onclick="rzDivSalvar()">💾 Salvar as '+D.rotas.length+' rotas</button>'
+    +(rzGAtivo()?'<button class="btn btn-sm" onclick="rzDivTracar()" title="Km e tempo reais pelas ruas (Google), e a ordem de cada rota acertada pelas ruas">🛣 Traçar pelas ruas</button>':'')
     +'<button class="btn btn-sm btn-ghost" onclick="rzDivRefazer()" title="Repete a busca a partir desta divisão">⚡ Melhorar de novo</button>'
     +'<button class="btn btn-sm btn-ghost" onclick="rzDivCancelar()">Cancelar</button></div></div>';
   return h;
@@ -4194,7 +4255,8 @@ window.rzDivSalvar=function(){
         var s=rzDivStats(r), ref=doc(collection(dbC,'frotaRoteiros')); ids.push(ref.id);
         b.set(ref, { nome:r.nome, dias:rzDias.slice().sort(), modo:rzModo(), volta:rzVolta(),
           saida:rzVal('rz-saida')||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28), velEstKmh:rzVelPar().e,
-          pontos:r.o.map(rzPontoGravar), kmEstimado:+s.km.toFixed(1), minEstimado:Math.round(s.min), kmPelasRuas:false, rotaRuas:null,
+          pontos:r.o.map(rzPontoGravar), kmEstimado:+s.km.toFixed(1), minEstimado:Math.round(s.min), kmPelasRuas:!!s.ruas,
+          rotaRuas:s.ruas?{ sig:r.ruas.sig, legs:r.ruas.legs, polys:[], km:r.ruas.legs.reduce(function(a,l){ return a+l.m; },0)/1000, min:r.ruas.legs.reduce(function(a,l){ return a+l.s; },0)/60 }:null,
           pesoKg:Math.round(s.kg), divididaDe:rzDiv.base,
           criadoEm:quando, criadoPor:sessaoEmail, atualizadoEm:quando, atualizadoPor:sessaoEmail });
       });
@@ -4220,10 +4282,18 @@ window.rzDivSalvar=function(){
 function rzDivDesenharG(bounds){
   var base=rzBaseRota();
   rzDiv.rotas.forEach(function(r){
-    var path=[{ lat:base.lat, lng:base.lng }].concat(r.o.map(function(p){ return { lat:p.lat, lng:p.lng }; }));
-    if(rzVolta()) path.push({ lat:base.lat, lng:base.lng });
-    rzG.objs.push(new google.maps.Polyline({ path:path, map:rzG.mapa, strokeOpacity:0, zIndex:1,
-      icons:[{ icon:{ path:'M 0,-1 0,1', strokeOpacity:.9, strokeColor:r.cor, scale:3 }, offset:'0', repeat:'12px' }] }));
+    if(rzDivRuasOk(r)) r.ruas.legs.forEach(function(l){
+      if(!l.p) return;
+      var cam=google.maps.geometry.encoding.decodePath(l.p);
+      rzG.objs.push(new google.maps.Polyline({ path:cam, map:rzG.mapa, strokeColor:r.cor, strokeOpacity:.9, strokeWeight:5, zIndex:1 }));
+      cam.forEach(function(ll){ bounds.extend(ll); });
+    });
+    else {
+      var path=[{ lat:base.lat, lng:base.lng }].concat(r.o.map(function(p){ return { lat:p.lat, lng:p.lng }; }));
+      if(rzVolta()) path.push({ lat:base.lat, lng:base.lng });
+      rzG.objs.push(new google.maps.Polyline({ path:path, map:rzG.mapa, strokeOpacity:0, zIndex:1,
+        icons:[{ icon:{ path:'M 0,-1 0,1', strokeOpacity:.9, strokeColor:r.cor, scale:3 }, offset:'0', repeat:'12px' }] }));
+    }
     r.o.forEach(function(p,i){
       var m=new google.maps.Marker({ position:{ lat:p.lat, lng:p.lng }, map:rzG.mapa, zIndex:1000+i,
         icon:{ path:google.maps.SymbolPath.CIRCLE, scale:11, fillColor:r.cor, fillOpacity:1, strokeColor:'#fff', strokeWeight:2 },
@@ -4237,9 +4307,12 @@ function rzDivDesenharG(bounds){
 function rzDivDesenharL(L, pts){
   var base=rzBaseRota();
   rzDiv.rotas.forEach(function(r){
-    var linha=[[base.lat,base.lng]].concat(r.o.map(function(p){ return [p.lat,p.lng]; }));
-    if(rzVolta()) linha.push([base.lat,base.lng]);
-    L.polyline(linha, { color:r.cor, weight:3.5, opacity:.9, dashArray:'6 6' }).addTo(rzCamada);
+    if(rzDivRuasOk(r)) r.ruas.legs.forEach(function(l){ if(l.p) L.polyline(rzDecodificar(l.p), { color:r.cor, weight:4.5, opacity:.9 }).addTo(rzCamada); });
+    else {
+      var linha=[[base.lat,base.lng]].concat(r.o.map(function(p){ return [p.lat,p.lng]; }));
+      if(rzVolta()) linha.push([base.lat,base.lng]);
+      L.polyline(linha, { color:r.cor, weight:3.5, opacity:.9, dashArray:'6 6' }).addTo(rzCamada);
+    }
     r.o.forEach(function(p,i){
       pts.push([p.lat,p.lng]);
       L.marker([p.lat,p.lng], { icon:L.divIcon({ className:'', html:'<div class="rt-pino" style="background:'+r.cor+'">'+(i+1)+'</div>', iconSize:[22,22], iconAnchor:[11,11] }) })
