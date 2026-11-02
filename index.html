@@ -588,6 +588,7 @@ html[data-pal="vinho"][data-theme="light"]{
 .rz-div-t{flex:1;min-width:0}
 .rz-div-t small{display:block;color:var(--muted);font-size:11px}
 .rz-div-p select{width:auto;max-width:42%;font-size:11.5px;padding:3px 5px}
+.rz-div-mov{background:rgba(255,106,19,.14);border-radius:6px}
 .rz-msg{font-size:12px;color:var(--primary);min-height:16px;margin-bottom:6px}
 .rz-item{display:flex;gap:9px;align-items:flex-start;padding:9px 4px;border-top:1px solid var(--border)}
 .rz-item.erro .rz-num{background:var(--red)}
@@ -3064,7 +3065,8 @@ function rzListar(){
     var sel=document.getElementById('rz-salvas');
     sel.innerHTML='<option value="">Rotas salvas ('+rzSalvas.length+')…</option>'+rzSalvas.map(function(r){
       return '<option value="'+esc(r.firestoreId)+'"'+(r.firestoreId===rzAberta?' selected':'')+'>'+esc(r.nome||'(sem nome)')
-        +((r.dias||[]).length?' · '+r.dias.map(function(d){ return RZ_DIAS[d]; }).join('/'):'')+' · '+(r.pontos||[]).length+' pontos</option>';
+        +((r.dias||[]).length?' · '+r.dias.map(function(d){ return RZ_DIAS[d]; }).join('/'):'')+' · '+(r.pontos||[]).length+' pontos'
+        +(r.divisao&&r.divisao.rotas?' · ✂ divisão em andamento':'')+'</option>';
     }).join('');
     rzPintarVer(); if(Object.keys(rzVer.sel).length) rzDesenhar(false);
     rzPintarCompl();
@@ -3092,7 +3094,7 @@ window.rzAbrir=function(id){
   if(!id){ return; }
   if(rzSujo && rzPontos.length && !confirm('A rota aberta tem mudanças não salvas. Descartar?')){ document.getElementById('rz-salvas').value=rzAberta; return; }
   var r=rzSalvas.filter(function(x){ return x.firestoreId===id; })[0]; if(!r) return;
-  rzAberta=id; rzPontos=(r.pontos||[]).map(function(p){ return Object.assign({}, p); }); rzDias=(r.dias||[]).slice(); rzFila=[]; rzDiv=null; rzJuntadas=[];
+  rzAberta=id; rzPontos=(r.pontos||[]).map(function(p){ return Object.assign({}, p); }); rzDias=(r.dias||[]).slice(); rzFila=[]; rzDiv=null; rzJuntadas=(r.juntadas||[]).slice();
   rzG.rota=r.rotaRuas||null;
   document.getElementById('rz-nome').value=r.nome||'';
   if(r.saida) document.getElementById('rz-saida').value=r.saida;
@@ -3104,6 +3106,7 @@ window.rzAbrir=function(id){
   document.getElementById('rz-msg').textContent='';
   rzPintarDias();
   rzSincClientes();
+  if(r.divisao && r.divisao.rotas) rzDivRestaurar(r.divisao);
   rzPintar(); rzDesenhar(true);
   rzPontos.filter(function(p){ return p.lat==null && p.status!=='erro'; }).forEach(rzBuscar);
 };
@@ -3115,18 +3118,22 @@ function rzPontoGravar(p){
     cobliMin:p.cobliMin!=null?p.cobliMin:null, cobliHora:p.cobliHora!=null?p.cobliHora:null, motivo:p.lat==null?(p.motivo||null):null,
     peso:(+p.peso>0)?+p.peso:null, pedidos:(p.pedidos&&p.pedidos.length)?p.pedidos.slice(0,20):null };
 }
+function rzDadosRota(nome){
+  var T=rzTotais();
+  return { nome:nome, dias:rzDias.slice().sort(), modo:rzModo(), volta:rzVolta(),
+    saida:rzVal('rz-saida')||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28), velEstKmh:rzVelPar().e,
+    pontos:rzPontos.map(rzPontoGravar), pesoKg:Math.round(rzPesoTotal(rzPontos)),
+    kmEstimado:+T.km.toFixed(1), minEstimado:Math.round(T.min), kmPelasRuas:!!T.ruas,
+    rotaRuas:rzGRotaValida()?rzG.rota:null, juntadas:rzJuntadas.slice(),
+    atualizadoEm:agora(), atualizadoPor:sessaoEmail };
+}
 window.rzSalvar=function(){
   var nome=rzVal('rz-nome');
   if(!nome){ alert('Dê um nome para a rota (ex.: "Missões — seg/qua/sex").'); document.getElementById('rz-nome').focus(); return; }
   if(!rzPontos.length){ alert('A rota não tem pontos.'); return; }
   if(rzFila.length || rzBuscandoFila){ alert('Ainda estou procurando alguns endereços. Espere terminar e salve de novo.'); return; }
-  var T=rzTotais();
-  var dados={ nome:nome, dias:rzDias.slice().sort(), modo:rzModo(), volta:rzVolta(),
-    saida:rzVal('rz-saida')||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28), velEstKmh:rzVelPar().e,
-    pontos:rzPontos.map(rzPontoGravar), pesoKg:Math.round(rzPesoTotal(rzPontos)),
-    kmEstimado:+T.km.toFixed(1), minEstimado:Math.round(T.min), kmPelasRuas:!!T.ruas,
-    rotaRuas:rzGRotaValida()?rzG.rota:null,
-    atualizadoEm:agora(), atualizadoPor:sessaoEmail };
+  var dados=rzDadosRota(nome);
+  dados.divisao=null;                       /* salvar a rota normal encerra uma divisão em andamento */
   var b=document.getElementById('rz-salvar'); b.disabled=true; b.textContent='Salvando…';
   var pr;
   if(rzAberta) pr=updateDoc(doc(dbC,'frotaRoteiros',rzAberta), dados).then(function(){ return rzAberta; });
@@ -4207,20 +4214,22 @@ function rzDivHtml(){
       +' · <span style="'+(acima?'color:var(--red);font-weight:700':'')+'">⚖ '+rzKg(s.kg)+(acima?' (acima de '+rzKg(D.cap)+')':'')+'</span>'
       +(s.atraso>0?' · <span style="color:var(--red)">⚠ chega depois de fechar</span>':'')
       +'<div style="font-size:11px;margin-top:2px;color:'+(s.ruas?'var(--green)':'var(--muted)')+'">'+(s.ruas?'✓ pelas ruas (Google)':'estimativa em linha reta')+'</div></div>'
-      +'<details><summary>Ver paradas</summary>'+r.o.map(function(p,i){
+      +'<details'+(D.abertas&&D.abertas[k]?' open':'')+' ontoggle="rzDivAbre('+k+',this.open)"><summary>Ver paradas</summary>'+r.o.map(function(p,i){
         var c=p.clienteId && rzCli.base[p.clienteId];
-        return '<div class="rz-div-p"><span class="rz-div-n" style="background:'+r.cor+'">'+(i+1)+'</span>'
+        return '<div class="rz-div-p'+(D.movido===p.id?' rz-div-mov':'')+'"><span class="rz-div-n" style="background:'+r.cor+'">'+(i+1)+'</span>'
           +'<span class="rz-div-t">'+esc(rzTitulo(p))+'<small>'+esc((c&&c.c)||'')+(+p.peso>0?' · '+rzKg(p.peso):'')+'</small></span>'
           +'<select onchange="rzDivMover('+k+',\''+p.id+'\',this.value)">'+opts(k)+'</select></div>';
       }).join('')+'</details></div>';
   });
   h+='<div class="rz-div-s" style="margin:6px 0">Total: '+tot+' paradas · ⚖ '+rzKg(kgT)+(D.fora.length?' · <span style="color:var(--amber)">'+D.fora.length+' sem local ficaram de fora</span>':'')+'</div>'
     +'<div class="rz-acoes"><button class="btn btn-sm" onclick="rzDivSalvar()">💾 Salvar as '+D.rotas.length+' rotas</button>'
+    +'<button class="btn btn-sm btn-ghost" onclick="rzDivRascunho()" title="Guarda as paradas e a divisão como estão, para continuar depois (abre em Rotas salvas)">📝 Salvar rascunho</button>'
     +(rzGAtivo()?'<button class="btn btn-sm" onclick="rzDivTracar()" title="Km e tempo reais pelas ruas (Google), e a ordem de cada rota acertada pelas ruas">🛣 Traçar pelas ruas</button>':'')
     +'<button class="btn btn-sm btn-ghost" onclick="rzDivRefazer()" title="Repete a busca a partir desta divisão">⚡ Melhorar de novo</button>'
     +'<button class="btn btn-sm btn-ghost" onclick="rzDivCancelar()">Cancelar</button></div></div>';
   return h;
 }
+window.rzDivAbre=function(k,aberto){ if(!rzDiv) return; rzDiv.abertas=rzDiv.abertas||{}; if(aberto) rzDiv.abertas[k]=true; else delete rzDiv.abertas[k]; };
 window.rzDivNome=function(k,v){ if(rzDiv && rzDiv.rotas[k]) rzDiv.rotas[k].nome=String(v||'').trim()||rzDiv.rotas[k].nome; };
 window.rzDivMover=function(k, pid, dest){
   if(!rzDiv) return; dest=+dest; if(dest===k) return;
@@ -4229,7 +4238,11 @@ window.rzDivMover=function(k, pid, dest){
   if(A.o.length<=1){ alert('A rota ficaria vazia.'); rzPintar(); return; }
   A.o=rzDivMelhorar(A.o.filter(function(x){ return x!==p; }), X, false);
   B.o=rzDivMelhorar(rzDivInserir(B.o, p, X).o, X, false);
+  rzDiv.movido=p.id;
+  var lista=document.getElementById('rz-lista'), sc=lista?lista.scrollTop:0, pai=document.querySelector('.rz-painel'), sp=pai?pai.scrollTop:0;
   rzPintar(); rzDesenhar(false);
+  if(lista) lista.scrollTop=sc; if(pai) pai.scrollTop=sp;
+  rzMsg('"'+rzTitulo(p)+'" foi para '+B.nome+'.');
 };
 window.rzDivRefazer=function(){
   if(!rzDiv) return;
@@ -4238,18 +4251,62 @@ window.rzDivRefazer=function(){
   R.forEach(function(r,k){ rzDiv.rotas[k].o=rzDivMelhorar(r.o, X, false); });
   rzPintar(); rzDesenhar(false); rzMsg('Busca repetida a partir desta divisão.');
 };
+/* Rascunho da divisão: a rota com TODAS as paradas fica salva normalmente
+   (frotaRoteiros) e leva junto o campo "divisao" — nome, cor e ids das
+   paradas de cada parte, e o traçado pelas ruas de quem já tinha. Ao abrir
+   essa rota em Rotas salvas, a prévia volta como estava. */
+function rzDivGravavel(){
+  return { cap:rzDiv.cap||0, base:rzDiv.base||'', salvoEm:agora(), salvoPor:sessaoEmail,
+    rotas:rzDiv.rotas.map(function(r){ return { nome:r.nome, cor:r.cor, ids:r.o.map(function(p){ return p.id; }), ruas:rzDivRuasOk(r)?r.ruas:null }; }) };
+}
+window.rzDivRascunho=function(){
+  if(!rzDiv) return;
+  var nome=rzVal('rz-nome');
+  if(!nome){ alert('Dê um nome para a rota juntada (campo "Nome da rota") antes de salvar o rascunho.'); document.getElementById('rz-nome').focus(); return; }
+  var dados=rzDadosRota(nome); dados.divisao=rzDivGravavel();
+  var D=rzDiv, pr;
+  if(rzAberta) pr=updateDoc(doc(dbC,'frotaRoteiros',rzAberta), dados).then(function(){ return rzAberta; });
+  else { dados.criadoEm=dados.atualizadoEm; dados.criadoPor=sessaoEmail; pr=addDoc(collection(dbC,'frotaRoteiros'), dados).then(function(r){ return r.id; }); }
+  rzMsg('Salvando o rascunho…');
+  pr.then(function(id){
+    rzAberta=id; rzSujo=false; document.getElementById('rz-salvar').textContent='💾 Salvar';
+    rzListar();
+    if(rzDiv===D) rzMsg('📝 Rascunho salvo como "'+nome+'". Para continuar depois, abra em Rotas salvas (aparece com "✂ divisão em andamento").');
+  }).catch(function(e){ console.error('frotaRoteiros/rascunho:',e); rzMsg('Não foi possível salvar o rascunho: '+(e.code||e.message), true); });
+};
+function rzDivRestaurar(dv){
+  if(!rzBaseRota()) return;
+  var pts=rzPontos.filter(rzConta); if(pts.length<2) return;
+  var X=rzDivPrep(pts), porId={}; pts.forEach(function(p){ porId[p.id]=p; });
+  var usados={};
+  var rotas=(dv.rotas||[]).map(function(r,k){
+    var o=(r.ids||[]).map(function(id){ return porId[id]; }).filter(function(p){ if(!p || usados[p.id]) return false; usados[p.id]=1; return true; });
+    return { nome:r.nome||('Parte '+(k+1)), cor:r.cor||RZ_VER_CORES[k%RZ_VER_CORES.length], o:o, ruas:r.ruas||null };
+  }).filter(function(r){ return r.o.length; });
+  if(rotas.length<2) return;
+  /* parada que entrou na rota depois do rascunho: vai para a rota onde custa menos */
+  pts.filter(function(p){ return !usados[p.id]; }).forEach(function(p){
+    var melhor=null;
+    rotas.forEach(function(r){ var ins=rzDivInserir(r.o,p,X), d=ins.c-rzDivSim(r.o,X).custo; if(!melhor || d<melhor.d) melhor={ r:r, o:ins.o, d:d }; });
+    melhor.r.o=melhor.o;
+  });
+  rzDiv={ X:X, cap:+dv.cap||0, base:dv.base||rzVal('rz-nome')||'Rota', fora:rzPontos.filter(function(p){ return p.lat==null; }), rotas:rotas, abertas:{} };
+  rzMsg('✂ Divisão em andamento retomada'+(dv.salvoEm?' (rascunho de '+String(dv.salvoEm).slice(8,10)+'/'+String(dv.salvoEm).slice(5,7)+')':'')+'. Continue de onde parou.');
+}
 window.rzDivCancelar=function(){ rzDiv=null; rzPintar(); rzDesenhar(true); rzMsg('Divisão cancelada — as paradas continuam juntas na tela.'); };
 window.rzDivSalvar=function(){
   if(!rzDiv) return;
   var nomes=rzDiv.rotas.map(function(r){ return r.nome; });
   if(nomes.some(function(n){ return !n; })){ alert('Dê nome para todas as rotas.'); return; }
-  var orig=rzSalvas.filter(function(r){ return rzJuntadas.indexOf(r.firestoreId)>=0; });
+  var orig=rzSalvas.filter(function(r){ return rzJuntadas.indexOf(r.firestoreId)>=0 && r.firestoreId!==rzAberta; });
+  var rasc=rzAberta ? rzSalvas.filter(function(r){ return r.firestoreId===rzAberta; })[0] : null;
   modal({ titulo:'Salvar '+nomes.length+' rotas', sub:'Cada uma vira uma rota salva, com os dias da semana desta tela',
     body:'<div style="font-size:13px;line-height:1.7">'+nomes.map(function(n){ return '• '+esc(n); }).join('<br>')+'</div>'
-      +(orig.length?'<label class="rz-chk" style="margin-top:10px"><input type="checkbox" id="rzd-apaga"> Apagar as rotas que foram juntadas ('+orig.map(function(r){ return esc(r.nome||''); }).join(', ')+')</label>':''),
+      +(orig.length?'<label class="rz-chk" style="margin-top:10px"><input type="checkbox" id="rzd-apaga"> Apagar as rotas que foram juntadas ('+orig.map(function(r){ return esc(r.nome||''); }).join(', ')+')</label>':'')
+      +(rasc?'<label class="rz-chk" style="margin-top:6px"><input type="checkbox" id="rzd-apaga-rasc" checked> Apagar a rota juntada / rascunho ("'+esc(rasc.nome||'')+'")</label>':''),
     ok:'Salvar', onOk:function(){
-      var apaga=!!(document.getElementById('rzd-apaga')||{}).checked;
-      if(apaga && !podeGestaoFrota()){ alert('Só a gerência da frota pode apagar rotas.'); return false; }
+      var apaga=!!(document.getElementById('rzd-apaga')||{}).checked, apagaRasc=!!(document.getElementById('rzd-apaga-rasc')||{}).checked;
+      if((apaga||apagaRasc) && !podeGestaoFrota()){ alert('Só a gerência da frota pode apagar rotas.'); return false; }
       var b=writeBatch(dbC), ids=[], quando=agora();
       rzDiv.rotas.forEach(function(r){
         var s=rzDivStats(r), ref=doc(collection(dbC,'frotaRoteiros')); ids.push(ref.id);
@@ -4261,6 +4318,7 @@ window.rzDivSalvar=function(){
           criadoEm:quando, criadoPor:sessaoEmail, atualizadoEm:quando, atualizadoPor:sessaoEmail });
       });
       if(apaga) orig.forEach(function(r){ b.delete(doc(dbC,'frotaRoteiros',r.firestoreId)); });
+      if(rasc){ if(apagaRasc) b.delete(doc(dbC,'frotaRoteiros',rasc.firestoreId)); else b.update(doc(dbC,'frotaRoteiros',rasc.firestoreId), { divisao:null, atualizadoEm:quando, atualizadoPor:sessaoEmail }); }
       var bt=document.getElementById('modal-ok'); if(bt){ bt.disabled=true; bt.textContent='Salvando…'; }
       b.commit().then(function(){
         fecharModal();
@@ -4270,7 +4328,7 @@ window.rzDivSalvar=function(){
         document.getElementById('rz-nome').value=''; document.getElementById('rz-salvar').textContent='💾 Salvar';
         rzVer.sel={}; ids.forEach(function(id){ rzVer.sel[id]=true; }); rzVer.aberto=true;
         rzPintarDias(); rzPintar(); rzListar();
-        rzMsg(n+' rotas salvas'+(apaga?' e as originais apagadas':'')+'. Estão marcadas em "Ver várias rotas"; abra cada uma em Rotas salvas para traçar pelas ruas.');
+        rzMsg(n+' rotas salvas'+(apaga?' e as originais apagadas':'')+(rasc&&apagaRasc?' (rascunho apagado)':'')+'. Estão marcadas em "Ver várias rotas"; abra cada uma em Rotas salvas para traçar pelas ruas.');
       }).catch(function(e){
         console.error('frotaRoteiros/dividir:', e); alert('Não foi possível salvar: '+(e.code||e.message));
         if(bt){ bt.disabled=false; bt.textContent='Salvar'; }
