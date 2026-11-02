@@ -576,6 +576,17 @@ html[data-pal="vinho"][data-theme="light"]{
 .rz-param .fld{margin-bottom:10px}
 .rz-resumo{font-size:13px;margin:4px 0 10px;padding:9px 11px;border-radius:9px;background:var(--card-2)}
 .rz-acoes{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.rz-div-r{border:1px solid var(--border);border-left:5px solid var(--primary);border-radius:10px;padding:8px 10px;margin-bottom:8px}
+.rz-div-h{display:flex;align-items:center;gap:8px}
+.rz-div-h input{flex:1;font-weight:700;padding:5px 8px}
+.rz-div-s{font-size:12px;color:var(--text);margin-top:5px;line-height:1.5}
+.rz-div-r details{margin-top:5px}
+.rz-div-r summary{cursor:pointer;font-size:12px;color:var(--muted)}
+.rz-div-p{display:flex;align-items:center;gap:7px;padding:5px 0;border-top:1px solid var(--border);font-size:12px}
+.rz-div-n{flex:0 0 20px;height:20px;border-radius:50%;color:#fff;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.rz-div-t{flex:1;min-width:0}
+.rz-div-t small{display:block;color:var(--muted);font-size:11px}
+.rz-div-p select{width:auto;max-width:42%;font-size:11.5px;padding:3px 5px}
 .rz-msg{font-size:12px;color:var(--primary);min-height:16px;margin-bottom:6px}
 .rz-item{display:flex;gap:9px;align-items:flex-start;padding:9px 4px;border-top:1px solid var(--border)}
 .rz-item.erro .rz-num{background:var(--red)}
@@ -1414,6 +1425,10 @@ td.esc-trav{background:rgba(255,106,19,.05)}
             <button class="btn btn-sm btn-ghost" onclick="rzNova()">+ Nova</button>
             <button class="btn btn-sm btn-ghost" id="rz-apagar-varias" onclick="rzApagarVarias()" style="display:none" title="Admin e gerência da frota">🗑 Apagar rotas…</button>
           </div>
+          <div class="rz-linha">
+            <button class="btn btn-sm btn-ghost" onclick="rzJuntarAbrir()" style="flex:1" title="Junta as paradas de duas ou mais rotas salvas numa rota nova">➕ Juntar rotas</button>
+            <button class="btn btn-sm btn-ghost" onclick="rzDividirAbrir()" style="flex:1" title="Reparte as paradas da tela em várias rotas, equilibrando tempo e peso">✂ Dividir em rotas</button>
+          </div>
           <div class="rz-compl" id="rz-compl" style="display:none"></div>
           <div class="rz-linha"><button class="btn btn-sm btn-ghost" id="rz-ver-bt" onclick="rzVerAbrir()" style="flex:1">🗺 Ver várias rotas</button></div>
           <div class="rz-ver" id="rz-ver" style="display:none"></div>
@@ -1445,7 +1460,7 @@ td.esc-trav{background:rgba(255,106,19,.05)}
             <div id="rz-cli-res"></div>
             <div class="rz-g" id="rz-cli-st" style="margin:4px 0 0"></div></div>
           <div class="rz-resumo" id="rz-resumo"></div>
-          <div class="rz-acoes">
+          <div class="rz-acoes" id="rz-acoes-main">
             <button class="btn btn-sm" onclick="rzOtimizar()">⚡ Otimizar ordem</button>
             <button class="btn btn-sm" id="rz-tracar" onclick="rzTracar()" style="display:none">🛣 Traçar pelas ruas</button>
             <button class="btn btn-sm btn-ghost" onclick="rzGoogle()">Google Maps ↗</button>
@@ -2307,7 +2322,10 @@ function rzHav(a,b){
 function rzKm(a,b){ return rzHav(a,b)*RZ_FATOR; }
 function rzHora(min){ min=Math.round(min); var h=Math.floor(min/60)%24, m=((min%60)+60)%60; return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'); }
 function rzDur(min){ min=Math.round(min); return Math.floor(min/60)+'h'+String(min%60).padStart(2,'0'); }
-function rzMarcarSujo(){ rzSujo=true; var b=document.getElementById('rz-salvar'); if(b) b.textContent='💾 Salvar *'; }
+function rzMarcarSujo(){
+  rzSujo=true; var b=document.getElementById('rz-salvar'); if(b) b.textContent='💾 Salvar *';
+  if(rzDiv){ rzDiv=null; setTimeout(function(){ rzPintar(); rzDesenhar(false); rzMsg('A prévia da divisão foi fechada porque a rota mudou — divida de novo.', true); }, 0); }
+}
 
 /* ---------- busca de endereço (fila de 1 por segundo) ---------- */
 function rzBuscar(p){ p.status='fila'; rzFila.push(p.id); rzPintar(); rzRodarFila(); }
@@ -2552,9 +2570,10 @@ function rzNovoPonto(linha){
     /* link encurtado (maps.app.goo.gl) não dá para abrir daqui: não traz a coordenada no texto */
     p.status='erro'; p.endereco=end;
     p.nome=p.nome||'Link curto do Google — abra, copie o link completo e cole de novo';
-    rzPontos.push(p); rzMarcarSujo(); rzPintar(); return;
+    rzPontos.push(p); rzMarcarSujo(); rzPintar(); return p;
   }
   rzPontos.push(p); rzMarcarSujo(); rzBuscar(p);
+  return p;
 }
 /* Lista de pedidos copiada do ERP (a mesma do Cobli Conversor: um valor por
    linha ou colunas com TAB). Lida pelo cbLer(); cada pedido vira "Nome ;
@@ -2571,10 +2590,16 @@ function rzColarErp(txt){
     var nome=String(r.nome||'').replace(/;/g,',').trim();
     var linha=String(r.rua||'').trim() ? nome+' ; '+end : nome;
     if(!String(r.rua||'').trim()) semEnd++;
-    var k=rzNormNome(linha); if(vistos[k]) return; vistos[k]=1;
-    linhas.push(linha);
+    var k=rzNormNome(linha);
+    if(vistos[k]){ vistos[k].peso+=r.peso||0; if(r.pedido) vistos[k].pedidos.push(String(r.pedido)); return; }
+    vistos[k]={ linha:linha, peso:r.peso||0, pedidos:r.pedido?[String(r.pedido)]:[] };
+    linhas.push(vistos[k]);
   });
-  linhas.forEach(rzNovoPonto);
+  linhas.forEach(function(x){
+    var p=rzNovoPonto(x.linha); if(!p) return;
+    if(x.peso>0) p.peso=Math.round(x.peso*10)/10;
+    if(x.pedidos.length) p.pedidos=x.pedidos;
+  });
   rzMsg(regs.length+' pedido'+(regs.length===1?'':'s')+' do ERP → '+linhas.length+' parada'+(linhas.length===1?'':'s')
     +(peso?' · peso total '+peso.toLocaleString('pt-BR',{ maximumFractionDigits:1 })+' kg':'')
     +(semEnd?' · '+semEnd+' sem endereço (procurado pelo nome do cliente)':'')
@@ -2608,13 +2633,15 @@ window.rzEditar=function(id){
   modal({ titulo:'Editar ponto',
     body:'<div class="fld"><label>Nome (opcional)</label><input id="rz-e-nome" value="'+esc(p.nome||'')+'"></div>'
       +'<div class="fld"><label>Endereço</label><input id="rz-e-end" value="'+esc(p.endereco||'')+'"></div>'
-      +'<div class="fld"><label>Tempo nesta parada (min) — vazio usa o padrão</label><input id="rz-e-min" type="number" min="0" value="'+(p.paradaMin!=null?p.paradaMin:'')+'"></div>',
+      +'<div class="fld"><label>Tempo nesta parada (min) — vazio usa o padrão</label><input id="rz-e-min" type="number" min="0" value="'+(p.paradaMin!=null?p.paradaMin:'')+'"></div>'
+      +'<div class="fld"><label>Peso da entrega (kg) — usado para dividir rotas</label><input id="rz-e-kg" type="number" min="0" step="0.1" value="'+(+p.peso>0?p.peso:'')+'"></div>',
     ok:'Salvar', onOk:function(){
       var e=String(document.getElementById('rz-e-end').value||'').trim();
       if(!e){ alert('Informe o endereço.'); return false; }
       var mudou=e!==p.endereco;
       p.nome=String(document.getElementById('rz-e-nome').value||'').trim(); p.endereco=e;
       var mm=document.getElementById('rz-e-min').value; p.paradaMin=mm===''?null:Math.max(0,+mm);
+      var kg=document.getElementById('rz-e-kg').value; p.peso=(kg===''||!(+kg>0))?null:+kg;
       rzMarcarSujo();
       fecharModal();
       if(mudou){ p.lat=p.lng=null; rzBuscar(p); } else { rzPintar(); rzDesenhar(false); }
@@ -2855,6 +2882,11 @@ function rzPintar(){
       +(T.diaRuim?'<div class="rz-av atr" style="font-size:12px;margin-top:3px">⚠ '+T.diaRuim+' cliente'+(T.diaRuim===1?' não recebe':'s não recebem')+' em algum dia desta rota</div>':'')
       +(T.espera>=1?'<div class="rz-av esp" style="font-size:12px;margin-top:3px">⏳ '+rzDur(T.espera)+' de espera na porta, somando todas as paradas</div>':'')
     : 'Adicione endereços para montar a rota.';
+  var acoes=document.getElementById('rz-acoes-main'); if(acoes) acoes.style.display=rzDiv?'none':'';
+  var pesoT=rzPesoTotal(rzPontos.filter(rzConta));
+  if(rzPontos.length && pesoT>0 && !rzDiv) document.getElementById('rz-resumo').insertAdjacentHTML('beforeend','<div style="font-size:12px;margin-top:3px">⚖ '+rzKg(pesoT)+' no total</div>');
+  if(rzDiv) document.getElementById('rz-resumo').innerHTML='<b>✂ Prévia da divisão em '+rzDiv.rotas.length+' rotas</b> — ainda não salva.'
+    +'<div style="font-size:11.5px;color:var(--muted);margin-top:3px">Estimativa em linha reta. Mude uma parada de rota pela setinha; salve quando estiver bom.</div>';
   var cs=document.getElementById('rz-cli-st');
   if(cs) cs.innerHTML=rzCli.erro?'<span style="color:var(--red)">'+esc(rzCli.erro)+'</span>'
     : (!rzCli.carregou?'Carregando clientes…':(rzCliN()?rzCliN()+' clientes na base · '+rzPontos.filter(function(x){ return x.clienteId; }).length+' reconhecidos nesta rota':'Base de clientes ainda vazia — o robô do ERP preenche uma vez por dia.'));
@@ -2864,6 +2896,7 @@ function rzPintar(){
       ? (rzG.estado==='falhou'?'<span style="color:var(--red)">Google: '+esc(rzG.erro)+'</span>':(rzGAtivo()?'<span style="color:var(--green)">Google Maps ativo</span>':'Google: carregando…'))
         +(podeConfig?' <button class="btn btn-sm btn-ghost" onclick="rzConfigGoogle()">Chave</button>':'')
       : (podeConfig?'Mapa gratuito (OpenStreetMap). <button class="btn btn-sm btn-ghost" onclick="rzConfigGoogle()">Usar Google Maps</button>':'');
+  if(rzDiv){ el.innerHTML=rzDivHtml(); return; }
   rzPontos.forEach(rzVincular);
   var NUM=rzNumeros();
   el.innerHTML=rzPontos.map(function(p,i){
@@ -2878,7 +2911,8 @@ function rzPintar(){
       + '<div class="rz-info"><div class="rz-t">'+esc(rzTitulo(p))+'</div>'
       +   (rzTitulo(p)!==p.endereco?'<div class="rz-s">'+esc(rzSubtitulo(p))+'</div>':'')
       +   '<div class="rz-s"><span class="rz-st st-'+p.status+'" title="'+esc(st[1])+'">'+st[0]+' '+esc(st[1].split(' — ')[0])+'</span>'
-      +   (L.chegada!=null?' · chega ~'+rzHora(L.chegada):'')+(L.perna!=null?' · '+L.perna.toFixed(1).replace('.',',')+' km':'')+'</div>'
+      +   (L.chegada!=null?' · chega ~'+rzHora(L.chegada):'')+(L.perna!=null?' · '+L.perna.toFixed(1).replace('.',',')+' km':'')
+      +   (+p.peso>0?' · ⚖ '+rzKg(p.peso):'')+((p.pedidos||[]).length?' · pedido '+esc(p.pedidos.join(', ')):'')+'</div>'
       +   (p.clienteId?'<div class="rz-s rz-cli">'+esc(rzCliResumo(p))+'</div>':'')
       +   (p.status==='escolher' && p.candidatos ? '<div class="rz-cands">'+p.candidatos.map(function(cid){
             var c=rzCli.base[cid]||{};
@@ -2934,6 +2968,7 @@ function rzDesenharLeaflet(enquadrar){
         .bindPopup('<div class="rt-pop"><b>'+esc(base.nome||'Fábrica')+'</b><br>'+esc(base.endereco||'')+'</div>').addTo(rzCamada);
       rzLMk.base=rzCamada.getLayers()[rzCamada.getLayers().length-1];
     }
+    if(rzDiv){ rzDivDesenharL(L, pts); if(enquadrar && pts.length) rzMapa.fitBounds(pts, { padding:[30,30], maxZoom:15 }); return; }
     var linha=base?[[base.lat,base.lng]]:[];
     rzPontos.forEach(function(p,i){
       if(!rzConta(p)) return;
@@ -3035,7 +3070,7 @@ function rzPintarDias(){
 window.rzDia=function(d){ var i=rzDias.indexOf(d); if(i>=0) rzDias.splice(i,1); else rzDias.push(d); rzMarcarSujo(); rzPintarDias(); };
 window.rzNova=function(){
   if(rzSujo && rzPontos.length && !confirm('A rota aberta tem mudanças não salvas. Descartar?')) { rzListar(); return; }
-  rzAberta=''; rzPontos=[]; rzDias=[]; rzFila=[]; rzG.rota=null;
+  rzAberta=''; rzPontos=[]; rzDias=[]; rzFila=[]; rzG.rota=null; rzDiv=null; rzJuntadas=[];
   document.getElementById('rz-nome').value='';
   document.getElementById('rz-salvas').value='';
   rzSujo=false; document.getElementById('rz-salvar').textContent='💾 Salvar';
@@ -3046,7 +3081,7 @@ window.rzAbrir=function(id){
   if(!id){ return; }
   if(rzSujo && rzPontos.length && !confirm('A rota aberta tem mudanças não salvas. Descartar?')){ document.getElementById('rz-salvas').value=rzAberta; return; }
   var r=rzSalvas.filter(function(x){ return x.firestoreId===id; })[0]; if(!r) return;
-  rzAberta=id; rzPontos=(r.pontos||[]).map(function(p){ return Object.assign({}, p); }); rzDias=(r.dias||[]).slice(); rzFila=[];
+  rzAberta=id; rzPontos=(r.pontos||[]).map(function(p){ return Object.assign({}, p); }); rzDias=(r.dias||[]).slice(); rzFila=[]; rzDiv=null; rzJuntadas=[];
   rzG.rota=r.rotaRuas||null;
   document.getElementById('rz-nome').value=r.nome||'';
   if(r.saida) document.getElementById('rz-saida').value=r.saida;
@@ -3060,6 +3095,14 @@ window.rzAbrir=function(id){
   rzPintar(); rzDesenhar(true);
   rzPontos.filter(function(p){ return p.lat==null && p.status!=='erro'; }).forEach(rzBuscar);
 };
+/* um ponto como vai para frotaRoteiros (usado no Salvar e no Dividir) */
+function rzPontoGravar(p){
+  return { id:p.id, nome:p.nome||'', endereco:p.endereco, lat:p.lat, lng:p.lng,
+    status:(p.status==='fila'||p.status==='buscando')?'erro':p.status, paradaMin:p.paradaMin!=null?p.paradaMin:null,
+    clienteId:p.clienteId||null, semCliente:!!p.semCliente,
+    cobliMin:p.cobliMin!=null?p.cobliMin:null, cobliHora:p.cobliHora!=null?p.cobliHora:null, motivo:p.lat==null?(p.motivo||null):null,
+    peso:(+p.peso>0)?+p.peso:null, pedidos:(p.pedidos&&p.pedidos.length)?p.pedidos.slice(0,20):null };
+}
 window.rzSalvar=function(){
   var nome=rzVal('rz-nome');
   if(!nome){ alert('Dê um nome para a rota (ex.: "Missões — seg/qua/sex").'); document.getElementById('rz-nome').focus(); return; }
@@ -3068,10 +3111,7 @@ window.rzSalvar=function(){
   var T=rzTotais();
   var dados={ nome:nome, dias:rzDias.slice().sort(), modo:rzModo(), volta:rzVolta(),
     saida:rzVal('rz-saida')||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28),
-    pontos:rzPontos.map(function(p){ return { id:p.id, nome:p.nome||'', endereco:p.endereco, lat:p.lat, lng:p.lng,
-      status:(p.status==='fila'||p.status==='buscando')?'erro':p.status, paradaMin:p.paradaMin!=null?p.paradaMin:null,
-      clienteId:p.clienteId||null, semCliente:!!p.semCliente,
-      cobliMin:p.cobliMin!=null?p.cobliMin:null, cobliHora:p.cobliHora!=null?p.cobliHora:null, motivo:p.lat==null?(p.motivo||null):null }; }),
+    pontos:rzPontos.map(rzPontoGravar), pesoKg:Math.round(rzPesoTotal(rzPontos)),
     kmEstimado:+T.km.toFixed(1), minEstimado:Math.round(T.min), kmPelasRuas:!!T.ruas,
     rotaRuas:rzGRotaValida()?rzG.rota:null,
     atualizadoEm:agora(), atualizadoPor:sessaoEmail };
@@ -3261,6 +3301,7 @@ function rzGDesenhar(enquadrar){
     pop(mb, '<b>'+esc(base.nome||'Fábrica')+'</b><br>'+esc(base.endereco||''), 'base');
     rzG.objs.push(mb); bounds.extend(mb.getPosition()); tem=true;
   }
+  if(rzDiv){ rzDivDesenharG(bounds); if(enquadrar) rzG.mapa.fitBounds(bounds, 40); return; }
   var reta=base?[{ lat:base.lat, lng:base.lng }]:[];
   rzPontos.forEach(function(p,i){
     if(!rzConta(p)) return;
@@ -3805,6 +3846,393 @@ function rzVerDesenharL(L, pts){
       pts.push([p.lat,p.lng]);
       L.marker([p.lat,p.lng], { icon:L.divIcon({ className:'', html:'<div class="rt-pino" style="background:'+cor+';width:19px;height:19px;line-height:19px;font-size:10px">'+(i+1)+'</div>', iconSize:[19,19], iconAnchor:[10,10] }) })
         .bindPopup('<div class="rt-pop"><b>'+esc(r.nome||'Rota')+' · parada '+(i+1)+'</b><br>'+esc(p.nome||p.endereco||'')+'</div>').addTo(rzCamada);
+    });
+  });
+}
+
+/* ===== ROTEIRIZAR — juntar e dividir rotas =====
+   Juntar: escolhe rotas salvas (e/ou o que está na tela) e põe todas as
+   paradas numa rota nova, ainda não salva. As originais continuam salvas.
+   Dividir: reparte as paradas da tela em N rotas que saem da sede,
+   equilibrando o TEMPO (a que volta mais tarde pesa mais) e o PESO, com o
+   peso máximo por caminhão como limite. Abre uma PRÉVIA: cada rota numa
+   cor no mapa, com km, tempo, volta e peso; dá para mudar uma parada de
+   rota e o app reorganiza. Só grava quando clica em Salvar.
+   Conta em linha reta (×1,3) e velocidade média, como a estimativa da tela:
+   depois de salvas, cada rota pode ser traçada pelas ruas.
+   Busca: começa repartindo por "fatias" em volta da sede (várias posições
+   de corte) e melhora trocando paradas de rota — mover uma parada para a
+   outra rota e trocar duas paradas entre rotas — até não melhorar mais. */
+var rzDiv=null, rzJuntadas=[];
+function rzKg(v){ return (+v||0).toLocaleString('pt-BR',{ maximumFractionDigits:0 })+' kg'; }
+function rzPesoTotal(lista){ var s=0; (lista||[]).forEach(function(p){ s+=(+p.peso||0); }); return s; }
+function rzCapMaior(){
+  var m=0, pl='';
+  (typeof ativos==='function'?ativos():veiculos||[]).forEach(function(v){ var c=num(v.cargaKg); if(c>m){ m=c; pl=v.placa||''; } });
+  return { kg:m, placa:pl };
+}
+
+/* ---------- juntar ---------- */
+window.rzJuntarAbrir=function(){
+  if(rzDiv){ alert('Termine a divisão que está aberta (salvar ou cancelar) primeiro.'); return; }
+  if(!rzListou){ rzListar(); }
+  if(!rzSalvas.length){ setTimeout(function(){ if(rzSalvas.length) rzJuntarAbrir(); else alert('Nenhuma rota salva para juntar.'); }, 900); return; }
+  var tela=!rzAberta && rzPontos.length;
+  modal({ titulo:'Juntar rotas', sub:'As paradas das rotas marcadas vão para uma rota nova (as originais continuam salvas)',
+    body:(tela?'<label class="rz-chk"><input type="checkbox" id="rzj-tela" checked> Incluir as '+rzPontos.length+' paradas que estão na tela</label>':'')
+      +'<input id="rzj-q" placeholder="Filtrar pelo nome…" oninput="rzJuntarFiltro(this.value)" style="margin:6px 0">'
+      +'<div id="rzj-lista" style="max-height:52vh;overflow:auto">'+rzSalvas.map(function(r){
+        return '<label class="rz-ver-it" data-n="'+esc(rzNormNome(r.nome||''))+'"><input type="checkbox" class="rzj-cx" value="'+esc(r.firestoreId)+'"'+(r.firestoreId===rzAberta?' checked':'')+'>'
+          +'<span class="rz-ver-n">'+esc(r.nome||'(sem nome)')+'<small>'+((r.dias||[]).length?r.dias.map(function(d){ return RZ_DIAS[d]; }).join('/')+' · ':'avulsa · ')
+          +(r.pontos||[]).length+' pontos'+(rzPesoTotal(r.pontos)?' · '+rzKg(rzPesoTotal(r.pontos)):'')+'</small></span></label>';
+      }).join('')+'</div>',
+    ok:'Juntar', onOk:function(){
+      var ids=[].slice.call(document.querySelectorAll('.rzj-cx:checked')).map(function(x){ return x.value; });
+      var comTela=!!(document.getElementById('rzj-tela')||{}).checked;
+      if(ids.length+(comTela?1:0)<2){ alert('Marque pelo menos duas rotas (ou uma rota + as paradas da tela).'); return false; }
+      if(rzSujo && rzPontos.length && !comTela && !confirm('A rota aberta tem mudanças não salvas. Descartar?')) return false;
+      fecharModal(); rzJuntar(ids, comTela);
+    } });
+};
+window.rzJuntarFiltro=function(t){
+  var q=rzNormNome(t);
+  [].forEach.call(document.querySelectorAll('#rzj-lista .rz-ver-it'), function(el){ el.style.display=(!q || el.getAttribute('data-n').indexOf(q)>=0)?'':'none'; });
+};
+function rzJuntar(ids, comTela){
+  var rotas=rzSalvas.filter(function(r){ return ids.indexOf(r.firestoreId)>=0; });
+  var lista=[], partes=[], dias=[];
+  function add(p){
+    if(rzEhSede(p)) return;
+    /* mesmo cliente (ou mesmo lugar e mesmo nome) nas duas rotas: uma parada só, somando o peso */
+    var igual=lista.filter(function(x){
+      if(p.clienteId && x.clienteId) return p.clienteId===x.clienteId;
+      return p.lat!=null && x.lat!=null && rzHav(p,x)<0.02 && rzNormNome(rzTitulo(p))===rzNormNome(rzTitulo(x));
+    })[0];
+    if(igual){
+      if(p.peso) igual.peso=(+igual.peso||0)+(+p.peso||0);
+      if(p.pedidos) igual.pedidos=(igual.pedidos||[]).concat(p.pedidos);
+      return;
+    }
+    var c=Object.assign({}, p); c.id=rzId(); lista.push(c);
+  }
+  if(comTela){ rzPontos.forEach(add); partes.push((rzVal('rz-nome')||'tela')+' ('+rzPontos.length+')'); rzDias.forEach(function(d){ if(dias.indexOf(d)<0) dias.push(d); }); }
+  rotas.forEach(function(r){
+    (r.pontos||[]).forEach(add);
+    partes.push((r.nome||'rota')+' ('+(r.pontos||[]).length+')');
+    (r.dias||[]).forEach(function(d){ if(dias.indexOf(d)<0) dias.push(d); });
+  });
+  if(rotas[0]){
+    if(rotas[0].saida) document.getElementById('rz-saida').value=rotas[0].saida;
+    if(rotas[0].paradaMin) document.getElementById('rz-par').value=rotas[0].paradaMin;
+    if(rotas[0].velKmh) document.getElementById('rz-vel').value=rotas[0].velKmh;
+    if(rotas[0].modo) document.getElementById('rz-modo').value=rotas[0].modo;
+  }
+  rzJuntadas=ids.slice();
+  rzAberta=''; rzPontos=lista; rzDias=dias; rzFila=[]; rzG.rota=null;
+  document.getElementById('rz-salvas').value='';
+  document.getElementById('rz-nome').value=(comTela&&rzVal('rz-nome')?[rzVal('rz-nome')]:[]).concat(rotas.map(function(r){ return r.nome||''; })).filter(Boolean).join(' + ');
+  rzMarcarSujo(); rzPintarDias(); rzSincClientes(); rzPintar(); rzDesenhar(true);
+  rzPontos.filter(function(p){ return p.lat==null && p.status!=='erro'; }).forEach(rzBuscar);
+  var semPeso=rzPontos.filter(function(p){ return !(+p.peso>0); }).length;
+  rzMsg('Juntei '+partes.join(' + ')+' = '+rzPontos.length+' paradas'+(rzPesoTotal(rzPontos)?' · '+rzKg(rzPesoTotal(rzPontos)):'')
+    +'. Agora ✂ Dividir em rotas'+(semPeso?' ('+semPeso+' sem peso — rotas salvas antes de hoje não guardavam o peso; cole os pedidos do ERP para ter o peso)':'')+'.');
+}
+
+/* ---------- conta (matriz de distâncias, para ser rápido) ---------- */
+function rzDivPrep(pts){
+  var hs=(rzVal('rz-saida')||'06:00').split(':');
+  var X={ base:rzBaseRota(), volta:rzVolta(), vel:rzNumCampo('rz-vel',28), par:rzNumCampo('rz-par',10), t0:(+hs[0]||0)*60+(+hs[1]||0) };
+  var n=pts.length, N1=n+1, D=new Float64Array(N1*N1), todos=pts.concat([X.base]);
+  for(var i=0;i<N1;i++) for(var j=i+1;j<N1;j++){ var d=rzKm(todos[i],todos[j]); D[i*N1+j]=d; D[j*N1+i]=d; }
+  pts.forEach(function(p,i){ p._i=i; });
+  X.n=n; X.N1=N1; X.D=D;
+  X.mp=pts.map(function(p){ return rzMinParada(p, X.par); });
+  X.jan=pts.map(function(p){ return rzJanela(p); });
+  X.kg=pts.map(function(p){ return +p.peso||0; });
+  return X;
+}
+function rzDivSim(o, X){
+  var t=X.t0, ant=X.n, atraso=0, km=0, espera=0;
+  for(var i=0;i<o.length;i++){
+    var k=o[i]._i, d=X.D[ant*X.N1+k]; km+=d; t+=d/X.vel*60;
+    var j=X.jan[k];
+    if(j){ if(j.abre!=null && t<j.abre){ espera+=j.abre-t; t=j.abre; } if(j.fecha!=null && t>j.fecha) atraso+=t-j.fecha; }
+    t+=X.mp[k]; ant=k;
+  }
+  if(X.volta && o.length){ var dv=X.D[ant*X.N1+X.n]; km+=dv; t+=dv/X.vel*60; }
+  return { custo:(t-X.t0)+25*atraso, min:t-X.t0, fim:t, km:km, atraso:atraso, espera:espera };
+}
+function rzDivKg(o, X){ var s=0; for(var i=0;i<o.length;i++) s+=X.kg[o[i]._i]; return s; }
+/* melhora a ordem de UMA rota: inverte trechos (2-opt) e muda paradas de posição */
+function rzDivMelhorar(o, X, rapido){
+  o=o.slice(); var c=rzDivSim(o,X).custo, melhorou=true, voltas=0, lim=rapido?6:40;
+  while(melhorou && voltas<lim){
+    melhorou=false; voltas++;
+    for(var i=0;i<o.length-1;i++) for(var j=i+1;j<o.length;j++){
+      var nova=o.slice(0,i).concat(o.slice(i,j+1).reverse(), o.slice(j+1)), cc=rzDivSim(nova,X).custo;
+      if(cc<c-1e-9){ o=nova; c=cc; melhorou=true; }
+    }
+    if(rapido) continue;
+    for(var a=0;a<o.length;a++) for(var b=0;b<o.length;b++){
+      if(a===b) continue;
+      var n2=o.slice(), x=n2.splice(a,1)[0]; n2.splice(b,0,x);
+      var c2=rzDivSim(n2,X).custo; if(c2<c-1e-9){ o=n2; c=c2; melhorou=true; }
+    }
+  }
+  return o;
+}
+function rzDivOrdem(lista, X, rapido){
+  var rest=lista.slice(), ord=[], at=X.n;
+  while(rest.length){
+    var mi=0, md=1e9;
+    for(var i=0;i<rest.length;i++){ var d=X.D[at*X.N1+rest[i]._i]; if(d<md){ md=d; mi=i; } }
+    var p=rest.splice(mi,1)[0]; ord.push(p); at=p._i;
+  }
+  return rzDivMelhorar(ord, X, rapido);
+}
+function rzDivInserir(o, p, X){
+  var melhor=null;
+  for(var k=0;k<=o.length;k++){
+    var n=o.slice(0,k).concat([p], o.slice(k)), c=rzDivSim(n,X).custo;
+    if(!melhor || c<melhor.c) melhor={ o:n, c:c };
+  }
+  return melhor;
+}
+/* nota da divisão (menor = melhor): a rota mais longa manda, o total e a
+   diferença entre a mais longa e a mais curta contam um pouco, peso acima do
+   limite pesa muito e diferença de peso entre as rotas pesa pouco */
+function rzDivNota(cs, kgs, cap, temPeso){
+  var mx=0, mn=1e18, soma=0, exc=0, kx=-1e18, kn=1e18;
+  for(var i=0;i<cs.length;i++){
+    mx=Math.max(mx,cs[i]); mn=Math.min(mn,cs[i]); soma+=cs[i];
+    if(cap>0) exc+=Math.max(0,kgs[i]-cap);
+    kx=Math.max(kx,kgs[i]); kn=Math.min(kn,kgs[i]);
+  }
+  return mx+0.25*soma+0.3*(mx-mn)+3*exc+(temPeso?0.03*(kx-kn):0);
+}
+function rzDivBusca(R, X, cap, temPeso){
+  function cs(){ return R.map(function(r){ return r.c; }); }
+  function kgs(){ return R.map(function(r){ return r.kg; }); }
+  R.forEach(function(r){ r.c=rzDivSim(r.o,X).custo; r.kg=rzDivKg(r.o,X); });
+  var F=rzDivNota(cs(),kgs(),cap,temPeso), it=0, melhorou=true;
+  function prova(ia, ca, ka, ib, cb, kb){
+    var c=cs(), k=kgs(); c[ia]=ca; k[ia]=ka; c[ib]=cb; k[ib]=kb; return rzDivNota(c,k,cap,temPeso);
+  }
+  while(melhorou && it<30){
+    melhorou=false; it++;
+    /* mover uma parada para outra rota */
+    for(var a=0;a<R.length;a++){
+      for(var i=R[a].o.length-1;i>=0 && R[a].o.length>1;i--){
+        var p=R[a].o[i], oA=R[a].o.slice(); oA.splice(i,1);
+        var cA=rzDivSim(oA,X).custo, kA=R[a].kg-X.kg[p._i];
+        for(var b=0;b<R.length;b++){
+          if(b===a) continue;
+          var ins=rzDivInserir(R[b].o,p,X), f=prova(a,cA,kA,b,ins.c,R[b].kg+X.kg[p._i]);
+          if(f<F-0.01){ R[a].o=oA; R[a].c=cA; R[a].kg=kA; R[b].o=ins.o; R[b].c=ins.c; R[b].kg+=X.kg[p._i]; F=f; melhorou=true; break; }
+        }
+      }
+    }
+    /* trocar duas paradas de rota (cada uma com as 6 mais perto dela na outra) */
+    for(var a2=0;a2<R.length;a2++) for(var b2=a2+1;b2<R.length;b2++){
+      for(var i2=0;i2<R[a2].o.length;i2++){
+        var p2=R[a2].o[i2];
+        var perto=R[b2].o.slice().sort(function(x,y){ return X.D[p2._i*X.N1+x._i]-X.D[p2._i*X.N1+y._i]; }).slice(0,6);
+        for(var w=0;w<perto.length;w++){
+          var q=perto[w], ja=R[a2].o.indexOf(p2), jb=R[b2].o.indexOf(q); if(ja<0||jb<0) continue;
+          var sa=R[a2].o.slice(); sa.splice(ja,1); var sb=R[b2].o.slice(); sb.splice(jb,1);
+          var ia=rzDivInserir(sa,q,X), ib=rzDivInserir(sb,p2,X);
+          var ka2=R[a2].kg-X.kg[p2._i]+X.kg[q._i], kb2=R[b2].kg-X.kg[q._i]+X.kg[p2._i];
+          var f2=prova(a2,ia.c,ka2,b2,ib.c,kb2);
+          if(f2<F-0.01){ R[a2].o=ia.o; R[a2].c=ia.c; R[a2].kg=ka2; R[b2].o=ib.o; R[b2].c=ib.c; R[b2].kg=kb2; F=f2; melhorou=true; break; }
+        }
+      }
+    }
+    /* reorganiza a ordem dentro de cada rota */
+    R.forEach(function(r,k){ var o2=rzDivMelhorar(r.o,X,true), c2=rzDivSim(o2,X).custo; if(c2<r.c-1e-9){ r.o=o2; r.c=c2; F=rzDivNota(cs(),kgs(),cap,temPeso); melhorou=true; } });
+  }
+  return F;
+}
+/* começo: fatias em volta da sede, cortadas pelo trabalho estimado de cada parada */
+function rzDivFatias(pts, X, N, desloc){
+  var b=X.base, cosl=Math.cos(b.lat*Math.PI/180);
+  var ord=pts.slice().sort(function(p,q){ return Math.atan2(p.lat-b.lat,(p.lng-b.lng)*cosl)-Math.atan2(q.lat-b.lat,(q.lng-b.lng)*cosl); });
+  ord=ord.slice(desloc).concat(ord.slice(0,desloc));
+  var w=ord.map(function(p){ return X.mp[p._i]+0.6*X.D[p._i*X.N1+X.n]/X.vel*60; }), tot=0;
+  w.forEach(function(x){ tot+=x; });
+  var R=[], atual=[], acum=0, alvo=tot/N;
+  ord.forEach(function(p,i){
+    atual.push(p); acum+=w[i];
+    var faltamRotas=N-R.length-1, faltamPts=ord.length-i-1;
+    if(faltamRotas>0 && (acum>=alvo*(R.length+1) || faltamPts<=faltamRotas)){ R.push({ o:atual }); atual=[]; }
+  });
+  if(atual.length) R.push({ o:atual });
+  while(R.length<N) R.push({ o:[] });
+  return R;
+}
+function rzDividir(pts, N, cap){
+  var X=rzDivPrep(pts), temPeso=pts.some(function(p){ return +p.peso>0; });
+  var m=pts.length, passos=Math.min(m, 10), melhor=null;
+  var inicios=[];
+  for(var s=0;s<passos;s++){
+    var R=rzDivFatias(pts, X, N, Math.floor(s*m/passos));
+    R.forEach(function(r){ r.o=rzDivOrdem(r.o, X, true); r.c=rzDivSim(r.o,X).custo; r.kg=rzDivKg(r.o,X); });
+    inicios.push({ R:R, F:rzDivNota(R.map(function(r){ return r.c; }), R.map(function(r){ return r.kg; }), cap, temPeso) });
+  }
+  inicios.sort(function(a,b){ return a.F-b.F; });
+  inicios.slice(0,3).forEach(function(ini){
+    var F=rzDivBusca(ini.R, X, cap, temPeso);
+    if(!melhor || F<melhor.F) melhor={ R:ini.R, F:F };
+  });
+  melhor.R.forEach(function(r){ r.o=rzDivMelhorar(r.o, X, false); });
+  melhor.R.sort(function(a,b){ return rzDivSim(b.o,X).fim-rzDivSim(a.o,X).fim; });
+  return { R:melhor.R, X:X };
+}
+
+/* ---------- abrir a divisão ---------- */
+window.rzDividirAbrir=function(){
+  if(rzDiv){ return; }
+  if(!rzBaseRota()){ alert('Para dividir, a rota precisa sair da sede (escolha "Sai da sede…" em Início e fim da rota e defina o ponto de partida).'); return; }
+  if(rzFila.length || rzBuscandoFila){ alert('Ainda estou procurando alguns endereços. Espere terminar.'); return; }
+  var pts=rzPontos.filter(rzConta), sem=rzPontos.filter(function(p){ return p.lat==null; });
+  if(pts.length<4){ alert('Precisa de pelo menos 4 paradas localizadas no mapa para dividir.'); return; }
+  var peso=rzPesoTotal(pts), cap=rzCapMaior(), semPeso=pts.filter(function(p){ return !(+p.peso>0); }).length;
+  var nPad=Math.max(2, rzJuntadas.length?rzJuntadas.length+1:3, (cap.kg>0&&peso>0)?Math.ceil(peso/cap.kg):0);
+  nPad=Math.min(nPad, 8, pts.length);
+  modal({ titulo:'Dividir em rotas', sub:pts.length+' paradas'+(peso?' · '+rzKg(peso):'')+' · saem às '+(rzVal('rz-saida')||'06:00')+' da sede',
+    body:'<div class="fgrid"><div><label>Quantas rotas</label><input type="number" id="rzd-n" min="2" max="8" value="'+nPad+'"></div>'
+      +'<div><label>Peso máximo por caminhão (kg)</label><input type="number" id="rzd-cap" min="0" step="50" value="'+(cap.kg||'')+'" placeholder="sem limite"></div></div>'
+      +(cap.kg?'<div style="font-size:11.5px;color:var(--muted);margin-top:4px">Sugestão: maior capacidade cadastrada na frota ('+rzKg(cap.kg)+(cap.placa?' · '+esc(cap.placa):'')+').</div>':'')
+      +'<div style="font-size:12px;margin-top:10px;line-height:1.55">Equilibra o <b>tempo</b> (a rota que volta mais tarde pesa mais) e o <b>peso</b>, sem passar do limite. '
+      +'Usa a saída, o tempo por parada, a velocidade e as fichas dos clientes (horário de abrir/fechar) desta tela.</div>'
+      +(semPeso?'<div class="rz-av esp" style="font-size:12px;margin-top:6px">⚖ '+semPeso+' parada'+(semPeso===1?'':'s')+' sem peso — conta como 0 kg. O peso vem quando os pedidos são colados do ERP.</div>':'')
+      +(sem.length?'<div class="rz-av atr" style="font-size:12px;margin-top:6px">⚠ '+sem.length+' parada'+(sem.length===1?'':'s')+' sem local no mapa fica'+(sem.length===1?'':'m')+' de fora da divisão.</div>':''),
+    ok:'Dividir', onOk:function(){
+      var N=Math.round(+document.getElementById('rzd-n').value||0), cp=Math.max(0,+document.getElementById('rzd-cap').value||0);
+      if(N<2 || N>8){ alert('Escolha de 2 a 8 rotas.'); return false; }
+      if(N>pts.length){ alert('Mais rotas do que paradas.'); return false; }
+      fecharModal();
+      rzMsg('Dividindo em '+N+' rotas…');
+      setTimeout(function(){
+        var t=Date.now(), res=rzDividir(pts, N, cp), nome=rzVal('rz-nome')||'Rota';
+        rzDiv={ X:res.X, cap:cp, base:nome, fora:sem.slice(),
+          rotas:res.R.map(function(r,k){ return { nome:nome+' · parte '+(k+1), o:r.o, cor:RZ_VER_CORES[k%RZ_VER_CORES.length] }; }) };
+        rzPintar(); rzDesenhar(true);
+        rzMsg('Prévia pronta ('+((Date.now()-t)/1000).toFixed(1).replace('.',',')+' s). Confira no mapa, mude o que precisar e salve.');
+      }, 30);
+    } });
+};
+function rzDivStats(r){
+  var s=rzDivSim(r.o, rzDiv.X); s.kg=rzDivKg(r.o, rzDiv.X); s.n=r.o.length; return s;
+}
+function rzDivHtml(){
+  var D=rzDiv, tot=0, kgT=0, opts=function(k){ return D.rotas.map(function(r,j){ return '<option value="'+j+'"'+(j===k?' selected':'')+'>'+(j===k?'→ mover para…':esc(r.nome))+'</option>'; }).join(''); };
+  var h='<div class="rz-div">';
+  D.rotas.forEach(function(r,k){
+    var s=rzDivStats(r); tot+=s.n; kgT+=s.kg;
+    var acima=D.cap>0 && s.kg>D.cap;
+    h+='<div class="rz-div-r" style="border-left-color:'+r.cor+'">'
+      +'<div class="rz-div-h"><span class="rz-ver-cor" style="background:'+r.cor+';border-color:'+r.cor+'"></span>'
+      +'<input value="'+esc(r.nome)+'" onchange="rzDivNome('+k+',this.value)" title="Nome da rota"></div>'
+      +'<div class="rz-div-s"><b>'+s.n+'</b> parada'+(s.n===1?'':'s')+' · '+s.km.toFixed(1).replace('.',',')+' km · '+rzDur(s.min)+' · volta ~'+rzHora(s.fim)
+      +' · <span style="'+(acima?'color:var(--red);font-weight:700':'')+'">⚖ '+rzKg(s.kg)+(acima?' (acima de '+rzKg(D.cap)+')':'')+'</span>'
+      +(s.atraso>0?' · <span style="color:var(--red)">⚠ chega depois de fechar</span>':'')+'</div>'
+      +'<details><summary>Ver paradas</summary>'+r.o.map(function(p,i){
+        var c=p.clienteId && rzCli.base[p.clienteId];
+        return '<div class="rz-div-p"><span class="rz-div-n" style="background:'+r.cor+'">'+(i+1)+'</span>'
+          +'<span class="rz-div-t">'+esc(rzTitulo(p))+'<small>'+esc((c&&c.c)||'')+(+p.peso>0?' · '+rzKg(p.peso):'')+'</small></span>'
+          +'<select onchange="rzDivMover('+k+',\''+p.id+'\',this.value)">'+opts(k)+'</select></div>';
+      }).join('')+'</details></div>';
+  });
+  h+='<div class="rz-div-s" style="margin:6px 0">Total: '+tot+' paradas · ⚖ '+rzKg(kgT)+(D.fora.length?' · <span style="color:var(--amber)">'+D.fora.length+' sem local ficaram de fora</span>':'')+'</div>'
+    +'<div class="rz-acoes"><button class="btn btn-sm" onclick="rzDivSalvar()">💾 Salvar as '+D.rotas.length+' rotas</button>'
+    +'<button class="btn btn-sm btn-ghost" onclick="rzDivRefazer()" title="Repete a busca a partir desta divisão">⚡ Melhorar de novo</button>'
+    +'<button class="btn btn-sm btn-ghost" onclick="rzDivCancelar()">Cancelar</button></div></div>';
+  return h;
+}
+window.rzDivNome=function(k,v){ if(rzDiv && rzDiv.rotas[k]) rzDiv.rotas[k].nome=String(v||'').trim()||rzDiv.rotas[k].nome; };
+window.rzDivMover=function(k, pid, dest){
+  if(!rzDiv) return; dest=+dest; if(dest===k) return;
+  var A=rzDiv.rotas[k], B=rzDiv.rotas[dest], X=rzDiv.X;
+  var p=A.o.filter(function(x){ return x.id===pid; })[0]; if(!p || !B) return;
+  if(A.o.length<=1){ alert('A rota ficaria vazia.'); rzPintar(); return; }
+  A.o=rzDivMelhorar(A.o.filter(function(x){ return x!==p; }), X, false);
+  B.o=rzDivMelhorar(rzDivInserir(B.o, p, X).o, X, false);
+  rzPintar(); rzDesenhar(false);
+};
+window.rzDivRefazer=function(){
+  if(!rzDiv) return;
+  var X=rzDiv.X, R=rzDiv.rotas.map(function(r){ return { o:r.o.slice() }; });
+  rzDivBusca(R, X, rzDiv.cap, rzDiv.X.kg.some(function(x){ return x>0; }));
+  R.forEach(function(r,k){ rzDiv.rotas[k].o=rzDivMelhorar(r.o, X, false); });
+  rzPintar(); rzDesenhar(false); rzMsg('Busca repetida a partir desta divisão.');
+};
+window.rzDivCancelar=function(){ rzDiv=null; rzPintar(); rzDesenhar(true); rzMsg('Divisão cancelada — as paradas continuam juntas na tela.'); };
+window.rzDivSalvar=function(){
+  if(!rzDiv) return;
+  var nomes=rzDiv.rotas.map(function(r){ return r.nome; });
+  if(nomes.some(function(n){ return !n; })){ alert('Dê nome para todas as rotas.'); return; }
+  var orig=rzSalvas.filter(function(r){ return rzJuntadas.indexOf(r.firestoreId)>=0; });
+  modal({ titulo:'Salvar '+nomes.length+' rotas', sub:'Cada uma vira uma rota salva, com os dias da semana desta tela',
+    body:'<div style="font-size:13px;line-height:1.7">'+nomes.map(function(n){ return '• '+esc(n); }).join('<br>')+'</div>'
+      +(orig.length?'<label class="rz-chk" style="margin-top:10px"><input type="checkbox" id="rzd-apaga"> Apagar as rotas que foram juntadas ('+orig.map(function(r){ return esc(r.nome||''); }).join(', ')+')</label>':''),
+    ok:'Salvar', onOk:function(){
+      var apaga=!!(document.getElementById('rzd-apaga')||{}).checked;
+      if(apaga && !podeGestaoFrota()){ alert('Só a gerência da frota pode apagar rotas.'); return false; }
+      var b=writeBatch(dbC), ids=[], quando=agora();
+      rzDiv.rotas.forEach(function(r){
+        var s=rzDivStats(r), ref=doc(collection(dbC,'frotaRoteiros')); ids.push(ref.id);
+        b.set(ref, { nome:r.nome, dias:rzDias.slice().sort(), modo:rzModo(), volta:rzVolta(),
+          saida:rzVal('rz-saida')||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28),
+          pontos:r.o.map(rzPontoGravar), kmEstimado:+s.km.toFixed(1), minEstimado:Math.round(s.min), kmPelasRuas:false, rotaRuas:null,
+          pesoKg:Math.round(s.kg), divididaDe:rzDiv.base,
+          criadoEm:quando, criadoPor:sessaoEmail, atualizadoEm:quando, atualizadoPor:sessaoEmail });
+      });
+      if(apaga) orig.forEach(function(r){ b.delete(doc(dbC,'frotaRoteiros',r.firestoreId)); });
+      var bt=document.getElementById('modal-ok'); if(bt){ bt.disabled=true; bt.textContent='Salvando…'; }
+      b.commit().then(function(){
+        fecharModal();
+        var n=rzDiv.rotas.length;
+        rzDiv=null; rzJuntadas=[]; rzSujo=false;
+        rzAberta=''; rzPontos=[]; rzDias=[]; rzFila=[]; rzG.rota=null;
+        document.getElementById('rz-nome').value=''; document.getElementById('rz-salvar').textContent='💾 Salvar';
+        rzVer.sel={}; ids.forEach(function(id){ rzVer.sel[id]=true; }); rzVer.aberto=true;
+        rzPintarDias(); rzPintar(); rzListar();
+        rzMsg(n+' rotas salvas'+(apaga?' e as originais apagadas':'')+'. Estão marcadas em "Ver várias rotas"; abra cada uma em Rotas salvas para traçar pelas ruas.');
+      }).catch(function(e){
+        console.error('frotaRoteiros/dividir:', e); alert('Não foi possível salvar: '+(e.code||e.message));
+        if(bt){ bt.disabled=false; bt.textContent='Salvar'; }
+      });
+    } });
+};
+
+/* ---------- desenho da prévia ---------- */
+function rzDivDesenharG(bounds){
+  var base=rzBaseRota();
+  rzDiv.rotas.forEach(function(r){
+    var path=[{ lat:base.lat, lng:base.lng }].concat(r.o.map(function(p){ return { lat:p.lat, lng:p.lng }; }));
+    if(rzVolta()) path.push({ lat:base.lat, lng:base.lng });
+    rzG.objs.push(new google.maps.Polyline({ path:path, map:rzG.mapa, strokeOpacity:0, zIndex:1,
+      icons:[{ icon:{ path:'M 0,-1 0,1', strokeOpacity:.9, strokeColor:r.cor, scale:3 }, offset:'0', repeat:'12px' }] }));
+    r.o.forEach(function(p,i){
+      var m=new google.maps.Marker({ position:{ lat:p.lat, lng:p.lng }, map:rzG.mapa, zIndex:1000+i,
+        icon:{ path:google.maps.SymbolPath.CIRCLE, scale:11, fillColor:r.cor, fillOpacity:1, strokeColor:'#fff', strokeWeight:2 },
+        label:{ text:String(i+1), color:'#fff', fontWeight:'700', fontSize:'11px' }, title:r.nome+' · '+(i+1)+'. '+rzTitulo(p) });
+      m.addListener('click', function(){ rzG.info.setContent('<div class="rt-pop"><b>'+esc(r.nome)+' · parada '+(i+1)+'</b><br>'+esc(rzTitulo(p))+(+p.peso>0?'<br>⚖ '+rzKg(p.peso):'')+'</div>'); rzG.info.open({ map:rzG.mapa, anchor:m }); });
+      rzG.objs.push(m); bounds.extend(m.getPosition());
+    });
+  });
+  return true;
+}
+function rzDivDesenharL(L, pts){
+  var base=rzBaseRota();
+  rzDiv.rotas.forEach(function(r){
+    var linha=[[base.lat,base.lng]].concat(r.o.map(function(p){ return [p.lat,p.lng]; }));
+    if(rzVolta()) linha.push([base.lat,base.lng]);
+    L.polyline(linha, { color:r.cor, weight:3.5, opacity:.9, dashArray:'6 6' }).addTo(rzCamada);
+    r.o.forEach(function(p,i){
+      pts.push([p.lat,p.lng]);
+      L.marker([p.lat,p.lng], { icon:L.divIcon({ className:'', html:'<div class="rt-pino" style="background:'+r.cor+'">'+(i+1)+'</div>', iconSize:[22,22], iconAnchor:[11,11] }) })
+        .bindPopup('<div class="rt-pop"><b>'+esc(r.nome)+' · parada '+(i+1)+'</b><br>'+esc(rzTitulo(p))+(+p.peso>0?'<br>⚖ '+rzKg(p.peso):'')+'</div>').addTo(rzCamada);
     });
   });
 }
