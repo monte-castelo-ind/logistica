@@ -2556,14 +2556,42 @@ function rzNovoPonto(linha){
   }
   rzPontos.push(p); rzMarcarSujo(); rzBuscar(p);
 }
+/* Lista de pedidos copiada do ERP (a mesma do Cobli Conversor: um valor por
+   linha ou colunas com TAB). Lida pelo cbLer(); cada pedido vira "Nome ;
+   rua, número, bairro, cidade". Dois pedidos do mesmo cliente no mesmo
+   endereço viram uma parada só. Sem as colunas Endereço/Número, o pedido
+   entra pela razão social (casa com a base de clientes). Ordem = a da lista. */
+function rzColarErp(txt){
+  var regs=[]; try{ regs=cbLer(txt)||[]; }catch(e){ console.warn('rzColarErp:', e); regs=[]; }
+  if(!regs.length) return false;
+  var vistos={}, linhas=[], peso=0, semEnd=0;
+  regs.forEach(function(r){
+    peso+=r.peso||0;
+    var end=[r.rua, r.numero, r.bairro, r.cidade].map(function(x){ return String(x||'').trim(); }).filter(Boolean).join(', ');
+    var nome=String(r.nome||'').replace(/;/g,',').trim();
+    var linha=String(r.rua||'').trim() ? nome+' ; '+end : nome;
+    if(!String(r.rua||'').trim()) semEnd++;
+    var k=rzNormNome(linha); if(vistos[k]) return; vistos[k]=1;
+    linhas.push(linha);
+  });
+  linhas.forEach(rzNovoPonto);
+  rzMsg(regs.length+' pedido'+(regs.length===1?'':'s')+' do ERP → '+linhas.length+' parada'+(linhas.length===1?'':'s')
+    +(peso?' · peso total '+peso.toLocaleString('pt-BR',{ maximumFractionDigits:1 })+' kg':'')
+    +(semEnd?' · '+semEnd+' sem endereço (procurado pelo nome do cliente)':'')
+    +'. Procurando os endereços… depois é só ⚡ Otimizar e 💾 Salvar.');
+  return true;
+}
 window.rzColar=function(){
   modal({ titulo:'Colar lista de endereços',
     body:'<div class="fld"><label>Um ponto por linha: <b>razão social do cliente</b>, <b>endereço</b>, <b>link do Google Maps</b> (como o Cobli manda) ou <b>coordenada</b>. '
-      +'Com nome do cliente: <b>Nome ; Endereço</b> (ou colado de planilha, nome e endereço em colunas)</label>'
+      +'Com nome do cliente: <b>Nome ; Endereço</b> (ou colado de planilha, nome e endereço em colunas). '
+      +'Ou a <b>lista de pedidos do ERP</b> copiada inteira (Pedido · Cliente · Nome completo · … · Cidade · Bairro · … · Endereço · Número), com o cabeçalho ou sem.</label>'
       +'<textarea id="rz-cola" rows="10" placeholder="Mercado Bom Preço ; Av. Assis Brasil, 2000, Porto Alegre\nRua Olavo Bilac, 1445 - Centro, Montenegro - RS, 92510-305, Brasil\nhttps://www.google.com/maps/search/?api=1&amp;query=-29.66983%2c-51.45477"></textarea></div>'
       +'<div style="font-size:11.5px;color:var(--muted)">Os endereços são procurados um por segundo (regra do serviço de mapas) — uma lista de 30 leva uns 30 segundos.</div>',
     ok:'Adicionar', onOk:function(){
-      var ls=String((document.getElementById('rz-cola')||{}).value||'').split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
+      var txt=String((document.getElementById('rz-cola')||{}).value||'');
+      if(rzColarErp(txt)){ fecharModal(); return; }
+      var ls=txt.split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
       if(!ls.length){ alert('Cole pelo menos um endereço.'); return false; }
       ls.forEach(rzNovoPonto);
       fecharModal();
