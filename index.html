@@ -572,7 +572,8 @@ html[data-pal="vinho"][data-theme="light"]{
 .rz-g .btn{padding:2px 8px;margin-left:4px;font-size:11px}
 .rz-chk{display:flex;gap:8px;align-items:center;font-size:12.5px;margin:0 0 10px;cursor:pointer;color:var(--text)}
 .rz-chk input{width:auto;accent-color:var(--primary)}
-.rz-param{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.rz-param{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px}
+@media (max-width:520px){ .rz-param{grid-template-columns:1fr 1fr} }
 .rz-param .fld{margin-bottom:10px}
 .rz-resumo{font-size:13px;margin:4px 0 10px;padding:9px 11px;border-radius:9px;background:var(--card-2)}
 .rz-acoes{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
@@ -1446,7 +1447,8 @@ td.esc-trav{background:rgba(255,106,19,.05)}
           <div class="rz-param">
             <div class="fld"><label>Saída às</label><input type="time" id="rz-saida" value="06:00" onchange="rzParametros()"></div>
             <div class="fld"><label>Min por parada</label><input type="number" id="rz-par" value="10" min="0" onchange="rzParametros()"></div>
-            <div class="fld"><label>Km/h médio</label><input type="number" id="rz-vel" value="28" min="5" onchange="rzParametros()"></div>
+            <div class="fld"><label title="Velocidade média em trechos curtos, entre clientes da mesma cidade">Km/h cidade</label><input type="number" id="rz-vel" value="28" min="5" onchange="rzParametros()"></div>
+            <div class="fld"><label title="Velocidade média em trechos longos, de estrada (ex.: fábrica → litoral)">Km/h estrada</label><input type="number" id="rz-vel-est" value="70" min="5" onchange="rzParametros()"></div>
           </div>
           <div class="rz-linha">
             <input id="rz-end" placeholder="Endereço (ou Nome ; Endereço)" onkeydown="if(event.key==='Enter'){ event.preventDefault(); rzAdicionar(); }">
@@ -2320,6 +2322,13 @@ function rzHav(a,b){
   return 2*R*Math.asin(Math.min(1,Math.sqrt(x)));
 }
 function rzKm(a,b){ return rzHav(a,b)*RZ_FATOR; }
+/* Tempo de um trecho (km já com o acréscimo de ruas). Uma velocidade só
+   errava feio em rota de estrada: 28 km/h em 150 km de freeway virava 5 h.
+   Agora a velocidade sobe com o tamanho do trecho: trecho curto anda na
+   "cidade", trecho longo chega perto da "estrada" (≈ metade do caminho aos
+   10 km, 86% aos 30 km). */
+function rzVelPar(){ var c=rzNumCampo('rz-vel',28), e=rzNumCampo('rz-vel-est',70); return { c:c, e:Math.max(c,e) }; }
+function rzMinKm(km, V){ V=V||rzVelPar(); if(!(km>0)) return 0; var v=V.c+(V.e-V.c)*(1-Math.exp(-km/15)); return km/v*60; }
 function rzHora(min){ min=Math.round(min); var h=Math.floor(min/60)%24, m=((min%60)+60)%60; return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'); }
 function rzDur(min){ min=Math.round(min); return Math.floor(min/60)+'h'+String(min%60).padStart(2,'0'); }
 function rzMarcarSujo(){
@@ -2725,7 +2734,7 @@ function rzOtimizarLocal(){
   /* Custo = tempo total da rota (deslocamento + espera + descarga) + atraso
      pesado. Sem ficha com horário, é o mesmo que a menor distância; com
      horário, a ordem passa a respeitar quem abre cedo e quem abre tarde. */
-  var vel=rzNumCampo('rz-vel',28), par=rzNumCampo('rz-par',10), hs=(rzVal('rz-saida')||'06:00').split(':'), t0=(+hs[0]||0)*60+(+hs[1]||0);
+  var vel=rzVelPar(), par=rzNumCampo('rz-par',10), hs=(rzVal('rz-saida')||'06:00').split(':'), t0=(+hs[0]||0)*60+(+hs[1]||0);
   function custo(o){ return rzSimular(base?o:o.slice(1), base||o[0], volta, vel, par, base?t0:t0+rzMinParada(o[0],par)).custo; }
   var ini2=base?0:1;
   function melhorar(o){
@@ -2802,7 +2811,7 @@ window.rzExcel=function(){
     var dias=(rzDias||[]).slice().sort().map(function(d){ return RZ_DIAS[d]; }).join('/');
     var topo=[
       [nome],
-      ['Dias: '+(dias||'rota avulsa')+' · saída '+(rzVal('rz-saida')||'06:00')+' · parada padrão '+par+' min · '+rzNumCampo('rz-vel',28)+' km/h'],
+      ['Dias: '+(dias||'rota avulsa')+' · saída '+(rzVal('rz-saida')||'06:00')+' · parada padrão '+par+' min · '+rzNumCampo('rz-vel',28)+' km/h na cidade, '+rzVelPar().e+' na estrada'],
       ['Total: '+(Math.round(T.km*10)/10).toString().replace('.',',')+' km · '+(modo==='sede_volta'?'volta':'fim')+' ~'+rzHora(T.fim)
         +' · '+(T.ruas?'horários pelas ruas (Google)':'estimativa em linha reta')+' · gerado em '+new Date().toLocaleString('pt-BR')],
       []
@@ -2838,7 +2847,7 @@ window.rzExcel=function(){
 function rzTotais(){
   /* chegada em cada parada, com a ficha do cliente: descarga própria, espera
      quando chega antes de abrir e atraso quando chega depois de fechar */
-  var base=rzBaseRota(), vel=rzNumCampo('rz-vel',28), par=rzNumCampo('rz-par',10);
+  var base=rzBaseRota(), vel=rzVelPar(), par=rzNumCampo('rz-par',10);
   var s=rzVal('rz-saida')||'06:00', hs=s.split(':'), t=(+hs[0]||0)*60+(+hs[1]||0), t0=t;
   var espera=0, atraso=0, foraHorario=0, diaRuim=0, ruas=false, km=0, kmV=0, lin=[];
   var L=(typeof rzGRotaValida==='function' && rzGRotaValida()) ? rzG.rota.legs : null, k=base?0:-1, ant=base;
@@ -2847,7 +2856,7 @@ function rzTotais(){
     if(!rzConta(p)){ lin.push({ id:p.id, chegada:null, perna:null }); return; }
     var perna=null;
     if(L){ if(k>=0 && L[k]){ perna=L[k].m/1000; km+=perna; t+=L[k].s/60; } k++; }
-    else if(ant){ perna=rzKm(ant,p); km+=perna; t+=perna/vel*60; }
+    else if(ant){ perna=rzKm(ant,p); km+=perna; t+=rzMinKm(perna,vel); }
     var chegou=t, c=rzChegar(p,t); t=c.t;
     espera+=c.espera; if(c.atraso>0){ atraso+=c.atraso; foraHorario++; }
     var dr=rzDiaRuim(p); if(dr) diaRuim++;
@@ -2855,7 +2864,7 @@ function rzTotais(){
     t+=rzMinParada(p,par); ant=p;
   });
   if(L){ if(L[k]){ kmV=L[k].m/1000; km+=kmV; t+=L[k].s/60; } }
-  else if(rzVolta() && ant && ant!==base){ kmV=rzKm(ant,base); km+=kmV; t+=kmV/vel*60; }
+  else if(rzVolta() && ant && ant!==base){ kmV=rzKm(ant,base); km+=kmV; t+=rzMinKm(kmV,vel); }
   return { km:km, min:t-t0, fim:t, lin:lin, kmVolta:kmV, ruas:ruas, espera:espera, atraso:atraso, foraHorario:foraHorario, diaRuim:diaRuim };
 }
 
@@ -2875,7 +2884,7 @@ function rzPintar(){
   var nSede=rzPontos.filter(rzEhSede).length, n=rzPontos.length-nSede, loc=rzPontos.filter(rzConta).length;
   document.getElementById('rz-resumo').innerHTML=rzPontos.length
     ? '<b>'+n+'</b> parada'+(n===1?'':'s')+(loc<n?' ('+(n-loc)+' sem local · <a href="#" onclick="rzReprocurar();return false">🔁 procurar de novo</a>)':'')+(nSede?' <span style="color:var(--muted)">(+'+nSede+'× a sede, fora da conta)</span>':'')+' · <b>'+T.km.toFixed(1).replace('.',',')+' km</b> · <b>'+rzDur(T.min)+'</b>'
-      +' · '+(rzVolta()?'volta':'fim')+' ~'+rzHora(T.fim)
+      +' · '+(rzVolta()?'volta':'fim')+' ~'+rzHora(T.fim)+(T.fim>=1440?' <span style="color:var(--red)">(dia seguinte)</span>':'')
       +'<div style="font-size:11px;margin-top:3px;color:'+(T.ruas?'var(--green)':'var(--muted)')+'">'
       +(T.ruas?'✓ km e horários pelas ruas (Google)':(rzGAtivo()?'Estimativa em linha reta — clique em 🛣 Traçar pelas ruas':'Estimativa em linha reta'))+'</div>'
       +(T.foraHorario?'<div class="rz-av atr" style="font-size:12px;margin-top:3px">⚠ '+T.foraHorario+' parada'+(T.foraHorario===1?'':'s')+' depois do horário de fechar</div>':'')
@@ -3087,6 +3096,7 @@ window.rzAbrir=function(id){
   if(r.saida) document.getElementById('rz-saida').value=r.saida;
   if(r.paradaMin) document.getElementById('rz-par').value=r.paradaMin;
   if(r.velKmh) document.getElementById('rz-vel').value=r.velKmh;
+  document.getElementById('rz-vel-est').value=r.velEstKmh||70;
   document.getElementById('rz-modo').value=r.modo||(r.volta===false?'sede_ida':'sede_volta');   /* rotas antigas: pela caixinha "volta" */
   rzSujo=false; document.getElementById('rz-salvar').textContent='💾 Salvar';
   document.getElementById('rz-msg').textContent='';
@@ -3110,7 +3120,7 @@ window.rzSalvar=function(){
   if(rzFila.length || rzBuscandoFila){ alert('Ainda estou procurando alguns endereços. Espere terminar e salve de novo.'); return; }
   var T=rzTotais();
   var dados={ nome:nome, dias:rzDias.slice().sort(), modo:rzModo(), volta:rzVolta(),
-    saida:rzVal('rz-saida')||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28),
+    saida:rzVal('rz-saida')||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28), velEstKmh:rzVelPar().e,
     pontos:rzPontos.map(rzPontoGravar), pesoKg:Math.round(rzPesoTotal(rzPontos)),
     kmEstimado:+T.km.toFixed(1), minEstimado:Math.round(T.min), kmPelasRuas:!!T.ruas,
     rotaRuas:rzGRotaValida()?rzG.rota:null,
@@ -3597,11 +3607,11 @@ function rzSimular(ord, base, volta, vel, par, t0){
   var t=t0, ant=base, atraso=0, espera=0;
   for(var i=0;i<ord.length;i++){
     var p=ord[i];
-    if(ant) t+=rzKm(ant,p)/vel*60;
+    if(ant) t+=rzMinKm(rzKm(ant,p), vel);
     var c=rzChegar(p,t); t=c.t; espera+=c.espera; atraso+=c.atraso;
     t+=rzMinParada(p,par); ant=p;
   }
-  if(volta && ant && base) t+=rzKm(ant,base)/vel*60;
+  if(volta && ant && base) t+=rzMinKm(rzKm(ant,base), vel);
   return { custo:(t-t0)+25*atraso, fim:t, atraso:atraso, espera:espera };
 }
 
@@ -3925,6 +3935,7 @@ function rzJuntar(ids, comTela){
     if(rotas[0].saida) document.getElementById('rz-saida').value=rotas[0].saida;
     if(rotas[0].paradaMin) document.getElementById('rz-par').value=rotas[0].paradaMin;
     if(rotas[0].velKmh) document.getElementById('rz-vel').value=rotas[0].velKmh;
+    document.getElementById('rz-vel-est').value=rotas[0].velEstKmh||70;
     if(rotas[0].modo) document.getElementById('rz-modo').value=rotas[0].modo;
   }
   rzJuntadas=ids.slice();
@@ -3941,7 +3952,7 @@ function rzJuntar(ids, comTela){
 /* ---------- conta (matriz de distâncias, para ser rápido) ---------- */
 function rzDivPrep(pts){
   var hs=(rzVal('rz-saida')||'06:00').split(':');
-  var X={ base:rzBaseRota(), volta:rzVolta(), vel:rzNumCampo('rz-vel',28), par:rzNumCampo('rz-par',10), t0:(+hs[0]||0)*60+(+hs[1]||0) };
+  var X={ base:rzBaseRota(), volta:rzVolta(), V:rzVelPar(), par:rzNumCampo('rz-par',10), t0:(+hs[0]||0)*60+(+hs[1]||0) };
   var n=pts.length, N1=n+1, D=new Float64Array(N1*N1), todos=pts.concat([X.base]);
   for(var i=0;i<N1;i++) for(var j=i+1;j<N1;j++){ var d=rzKm(todos[i],todos[j]); D[i*N1+j]=d; D[j*N1+i]=d; }
   pts.forEach(function(p,i){ p._i=i; });
@@ -3954,12 +3965,12 @@ function rzDivPrep(pts){
 function rzDivSim(o, X){
   var t=X.t0, ant=X.n, atraso=0, km=0, espera=0;
   for(var i=0;i<o.length;i++){
-    var k=o[i]._i, d=X.D[ant*X.N1+k]; km+=d; t+=d/X.vel*60;
+    var k=o[i]._i, d=X.D[ant*X.N1+k]; km+=d; t+=rzMinKm(d,X.V);
     var j=X.jan[k];
     if(j){ if(j.abre!=null && t<j.abre){ espera+=j.abre-t; t=j.abre; } if(j.fecha!=null && t>j.fecha) atraso+=t-j.fecha; }
     t+=X.mp[k]; ant=k;
   }
-  if(X.volta && o.length){ var dv=X.D[ant*X.N1+X.n]; km+=dv; t+=dv/X.vel*60; }
+  if(X.volta && o.length){ var dv=X.D[ant*X.N1+X.n]; km+=dv; t+=rzMinKm(dv,X.V); }
   return { custo:(t-X.t0)+25*atraso, min:t-X.t0, fim:t, km:km, atraso:atraso, espera:espera };
 }
 function rzDivKg(o, X){ var s=0; for(var i=0;i<o.length;i++) s+=X.kg[o[i]._i]; return s; }
@@ -4057,7 +4068,7 @@ function rzDivFatias(pts, X, N, desloc){
   var b=X.base, cosl=Math.cos(b.lat*Math.PI/180);
   var ord=pts.slice().sort(function(p,q){ return Math.atan2(p.lat-b.lat,(p.lng-b.lng)*cosl)-Math.atan2(q.lat-b.lat,(q.lng-b.lng)*cosl); });
   ord=ord.slice(desloc).concat(ord.slice(0,desloc));
-  var w=ord.map(function(p){ return X.mp[p._i]+0.6*X.D[p._i*X.N1+X.n]/X.vel*60; }), tot=0;
+  var w=ord.map(function(p){ return X.mp[p._i]+0.6*rzMinKm(X.D[p._i*X.N1+X.n],X.V); }), tot=0;
   w.forEach(function(x){ tot+=x; });
   var R=[], atual=[], acum=0, alvo=tot/N;
   ord.forEach(function(p,i){
@@ -4182,7 +4193,7 @@ window.rzDivSalvar=function(){
       rzDiv.rotas.forEach(function(r){
         var s=rzDivStats(r), ref=doc(collection(dbC,'frotaRoteiros')); ids.push(ref.id);
         b.set(ref, { nome:r.nome, dias:rzDias.slice().sort(), modo:rzModo(), volta:rzVolta(),
-          saida:rzVal('rz-saida')||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28),
+          saida:rzVal('rz-saida')||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28), velEstKmh:rzVelPar().e,
           pontos:r.o.map(rzPontoGravar), kmEstimado:+s.km.toFixed(1), minEstimado:Math.round(s.min), kmPelasRuas:false, rotaRuas:null,
           pesoKg:Math.round(s.kg), divididaDe:rzDiv.base,
           criadoEm:quando, criadoPor:sessaoEmail, atualizadoEm:quando, atualizadoPor:sessaoEmail });
@@ -4448,7 +4459,7 @@ function rzCobliSalvarMarcadas(){
         criadas++;
         var nome=(ja?r.nome+' (Cobli '+String(r.data).split('-').reverse().slice(0,2).join('/')+')':r.nome);
         return addDoc(collection(dbC,'frotaRoteiros'), { nome:nome, dias:r.diaSemana!=null?[r.diaSemana]:[], modo:'sede_volta', volta:true,
-          saida:r.saida||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28), pontos:pontos,
+          saida:r.saida||'06:00', paradaMin:rzNumCampo('rz-par',10), velKmh:rzNumCampo('rz-vel',28), velEstKmh:rzVelPar().e, pontos:pontos,
           kmEstimado:null, minEstimado:null, kmPelasRuas:false, rotaRuas:null, origemCobli:origem,
           criadoEm:agora(), criadoPor:sessaoEmail, atualizadoEm:agora(), atualizadoPor:sessaoEmail });
       });
