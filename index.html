@@ -2334,7 +2334,9 @@ function rzHora(min){ min=Math.round(min); var h=Math.floor(min/60)%24, m=((min%
 function rzDur(min){ min=Math.round(min); return Math.floor(min/60)+'h'+String(min%60).padStart(2,'0'); }
 function rzMarcarSujo(){
   rzSujo=true; var b=document.getElementById('rz-salvar'); if(b) b.textContent='💾 Salvar *';
-  if(rzDiv){ rzDiv=null; setTimeout(function(){ rzPintar(); rzDesenhar(false); rzMsg('A prévia da divisão foi fechada porque a rota mudou — divida de novo.', true); }, 0); }
+  /* com a prévia da divisão aberta, a mudança entra NELA (cliente novo vai para a
+     rota onde custa menos) em vez de fechar a prévia e desfazer o trabalho */
+  if(rzDiv && !rzDiv._sinc){ rzDiv._sinc=true; setTimeout(rzDivSinc, 0); }
 }
 
 /* ---------- busca de endereço (fila de 1 por segundo) ---------- */
@@ -4292,6 +4294,30 @@ function rzDivRestaurar(dv){
   });
   rzDiv={ X:X, cap:+dv.cap||0, base:dv.base||rzVal('rz-nome')||'Rota', fora:rzPontos.filter(function(p){ return p.lat==null; }), rotas:rotas, abertas:{} };
   rzMsg('✂ Divisão em andamento retomada'+(dv.salvoEm?' (rascunho de '+String(dv.salvoEm).slice(8,10)+'/'+String(dv.salvoEm).slice(5,7)+')':'')+'. Continue de onde parou.');
+}
+/* Acerta a prévia com o que está na tela agora: parada nova (já localizada) entra
+   na rota onde aumenta menos o tempo; parada tirada sai; mudança de saída,
+   velocidade ou tempo por parada refaz as contas sem mexer na divisão. Parada
+   que ainda está sendo procurada entra quando for achada. */
+function rzDivSinc(){
+  var D=rzDiv; if(!D) return; D._sinc=false;
+  if(!rzBaseRota()){ rzDiv=null; rzPintar(); rzDesenhar(false); rzMsg('A prévia da divisão foi fechada: para dividir, a rota precisa sair da sede.', true); return; }
+  var pts=rzPontos.filter(rzConta), tem={}; pts.forEach(function(p){ tem[p.id]=p; });
+  var usados={};
+  D.rotas.forEach(function(r){ r.o=r.o.filter(function(p){ if(!tem[p.id] || usados[p.id]) return false; usados[p.id]=1; return true; }).map(function(p){ return tem[p.id]; }); });
+  var X=rzDivPrep(pts); D.X=X;
+  var novos=pts.filter(function(p){ return !usados[p.id]; }), msgs=[];
+  novos.forEach(function(p){
+    var melhor=null;
+    D.rotas.forEach(function(r,k){ var ins=rzDivInserir(r.o,p,X), d=ins.c-rzDivSim(r.o,X).custo; if(!melhor || d<melhor.d) melhor={ k:k, o:ins.o, d:d }; });
+    D.rotas[melhor.k].o=melhor.o; D.movido=p.id;
+    msgs.push('"'+rzTitulo(p)+'" entrou em '+D.rotas[melhor.k].nome+' (+'+rzDur(Math.max(0,melhor.d))+')');
+  });
+  D.fora=rzPontos.filter(function(p){ return p.lat==null; });
+  var lista=document.getElementById('rz-lista'), sc=lista?lista.scrollTop:0, pai=document.querySelector('.rz-painel'), sp=pai?pai.scrollTop:0;
+  rzPintar(); rzDesenhar(false);
+  if(lista) lista.scrollTop=sc; if(pai) pai.scrollTop=sp;
+  if(msgs.length) rzMsg(msgs.join(' · ')+'. Se preferir outra rota, mude pela setinha.');
 }
 window.rzDivCancelar=function(){ rzDiv=null; rzPintar(); rzDesenhar(true); rzMsg('Divisão cancelada — as paradas continuam juntas na tela.'); };
 window.rzDivSalvar=function(){
